@@ -1,0 +1,38 @@
+# large files
+*.blend1
+*.blend
+*.glb
+
+# local files
+local/
+*.log
+*.txt
+*.exe
+*.dll
+*.o
+*.so
+*.obj
+*.bak
+.DS_Store
+Thumbs.db
+
+# Include
+!CMakeLists.txt
+
+# vcpkg
+vcpkg_installed/**
+
+# Build
+_build/
+
+# CLion
+.idea
+cmake-build-*/**
+
+# Visual Studio
+
+.vs/
+*.VC.db
+*.VC.VC.opendb
+build/
+out/

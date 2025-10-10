@@ -1,7 +1,6 @@
 # large files
 *.blend1
 *.blend
-*.glb
 
 # local files
 local/

@@ -6,6 +6,7 @@
 #include "backend/Image.h"
 #include "backend/ShaderCompiler.h"
 #include "backend/Swapchain.h"
+#include "scene/GltfLoader.h"
 #include "util/Logger.h"
 
 void Application::createPerFrameResources() {
@@ -183,10 +184,10 @@ void Application::init() {
 
     createImGuiBackend();
 
-    ShaderLoader loader = {};
-    loader.optimize = true;
-    loader.debug = true;
-    createPipeline(loader);
+    ShaderLoader shader_loader = {};
+    shader_loader.optimize = true;
+    shader_loader.debug = true;
+    createPipeline(shader_loader);
 
     mData.descriptorAllocator = DescriptorAllocator(mContext->device());
     mData.commandPool = mContext->device().createCommandPoolUnique({

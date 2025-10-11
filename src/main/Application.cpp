@@ -1,6 +1,8 @@
 #include "Application.h"
 
 #include <GLFW/glfw3.h>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_transform.hpp>
 #include <glm/glm.hpp>
 
 #include "backend/Image.h"
@@ -24,62 +26,124 @@ void Application::createPerFrameResources() {
             .inFlightFence = device.createFenceUnique({.flags = vk::FenceCreateFlagBits::eSignaled}),
             .exampleDescriptorSet = mData.descriptorAllocator.allocate(mData.descriptorLayout)
         };
-        frame.commandBuffer = device.allocateCommandBuffers(
-            {
-                .commandPool = cmd_pool,
-                .level = vk::CommandBufferLevel::ePrimary,
-                .commandBufferCount = 1,
-            }).at(0);
+        frame.commandBuffer = device.allocateCommandBuffers({.commandPool = cmd_pool,
+                                                             .level = vk::CommandBufferLevel::ePrimary,
+                                                             .commandBufferCount = 1})
+                                      .at(0);
     }
 }
 
 void Application::createImGuiBackend() {
     mData.imguiBackend = std::make_unique<ImGuiBackend>(
-        mContext->instance(),
-        mContext->device(),
-        mContext->physicalDevice(),
-        mContext->window(),
-        mContext->swapchain(),
-        mContext->mainQueue,
-        mContext->swapchain().depthFormat()
+            mContext->instance(), mContext->device(), mContext->physicalDevice(), mContext->window(),
+            mContext->swapchain(), mContext->mainQueue, mContext->swapchain().depthFormat()
     );
 }
 
 void Application::createPipeline(const ShaderLoader &loader) {
-    const auto& device = mContext->device();
-    auto vert_sh = loader.loadFromSource(device, "resources/shaders/triangle.vert");
-    auto frag_sh = loader.loadFromSource(device, "resources/shaders/triangle.frag");
+    const auto &device = mContext->device();
+    auto vert_sh = loader.loadFromSource(device, "resources/shaders/basic.vert");
+    auto frag_sh = loader.loadFromSource(device, "resources/shaders/basic.frag");
 
     mData.descriptorLayout = ExampleDescriptorLayout(device);
 
     PipelineConfig pipeline_config = {
-        .descriptorSetLayouts = {
-            mData.descriptorLayout,
-        },
-        .pushConstants = {
-            vk::PushConstantRange{vk::ShaderStageFlagBits::eVertex, 0, sizeof(ExampleShaderPushConstants)}
-        },
-        .depth = {
-            .testEnabled = false,
-        },
+        .vertexInput =
+                {
+                    .bindings = {vk::VertexInputBindingDescription{
+                        .binding = 0, .stride = sizeof(glm::vec3), .inputRate = vk::VertexInputRate::eVertex
+                    }},
+                    .attributes = {vk::VertexInputAttributeDescription{
+                        .location = 0, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = 0 // position
+                    }},
+                },
+        .descriptorSetLayouts = {mData.descriptorLayout},
+        .pushConstants = {vk::PushConstantRange{vk::ShaderStageFlagBits::eVertex, 0, sizeof(ExampleShaderPushConstants)}},
+        .attachments =
+                {
+                    .colorFormats = {mContext->swapchain().colorFormatSrgb()},
+                    .depthFormat = mContext->swapchain().depthFormat(),
+                },
     };
 
     mData.pipeline = createGraphicsPipeline(mContext->device(), pipeline_config, {*vert_sh, *frag_sh});
 }
 
-void Application::recordCommands(const vk::CommandBuffer &cmd_buf, const PerFrameResources& per_frame) {
+SceneRenderData Application::uploadSceneData(const SceneData &scene_data) {
+    SceneRenderData result;
+
+    const vma::Allocator &allocator = mContext->allocator();
+
+    vma::AllocationCreateInfo allocation_create_info = {
+        .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite,
+        .usage = vma::MemoryUsage::eAuto,
+        .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+    };
+
+    // TODO: Using host visible memory for now. Use device local memory and do a staged upload.
+    // This whole method can be cleaned up.
+    {
+        size_t position_data_size = scene_data.vertex_position_data.size() * sizeof(scene_data.vertex_position_data[0]);
+        std::tie(result.positions, result.positionsAlloc) = allocator.createBufferUnique(
+                {.size = position_data_size, .usage = vk::BufferUsageFlagBits::eVertexBuffer}, allocation_create_info
+        );
+        auto position_ptr = allocator.mapMemory(*result.positionsAlloc);
+        std::memcpy(position_ptr, scene_data.vertex_position_data.data(), position_data_size);
+        allocator.unmapMemory(*result.positionsAlloc);
+    }
+
+    {
+        size_t index_data_size = scene_data.index_data.size() * sizeof(scene_data.index_data[0]);
+        std::tie(result.indices, result.indicesAlloc) = allocator.createBufferUnique(
+                {.size = index_data_size, .usage = vk::BufferUsageFlagBits::eIndexBuffer}, allocation_create_info
+        );
+        auto index_ptr = allocator.mapMemory(*result.indicesAlloc);
+        std::memcpy(index_ptr, scene_data.index_data.data(), index_data_size);
+        allocator.unmapMemory(*result.indicesAlloc);
+    }
+
+    std::vector<vk::DrawIndexedIndirectCommand> draw_commands;
+    draw_commands.reserve(scene_data.instances.size());
+    for (size_t i = 0; i < scene_data.instances.size(); i++) {
+        const auto &instance = scene_data.instances[i];
+        draw_commands.emplace_back() = vk::DrawIndexedIndirectCommand{
+            .indexCount = instance.indexCount,
+            .instanceCount = 1,
+            .firstIndex = instance.indexOffset,
+            .vertexOffset = instance.vertexOffset,
+            .firstInstance = static_cast<uint32_t>(i),
+        };
+    };
+
+    {
+        std::tie(result.drawCommands, result.drawCommandsAlloc) = allocator.createBufferUnique(
+                {.size = draw_commands.size() * sizeof(draw_commands[0]), .usage = vk::BufferUsageFlagBits::eIndirectBuffer},
+                allocation_create_info
+        );
+        auto draw_commands_ptr = allocator.mapMemory(*result.drawCommandsAlloc);
+        std::memcpy(draw_commands_ptr, draw_commands.data(), draw_commands.size() * sizeof(draw_commands[0]));
+        allocator.unmapMemory(*result.drawCommandsAlloc);
+    }
+
+    return result;
+}
+
+void Application::recordCommands(const vk::CommandBuffer &cmd_buf, const PerFrameResources &per_frame) {
     const auto &swapchain = mContext->swapchain();
     cmd_buf.begin(vk::CommandBufferBeginInfo{});
 
+    glm::mat4 projection_matrix = glm::perspective(glm::radians(90.0f), swapchain.width() / swapchain.height(), 0.1f, 100.0f);
+    glm::mat4 view_matrix = glm::lookAt(glm::vec3{0, 0, 5}, {0, 0, 0}, {0, 1, 0});
+    glm::mat4 model_matrix = glm::rotate(glm::mat4(1.0f), static_cast<float>(glfwGetTime()), glm::vec3{0, 1, 0});
+    auto model_view_projection_matrix = projection_matrix * view_matrix * model_matrix;
+
     Framebuffer fb = {};
-    fb.colorAttachments = {
-        {
-            .image = swapchain.colorImage(),
-            .view = swapchain.colorViewSrgb(),
-            .format = swapchain.colorFormatSrgb(),
-            .range = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }
-    };
+    fb.colorAttachments = {{
+        .image = swapchain.colorImage(),
+        .view = swapchain.colorViewSrgb(),
+        .format = swapchain.colorFormatSrgb(),
+        .range = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+    }};
     fb.depthAttachment = {
         .image = mContext->swapchain().depthImage(),
         .view = mContext->swapchain().depthView(),
@@ -90,15 +154,16 @@ void Application::recordCommands(const vk::CommandBuffer &cmd_buf, const PerFram
     // Main render pass
     {
         cmd_buf.beginRendering(fb.renderingInfo(
-        swapchain.area(),
-        {
-            .enabledColorAttachments = {true},
-            .enableDepthAttachment = false,
-            .enableStencilAttachment = false,
-            .colorLoadOps = {vk::AttachmentLoadOp::eClear},
-            .colorStoreOps = {vk::AttachmentStoreOp::eStore},
-            .depthLoadOp = vk::AttachmentLoadOp::eClear,
-        }));
+                swapchain.area(),
+                {
+                    .enabledColorAttachments = {true},
+                    .enableDepthAttachment = true,
+                    .enableStencilAttachment = false,
+                    .colorLoadOps = {vk::AttachmentLoadOp::eClear},
+                    .colorStoreOps = {vk::AttachmentStoreOp::eStore},
+                    .depthLoadOp = vk::AttachmentLoadOp::eClear,
+                }
+        ));
 
         mData.pipeline.config.viewports = {
             // Flip viewport y axis to be like opengl
@@ -108,11 +173,15 @@ void Application::recordCommands(const vk::CommandBuffer &cmd_buf, const PerFram
         mData.pipeline.config.apply(cmd_buf);
 
         cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics, *mData.pipeline.pipeline);
-        cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *mData.pipeline.layout, 0, {per_frame.exampleDescriptorSet}, {});
+        cmd_buf.bindDescriptorSets(
+                vk::PipelineBindPoint::eGraphics, *mData.pipeline.layout, 0, {per_frame.exampleDescriptorSet}, {}
+        );
+        cmd_buf.bindIndexBuffer(*mData.sceneRenderData.indices, 0, vk::IndexType::eUint32);
+        cmd_buf.bindVertexBuffers(0, {*mData.sceneRenderData.positions}, {0});
 
-        ExampleShaderPushConstants push_consts = {.angle = (float) glfwGetTime()};
+        ExampleShaderPushConstants push_consts = {.transform = model_view_projection_matrix};
         cmd_buf.pushConstants(*mData.pipeline.layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(push_consts), &push_consts);
-        cmd_buf.draw(3, 1, 0, 0);
+        cmd_buf.drawIndexedIndirect(*mData.sceneRenderData.drawCommands, 0, 1, sizeof(vk::DrawIndexedIndirectCommand));
 
         cmd_buf.endRendering();
     }
@@ -130,9 +199,7 @@ void Application::recordCommands(const vk::CommandBuffer &cmd_buf, const PerFram
     cmd_buf.end();
 }
 
-void Application::drawGui() {
-    ImGui::ShowDemoWindow();
-}
+void Application::drawGui() { ImGui::ShowDemoWindow(); }
 
 void Application::drawFrame(uint32_t frame_index) {
     PerFrameResources &per_frame = mData.perFrameResources.at(frame_index % mData.perFrameResources.size());
@@ -152,19 +219,22 @@ void Application::drawFrame(uint32_t frame_index) {
     drawGui();
 
     ExampleInlineUniformBlock uniform_block = {.alpha = std::fmodf(static_cast<float>(glfwGetTime()) / 2.0f, 1.0f)};
-    device.updateDescriptorSets({
-        per_frame.exampleDescriptorSet.write(ExampleDescriptorLayout::InlineUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block})
-    }, {});
+    device.updateDescriptorSets(
+            {per_frame.exampleDescriptorSet.write(
+                    ExampleDescriptorLayout::InlineUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
+            )},
+            {}
+    );
 
     per_frame.commandBuffer.reset();
     recordCommands(per_frame.commandBuffer, per_frame);
 
     vk::PipelineStageFlags pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
     vk::SubmitInfo submit_info = vk::SubmitInfo()
-            .setCommandBuffers(per_frame.commandBuffer)
-            .setWaitSemaphores(*per_frame.availableSemaphore)
-            .setWaitDstStageMask(pipe_stage_flags)
-            .setSignalSemaphores(*per_frame.finishedSemaphore);
+                                         .setCommandBuffers(per_frame.commandBuffer)
+                                         .setWaitSemaphores(*per_frame.availableSemaphore)
+                                         .setWaitDstStageMask(pipe_stage_flags)
+                                         .setSignalSemaphores(*per_frame.finishedSemaphore);
 
     device.resetFences(*per_frame.inFlightFence);
 
@@ -188,6 +258,10 @@ void Application::init() {
     shader_loader.optimize = true;
     shader_loader.debug = true;
     createPipeline(shader_loader);
+
+    GltfLoader gltf_loader = {};
+    SceneData scene_data = gltf_loader.load("resources/scenes/DefaultCube.glb");
+    mData.sceneRenderData = uploadSceneData(scene_data);
 
     mData.descriptorAllocator = DescriptorAllocator(mContext->device());
     mData.commandPool = mContext->device().createCommandPoolUnique({

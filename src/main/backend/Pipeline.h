@@ -16,13 +16,9 @@ struct UniqueCompiledShaderStage {
     vk::ShaderStageFlagBits stage;
     vk::UniqueShaderModule module;
 
-    operator CompiledShaderStage() const {
-        return {name, stage, *module};
-    }
+    operator CompiledShaderStage() const { return {name, stage, *module}; }
 
-    CompiledShaderStage operator *() const {
-        return {name, stage, *module};
-    }
+    CompiledShaderStage operator*() const { return {name, stage, *module}; }
 };
 
 /**
@@ -246,8 +242,8 @@ private:
             .srcAlphaBlendFactor = vk::BlendFactor::eOne,
             .dstAlphaBlendFactor = vk::BlendFactor::eZero,
             .alphaBlendOp = vk::BlendOp::eAdd,
-            .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB |
-                              vk::ColorComponentFlagBits::eA,
+            .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                              vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
         }
     };
 
@@ -282,6 +278,12 @@ public:
         bool clampEnabled = true;
     } depth;
 
+    struct AttachmentsInfo {
+        util::static_vector<vk::Format, 32> colorFormats;
+        vk::Format depthFormat = vk::Format::eD32Sfloat;
+        vk::Format stencilFormat = vk::Format::eUndefined;
+    } attachments;
+
     struct BlendInfo {
         util::static_vector<vk::PipelineColorBlendAttachmentState, 32> state = DEFAULT_BLEND_STATE;
         std::array<float, 4> constants = {0, 0, 0, 0};
@@ -297,7 +299,7 @@ public:
 
     struct CullInfo {
         vk::CullModeFlagBits mode = vk::CullModeFlagBits::eBack;
-        vk::FrontFace front = vk::FrontFace::eCounterClockwise;
+        vk::FrontFace front = vk::FrontFace::eClockwise;
     } cull;
 
     struct LineInfo {
@@ -313,7 +315,7 @@ public:
 
     DynamicStateFlags dynamic = {};
 
-    void apply(const vk::CommandBuffer& cmd) const;
+    void apply(const vk::CommandBuffer &cmd) const;
 };
 
 struct Pipeline {
@@ -329,4 +331,6 @@ struct ConfiguredPipeline {
     PipelineConfig config = {};
 };
 
-ConfiguredPipeline createGraphicsPipeline(const vk::Device& device, const PipelineConfig &c, std::initializer_list<CompiledShaderStage> stages);
+ConfiguredPipeline createGraphicsPipeline(
+        const vk::Device &device, const PipelineConfig &c, std::initializer_list<CompiledShaderStage> stages
+);

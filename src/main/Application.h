@@ -1,9 +1,10 @@
 #pragma once
 
-#include "backend/VulkanContext.h"
 #include "backend/Descriptors.h"
 #include "backend/Pipeline.h"
+#include "backend/VulkanContext.h"
 #include "imgui/ImGui.h"
+#include "scene/GltfLoader.h"
 #include "util/Logger.h"
 
 class ImGuiBackend;
@@ -19,7 +20,7 @@ struct PerFrameResources {
 };
 
 struct alignas(16) ExampleShaderPushConstants {
-    float angle;
+    glm::mat4 transform;
 };
 
 struct alignas(16) ExampleInlineUniformBlock {
@@ -36,6 +37,15 @@ struct ExampleDescriptorLayout : DescriptorSetLayout {
     }
 };
 
+struct SceneRenderData {
+    vma::UniqueBuffer positions;
+    vma::UniqueAllocation positionsAlloc;
+    vma::UniqueBuffer indices;
+    vma::UniqueAllocation indicesAlloc;
+    vma::UniqueBuffer drawCommands;
+    vma::UniqueAllocation drawCommandsAlloc;
+};
+
 // Temporary until we make the app more sophisticated
 struct AppData {
     std::vector<PerFrameResources> perFrameResources;
@@ -44,6 +54,7 @@ struct AppData {
     ExampleDescriptorLayout descriptorLayout;
     DescriptorAllocator descriptorAllocator;
     std::unique_ptr<ImGuiBackend> imguiBackend;
+    SceneRenderData sceneRenderData;
 
     ~AppData() {
         Logger::info("Destroying AppData");
@@ -58,7 +69,8 @@ class Application {
     void createPerFrameResources();
     void createImGuiBackend();
 
-    void createPipeline(const ShaderLoader& loader);
+    void createPipeline(const ShaderLoader &loader);
+    SceneRenderData uploadSceneData(const SceneData &scene_data);
     void recordCommands(const vk::CommandBuffer& cmd_buf , const PerFrameResources& per_frame);
 
     void drawGui();

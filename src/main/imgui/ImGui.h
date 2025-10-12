@@ -53,7 +53,7 @@ public:
         return *this;
     }
 
-    void begin() const;
+    void beginFrame() const;
 
     void render(const vk::CommandBuffer &cmd_buf) const;
 

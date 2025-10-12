@@ -7,7 +7,7 @@
 #include <stdexcept>
 
 namespace util {
-    /// <summary>static_</summary>
+    /// <summary>A vector-like container with a fixed capacity, backed by std::array.</summary>
     template<typename T, std::size_t N>
     class static_vector {
     public:

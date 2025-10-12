@@ -25,8 +25,8 @@ namespace glfw {
         bool scaleToMonitor = false;
         bool scaleFramebuffer = true;
         bool mousePassthrough = false;
-        int positionX = static_cast<int>(0x80000000);
-        int positionY = static_cast<int>(0x80000000);
+        int positionX = static_cast<int>(0x80000000); // GLFW_ANY_POSITION
+        int positionY = static_cast<int>(0x80000000); // GLFW_ANY_POSITION
         int redBits = 8;
         int greenBits = 8;
         int blueBits = 8;

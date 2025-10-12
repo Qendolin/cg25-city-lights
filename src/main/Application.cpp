@@ -193,7 +193,7 @@ void Application::drawFrame(uint32_t frame_index) {
         return;
     }
 
-    mData.imguiBackend->begin();
+    mData.imguiBackend->beginFrame();
 
     drawGui();
 

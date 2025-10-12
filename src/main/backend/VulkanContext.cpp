@@ -266,9 +266,7 @@ VulkanContext::VulkanContext(
       transferQueue(transfer_queue) {
 }
 
-VulkanContext::~VulkanContext() {
-    Logger::info("Destroying VulkanContext");
-}
+VulkanContext::~VulkanContext() = default;
 
 VulkanContext::VulkanContext(VulkanContext &&other) noexcept
     : mInstance(std::move(other.mInstance)),

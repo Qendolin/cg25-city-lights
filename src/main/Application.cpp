@@ -7,6 +7,7 @@
 
 #include "backend/Image.h"
 #include "backend/ShaderCompiler.h"
+#include "backend/StagingBuffer.h"
 #include "backend/Swapchain.h"
 #include "scene/GltfLoader.h"
 #include "util/Logger.h"
@@ -50,12 +51,18 @@ void Application::createPipeline(const ShaderLoader &loader) {
     PipelineConfig pipeline_config = {
         .vertexInput =
                 {
-                    .bindings = {vk::VertexInputBindingDescription{
-                        .binding = 0, .stride = sizeof(glm::vec3), .inputRate = vk::VertexInputRate::eVertex
-                    }},
-                    .attributes = {vk::VertexInputAttributeDescription{
-                        .location = 0, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = 0 // position
-                    }},
+                    .bindings = {
+                        {.binding = 0, .stride = sizeof(glm::vec3), .inputRate = vk::VertexInputRate::eVertex}, // position
+                        {.binding = 1, .stride = sizeof(glm::vec3), .inputRate = vk::VertexInputRate::eVertex}, // normal
+                        {.binding = 2, .stride = sizeof(glm::vec4), .inputRate = vk::VertexInputRate::eVertex}, // tangent
+                        {.binding = 3, .stride = sizeof(glm::vec2), .inputRate = vk::VertexInputRate::eVertex}, // texcoord
+                    },
+                    .attributes = {
+                        {.location = 0, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = 0}, // position
+                        {.location = 1, .binding = 1, .format = vk::Format::eR32G32B32Sfloat, .offset = 0}, // normal
+                        {.location = 2, .binding = 2, .format = vk::Format::eR32G32B32A32Sfloat, .offset = 0}, // tangent
+                        {.location = 3, .binding = 3, .format = vk::Format::eR32G32Sfloat, .offset = 0}, // texcoord
+                    },
                 },
         .descriptorSetLayouts = {mData.descriptorLayout},
         .pushConstants = {vk::PushConstantRange{vk::ShaderStageFlagBits::eVertex, 0, sizeof(ExampleShaderPushConstants)}},
@@ -71,36 +78,14 @@ void Application::createPipeline(const ShaderLoader &loader) {
 
 SceneRenderData Application::uploadSceneData(const SceneData &scene_data) {
     SceneRenderData result;
-
     const vma::Allocator &allocator = mContext->allocator();
+    StagingBuffer staging = {allocator, mContext->device(), *mData.transientTransferCommandPool};
 
-    vma::AllocationCreateInfo allocation_create_info = {
-        .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite,
-        .usage = vma::MemoryUsage::eAuto,
-        .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-    };
-
-    // TODO: Using host visible memory for now. Use device local memory and do a staged upload.
-    // This whole method can be cleaned up.
-    {
-        size_t position_data_size = scene_data.vertex_position_data.size() * sizeof(scene_data.vertex_position_data[0]);
-        std::tie(result.positions, result.positionsAlloc) = allocator.createBufferUnique(
-                {.size = position_data_size, .usage = vk::BufferUsageFlagBits::eVertexBuffer}, allocation_create_info
-        );
-        auto position_ptr = allocator.mapMemory(*result.positionsAlloc);
-        std::memcpy(position_ptr, scene_data.vertex_position_data.data(), position_data_size);
-        allocator.unmapMemory(*result.positionsAlloc);
-    }
-
-    {
-        size_t index_data_size = scene_data.index_data.size() * sizeof(scene_data.index_data[0]);
-        std::tie(result.indices, result.indicesAlloc) = allocator.createBufferUnique(
-                {.size = index_data_size, .usage = vk::BufferUsageFlagBits::eIndexBuffer}, allocation_create_info
-        );
-        auto index_ptr = allocator.mapMemory(*result.indicesAlloc);
-        std::memcpy(index_ptr, scene_data.index_data.data(), index_data_size);
-        allocator.unmapMemory(*result.indicesAlloc);
-    }
+    std::tie(result.positions, result.positionsAlloc) = staging.upload(scene_data.vertex_position_data, vk::BufferUsageFlagBits::eVertexBuffer);
+    std::tie(result.normals, result.normalsAlloc) = staging.upload(scene_data.vertex_normal_data, vk::BufferUsageFlagBits::eVertexBuffer);
+    std::tie(result.tangents, result.tangentsAlloc) = staging.upload(scene_data.vertex_tangent_data, vk::BufferUsageFlagBits::eVertexBuffer);
+    std::tie(result.texcoords, result.texcoordsAlloc) = staging.upload(scene_data.vertex_texcoord_data, vk::BufferUsageFlagBits::eVertexBuffer);
+    std::tie(result.indices, result.indicesAlloc) = staging.upload(scene_data.index_data, vk::BufferUsageFlagBits::eIndexBuffer);
 
     std::vector<vk::DrawIndexedIndirectCommand> draw_commands;
     draw_commands.reserve(scene_data.instances.size());
@@ -113,17 +98,11 @@ SceneRenderData Application::uploadSceneData(const SceneData &scene_data) {
             .vertexOffset = instance.vertexOffset,
             .firstInstance = static_cast<uint32_t>(i),
         };
-    };
-
-    {
-        std::tie(result.drawCommands, result.drawCommandsAlloc) = allocator.createBufferUnique(
-                {.size = draw_commands.size() * sizeof(draw_commands[0]), .usage = vk::BufferUsageFlagBits::eIndirectBuffer},
-                allocation_create_info
-        );
-        auto draw_commands_ptr = allocator.mapMemory(*result.drawCommandsAlloc);
-        std::memcpy(draw_commands_ptr, draw_commands.data(), draw_commands.size() * sizeof(draw_commands[0]));
-        allocator.unmapMemory(*result.drawCommandsAlloc);
     }
+
+    std::tie(result.drawCommands, result.drawCommandsAlloc) = staging.upload(draw_commands, vk::BufferUsageFlagBits::eIndirectBuffer);
+
+    staging.submit(mContext->transferQueue);
 
     return result;
 }
@@ -177,7 +156,7 @@ void Application::recordCommands(const vk::CommandBuffer &cmd_buf, const PerFram
                 vk::PipelineBindPoint::eGraphics, *mData.pipeline.layout, 0, {per_frame.exampleDescriptorSet}, {}
         );
         cmd_buf.bindIndexBuffer(*mData.sceneRenderData.indices, 0, vk::IndexType::eUint32);
-        cmd_buf.bindVertexBuffers(0, {*mData.sceneRenderData.positions}, {0});
+        cmd_buf.bindVertexBuffers(0, {*mData.sceneRenderData.positions, *mData.sceneRenderData.normals, *mData.sceneRenderData.tangents, *mData.sceneRenderData.texcoords}, {0, 0, 0, 0});
 
         ExampleShaderPushConstants push_consts = {.transform = model_view_projection_matrix};
         cmd_buf.pushConstants(*mData.pipeline.layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(push_consts), &push_consts);
@@ -252,6 +231,15 @@ void Application::init() {
     })));
     Logger::info("Using present mode: " + vk::to_string(mContext->swapchain().presentMode()));
 
+    mData.commandPool = mContext->device().createCommandPoolUnique({
+        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+        .queueFamilyIndex = mContext->mainQueue,
+    });
+    mData.transientTransferCommandPool = mContext->device().createCommandPoolUnique({
+        .flags = vk::CommandPoolCreateFlagBits::eTransient,
+        .queueFamilyIndex = mContext->transferQueue,
+    });
+
     createImGuiBackend();
 
     ShaderLoader shader_loader = {};
@@ -264,10 +252,6 @@ void Application::init() {
     mData.sceneRenderData = uploadSceneData(scene_data);
 
     mData.descriptorAllocator = DescriptorAllocator(mContext->device());
-    mData.commandPool = mContext->device().createCommandPoolUnique({
-        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-        .queueFamilyIndex = mContext->mainQueue,
-    });
     mData.perFrameResources.resize(mContext->swapchain().imageCount());
     createPerFrameResources();
 }

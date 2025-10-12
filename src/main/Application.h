@@ -40,6 +40,12 @@ struct ExampleDescriptorLayout : DescriptorSetLayout {
 struct SceneRenderData {
     vma::UniqueBuffer positions;
     vma::UniqueAllocation positionsAlloc;
+    vma::UniqueBuffer normals;
+    vma::UniqueAllocation normalsAlloc;
+    vma::UniqueBuffer tangents;
+    vma::UniqueAllocation tangentsAlloc;
+    vma::UniqueBuffer texcoords;
+    vma::UniqueAllocation texcoordsAlloc;
     vma::UniqueBuffer indices;
     vma::UniqueAllocation indicesAlloc;
     vma::UniqueBuffer drawCommands;
@@ -50,15 +56,12 @@ struct SceneRenderData {
 struct AppData {
     std::vector<PerFrameResources> perFrameResources;
     vk::UniqueCommandPool commandPool;
+    vk::UniqueCommandPool transientTransferCommandPool;
     ConfiguredPipeline pipeline;
     ExampleDescriptorLayout descriptorLayout;
     DescriptorAllocator descriptorAllocator;
     std::unique_ptr<ImGuiBackend> imguiBackend;
     SceneRenderData sceneRenderData;
-
-    ~AppData() {
-        Logger::info("Destroying AppData");
-    }
 };
 
 class Application {

@@ -180,7 +180,7 @@ public:
     /// <param name="arrayElement">The starting element in the descriptor array.</param>
     /// <returns>A partially filled vk::WriteDescriptorSet structure.</returns>
     template<vk::DescriptorType Type>
-    vk::WriteDescriptorSet write(const TypedBinding<Type>& binding, uint32_t arrayElement = 0) const {
+    [[nodiscard]] vk::WriteDescriptorSet write(const TypedBinding<Type>& binding, uint32_t arrayElement = 0) const {
         return {
             .dstSet = mHandle,
             .dstBinding = binding.binding,
@@ -199,7 +199,7 @@ public:
     /// <param name="arrayElement">The starting element in the descriptor array.</param>
     /// <returns>A complete vk::WriteDescriptorSet structure for an image descriptor.</returns>
     template<vk::DescriptorType Type>
-    vk::WriteDescriptorSet write(const TypedBinding<Type>& binding,
+    [[nodiscard]] vk::WriteDescriptorSet write(const TypedBinding<Type>& binding,
                                 const vk::DescriptorImageInfo& info,
                                 uint32_t arrayElement = 0) const {
         return write(binding, arrayElement).setImageInfo(info);
@@ -214,7 +214,7 @@ public:
     /// <param name="arrayElement">The starting element in the descriptor array.</param>
     /// <returns>A complete vk::WriteDescriptorSet structure for a buffer descriptor.</returns>
     template<vk::DescriptorType Type>
-    vk::WriteDescriptorSet write(const TypedBinding<Type>& binding,
+    [[nodiscard]] vk::WriteDescriptorSet write(const TypedBinding<Type>& binding,
                                 const vk::DescriptorBufferInfo& info,
                                 uint32_t arrayElement = 0) const {
         return write(binding, arrayElement).setBufferInfo(info);
@@ -227,7 +227,7 @@ public:
     /// <param name="block">The inline uniform block data to write.</param>
     /// <param name="arrayElement">The starting element in the descriptor array.</param>
     /// <returns>A complete vk::WriteDescriptorSet structure for an inline uniform block.</returns>
-    vk::WriteDescriptorSet write(const InlineUniformBlockBinding& binding,
+    [[nodiscard]] vk::WriteDescriptorSet write(const InlineUniformBlockBinding& binding,
                                 const vk::WriteDescriptorSetInlineUniformBlock& block,
                                 uint32_t arrayElement = 0) const {
         return write(binding, arrayElement).setPNext(&block);

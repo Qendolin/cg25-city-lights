@@ -79,6 +79,7 @@ void GltfLoader::loadMeshData(
                 .indexOffset = index_offset,
                 .indexCount = static_cast<uint32_t>(index_accessor.count),
                 .vertexOffset = static_cast<int32_t>(vertex_offset),
+                .material = static_cast<uint32_t>(primitive.materialIndex.value_or(UINT32_MAX)),
             };
             index_offset += index_accessor.count;
             vertex_offset += position_accessor.count;
@@ -124,8 +125,9 @@ void GltfLoader::loadNode(
             .indexOffset = primitive_info.indexOffset,
             .indexCount = primitive_info.indexCount,
             .vertexOffset = primitive_info.vertexOffset,
-            .transformation = transform,
+            .transform = transform,
             .bounds = static_cast<uint32_t>(scene_data.bounds.size()),
+            .material = primitive_info.material,
         };
 
         BoundingBox &bounds = scene_data.bounds.emplace_back() = {};

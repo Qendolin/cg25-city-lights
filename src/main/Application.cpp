@@ -21,11 +21,10 @@ void Application::createPerFrameResources() {
     for (int i = 0; i < swapchain.imageCount(); i++) {
         auto &frame = frame_resources[i];
         frame = {
-            .index = static_cast<uint32_t>(i),
             .availableSemaphore = device.createSemaphoreUnique({}),
             .finishedSemaphore = device.createSemaphoreUnique({}),
             .inFlightFence = device.createFenceUnique({.flags = vk::FenceCreateFlagBits::eSignaled}),
-            .exampleDescriptorSet = mData.descriptorAllocator.allocate(mData.descriptorLayout)
+            .descriptorSet = mData.descriptorAllocator.allocate(mData.perFrameDescriptorLayout)
         };
         frame.commandBuffer = device.allocateCommandBuffers({.commandPool = cmd_pool,
                                                              .level = vk::CommandBufferLevel::ePrimary,
@@ -43,29 +42,32 @@ void Application::createImGuiBackend() {
 
 void Application::createPipeline(const ShaderLoader &loader) {
     const auto &device = mContext->device();
-    auto vert_sh = loader.loadFromSource(device, "resources/shaders/basic.vert");
-    auto frag_sh = loader.loadFromSource(device, "resources/shaders/basic.frag");
+    auto vert_sh = loader.loadFromSource(device, "resources/shaders/pbr.vert");
+    auto frag_sh = loader.loadFromSource(device, "resources/shaders/pbr.frag");
 
-    mData.descriptorLayout = ExampleDescriptorLayout(device);
+    mData.sceneDataDescriptorLayout = SceneDataDescriptorLayout(device);
+    mData.perFrameDescriptorLayout = PerFrameDescriptorLayout(device);
 
     PipelineConfig pipeline_config = {
         .vertexInput =
                 {
-                    .bindings = {
-                        {.binding = 0, .stride = sizeof(glm::vec3), .inputRate = vk::VertexInputRate::eVertex}, // position
-                        {.binding = 1, .stride = sizeof(glm::vec3), .inputRate = vk::VertexInputRate::eVertex}, // normal
-                        {.binding = 2, .stride = sizeof(glm::vec4), .inputRate = vk::VertexInputRate::eVertex}, // tangent
-                        {.binding = 3, .stride = sizeof(glm::vec2), .inputRate = vk::VertexInputRate::eVertex}, // texcoord
-                    },
-                    .attributes = {
-                        {.location = 0, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = 0}, // position
-                        {.location = 1, .binding = 1, .format = vk::Format::eR32G32B32Sfloat, .offset = 0}, // normal
-                        {.location = 2, .binding = 2, .format = vk::Format::eR32G32B32A32Sfloat, .offset = 0}, // tangent
-                        {.location = 3, .binding = 3, .format = vk::Format::eR32G32Sfloat, .offset = 0}, // texcoord
-                    },
+                    .bindings =
+                            {
+                                {.binding = 0, .stride = sizeof(glm::vec3), .inputRate = vk::VertexInputRate::eVertex}, // position
+                                {.binding = 1, .stride = sizeof(glm::vec3), .inputRate = vk::VertexInputRate::eVertex}, // normal
+                                {.binding = 2, .stride = sizeof(glm::vec4), .inputRate = vk::VertexInputRate::eVertex}, // tangent
+                                {.binding = 3, .stride = sizeof(glm::vec2), .inputRate = vk::VertexInputRate::eVertex}, // texcoord
+                            },
+                    .attributes =
+                            {
+                                {.location = 0, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = 0}, // position
+                                {.location = 1, .binding = 1, .format = vk::Format::eR32G32B32Sfloat, .offset = 0}, // normal
+                                {.location = 2, .binding = 2, .format = vk::Format::eR32G32B32A32Sfloat, .offset = 0}, // tangent
+                                {.location = 3, .binding = 3, .format = vk::Format::eR32G32Sfloat, .offset = 0}, // texcoord
+                            },
                 },
-        .descriptorSetLayouts = {mData.descriptorLayout},
-        .pushConstants = {vk::PushConstantRange{vk::ShaderStageFlagBits::eVertex, 0, sizeof(ExampleShaderPushConstants)}},
+        .descriptorSetLayouts = {mData.sceneDataDescriptorLayout, mData.perFrameDescriptorLayout},
+        .pushConstants = {},
         .attachments =
                 {
                     .colorFormats = {mContext->swapchain().colorFormatSrgb()},
@@ -81,12 +83,19 @@ SceneRenderData Application::uploadSceneData(const SceneData &scene_data) {
     const vma::Allocator &allocator = mContext->allocator();
     StagingBuffer staging = {allocator, mContext->device(), *mData.transientTransferCommandPool};
 
-    std::tie(result.positions, result.positionsAlloc) = staging.upload(scene_data.vertex_position_data, vk::BufferUsageFlagBits::eVertexBuffer);
-    std::tie(result.normals, result.normalsAlloc) = staging.upload(scene_data.vertex_normal_data, vk::BufferUsageFlagBits::eVertexBuffer);
-    std::tie(result.tangents, result.tangentsAlloc) = staging.upload(scene_data.vertex_tangent_data, vk::BufferUsageFlagBits::eVertexBuffer);
-    std::tie(result.texcoords, result.texcoordsAlloc) = staging.upload(scene_data.vertex_texcoord_data, vk::BufferUsageFlagBits::eVertexBuffer);
-    std::tie(result.indices, result.indicesAlloc) = staging.upload(scene_data.index_data, vk::BufferUsageFlagBits::eIndexBuffer);
+    std::tie(result.positions, result.positionsAlloc) =
+            staging.upload(scene_data.vertex_position_data, vk::BufferUsageFlagBits::eVertexBuffer);
+    std::tie(result.normals, result.normalsAlloc) =
+            staging.upload(scene_data.vertex_normal_data, vk::BufferUsageFlagBits::eVertexBuffer);
+    std::tie(result.tangents, result.tangentsAlloc) =
+            staging.upload(scene_data.vertex_tangent_data, vk::BufferUsageFlagBits::eVertexBuffer);
+    std::tie(result.texcoords, result.texcoordsAlloc) =
+            staging.upload(scene_data.vertex_texcoord_data, vk::BufferUsageFlagBits::eVertexBuffer);
+    std::tie(result.indices, result.indicesAlloc) =
+            staging.upload(scene_data.index_data, vk::BufferUsageFlagBits::eIndexBuffer);
 
+    std::vector<InstanceBlock> instance_blocks;
+    instance_blocks.reserve(scene_data.instances.size());
     std::vector<vk::DrawIndexedIndirectCommand> draw_commands;
     draw_commands.reserve(scene_data.instances.size());
     for (size_t i = 0; i < scene_data.instances.size(); i++) {
@@ -98,9 +107,24 @@ SceneRenderData Application::uploadSceneData(const SceneData &scene_data) {
             .vertexOffset = instance.vertexOffset,
             .firstInstance = static_cast<uint32_t>(i),
         };
+        instance_blocks.emplace_back() = {.transform = instance.transform, .material = instance.material};
     }
 
-    std::tie(result.drawCommands, result.drawCommandsAlloc) = staging.upload(draw_commands, vk::BufferUsageFlagBits::eIndirectBuffer);
+    std::tie(result.drawCommands, result.drawCommandsAlloc) =
+            staging.upload(draw_commands, vk::BufferUsageFlagBits::eIndirectBuffer);
+    std::tie(result.instances, result.instancesAlloc) =
+            staging.upload(instance_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
+
+    std::vector<MaterialBlock> material_blocks;
+    material_blocks.reserve(scene_data.materials.size());
+    for (const auto &material: scene_data.materials) {
+        material_blocks.emplace_back() = {
+            .albedoFactors = material.albedoFactor,
+            .mrnFactors = glm::vec4{material.metalnessFactor, material.roughnessFactor, material.normalFactor, 1.0f},
+        };
+    }
+    std::tie(result.materials, result.materialsAlloc) =
+            staging.upload(material_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
 
     staging.submit(mContext->transferQueue);
 
@@ -110,11 +134,6 @@ SceneRenderData Application::uploadSceneData(const SceneData &scene_data) {
 void Application::recordCommands(const vk::CommandBuffer &cmd_buf, const PerFrameResources &per_frame) {
     const auto &swapchain = mContext->swapchain();
     cmd_buf.begin(vk::CommandBufferBeginInfo{});
-
-    glm::mat4 projection_matrix = glm::perspective(glm::radians(90.0f), swapchain.width() / swapchain.height(), 0.1f, 100.0f);
-    glm::mat4 view_matrix = glm::lookAt(glm::vec3{0, 0, 5}, {0, 0, 0}, {0, 1, 0});
-    glm::mat4 model_matrix = glm::rotate(glm::mat4(1.0f), static_cast<float>(glfwGetTime()), glm::vec3{0, 1, 0});
-    auto model_view_projection_matrix = projection_matrix * view_matrix * model_matrix;
 
     Framebuffer fb = {};
     fb.colorAttachments = {{
@@ -153,13 +172,16 @@ void Application::recordCommands(const vk::CommandBuffer &cmd_buf, const PerFram
 
         cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics, *mData.pipeline.pipeline);
         cmd_buf.bindDescriptorSets(
-                vk::PipelineBindPoint::eGraphics, *mData.pipeline.layout, 0, {per_frame.exampleDescriptorSet}, {}
+                vk::PipelineBindPoint::eGraphics, *mData.pipeline.layout, 0, {mData.sceneDataDescriptorSet, per_frame.descriptorSet}, {}
         );
         cmd_buf.bindIndexBuffer(*mData.sceneRenderData.indices, 0, vk::IndexType::eUint32);
-        cmd_buf.bindVertexBuffers(0, {*mData.sceneRenderData.positions, *mData.sceneRenderData.normals, *mData.sceneRenderData.tangents, *mData.sceneRenderData.texcoords}, {0, 0, 0, 0});
+        cmd_buf.bindVertexBuffers(
+                0,
+                {*mData.sceneRenderData.positions, *mData.sceneRenderData.normals, *mData.sceneRenderData.tangents,
+                 *mData.sceneRenderData.texcoords},
+                {0, 0, 0, 0}
+        );
 
-        ExampleShaderPushConstants push_consts = {.transform = model_view_projection_matrix};
-        cmd_buf.pushConstants(*mData.pipeline.layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(push_consts), &push_consts);
         cmd_buf.drawIndexedIndirect(*mData.sceneRenderData.drawCommands, 0, 1, sizeof(vk::DrawIndexedIndirectCommand));
 
         cmd_buf.endRendering();
@@ -197,10 +219,15 @@ void Application::drawFrame(uint32_t frame_index) {
 
     drawGui();
 
-    ExampleInlineUniformBlock uniform_block = {.alpha = std::fmodf(static_cast<float>(glfwGetTime()) / 2.0f, 1.0f)};
+    glm::vec3 camera_position = glm::vec3{std::sin(glfwGetTime()), 1, std::cos(glfwGetTime())} * 5.0f;
+    SceneInlineUniformBlock uniform_block = {
+        .view = glm::lookAt(camera_position, {0, 0, 0}, {0, 1, 0}),
+        .projection = glm::perspective(glm::radians(90.0f), swapchain.width() / swapchain.height(), 0.1f, 100.0f),
+        .camera = {camera_position, 0},
+    };
     device.updateDescriptorSets(
-            {per_frame.exampleDescriptorSet.write(
-                    ExampleDescriptorLayout::InlineUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
+            {per_frame.descriptorSet.write(
+                    PerFrameDescriptorLayout::SceneUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
             )},
             {}
     );
@@ -239,6 +266,7 @@ void Application::init() {
         .flags = vk::CommandPoolCreateFlagBits::eTransient,
         .queueFamilyIndex = mContext->transferQueue,
     });
+    mData.descriptorAllocator = DescriptorAllocator(mContext->device());
 
     createImGuiBackend();
 
@@ -250,8 +278,21 @@ void Application::init() {
     GltfLoader gltf_loader = {};
     SceneData scene_data = gltf_loader.load("resources/scenes/DefaultCube.glb");
     mData.sceneRenderData = uploadSceneData(scene_data);
+    mData.sceneDataDescriptorSet = mData.descriptorAllocator.allocate(mData.sceneDataDescriptorLayout);
+    mContext->device().updateDescriptorSets(
+            {
+                mData.sceneDataDescriptorSet.write(
+                        SceneDataDescriptorLayout::InstanceBuffer,
+                        vk::DescriptorBufferInfo{.buffer = *mData.sceneRenderData.instances, .offset = 0, .range = vk::WholeSize}
+                ),
+                mData.sceneDataDescriptorSet.write(
+                        SceneDataDescriptorLayout::MaterialBuffer,
+                        vk::DescriptorBufferInfo{.buffer = *mData.sceneRenderData.materials, .offset = 0, .range = vk::WholeSize}
+                ),
+            },
+            {}
+    );
 
-    mData.descriptorAllocator = DescriptorAllocator(mContext->device());
     mData.perFrameResources.resize(mContext->swapchain().imageCount());
     createPerFrameResources();
 }

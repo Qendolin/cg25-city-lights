@@ -50,7 +50,7 @@ struct Instance {
     /// <summary>
     /// The transformation matrix for this instance.
     /// </summary>
-    glm::mat4 transformation = glm::mat4(1.0);
+    glm::mat4 transform = glm::mat4(1.0);
     /// <summary>
     /// The index of the bounding box for this instance.
     /// </summary>
@@ -172,6 +172,10 @@ private:
         /// The offset into the global vertex buffer.
         /// </summary>
         int32_t vertexOffset;
+        /// <summary>
+        /// The index of the material for this primitive.
+        /// </summary>
+        uint32_t material = UINT32_MAX;
     };
 
     /// <summary>

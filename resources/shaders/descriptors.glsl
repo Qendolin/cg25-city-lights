@@ -3,6 +3,10 @@
 
 struct Instance {
     mat4 transform;
+};
+
+struct Section {
+    uint instance;
     uint material;
 };
 
@@ -13,11 +17,15 @@ struct Material {
 
 // Descriptor Sets
 
-layout(std430, set = 0, binding = 0) readonly buffer InstanceBuffer {
+layout(std430, set = 0, binding = 0) readonly buffer SectionBuffer {
+    Section sections[];
+} uSectionBuffer;
+
+layout(std430, set = 0, binding = 1) readonly buffer InstanceBuffer {
     Instance instances[];
 } uInstanceBuffer;
 
-layout (std430, set = 0, binding = 1) readonly buffer MaterialBuffer {
+layout (std430, set = 0, binding = 2) readonly buffer MaterialBuffer {
     Material materials[];
 } uMaterialBuffer;
 

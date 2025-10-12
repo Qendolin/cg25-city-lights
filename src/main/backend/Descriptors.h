@@ -3,7 +3,6 @@
 #include <vulkan/vulkan.hpp>
 #include <array>
 #include <span>
-#include <vector>
 
 /// <summary>
 /// A type-erased descriptor set binding for runtime usage.
@@ -100,7 +99,7 @@ public:
     virtual ~DescriptorSetLayout() = default;
 
     DescriptorSetLayout(const DescriptorSetLayout&) = delete;
-    DescriptorSetLayout& operator=(const DescriptorSetLayout&) = delete;
+    DescriptorSetLayout &operator=(const DescriptorSetLayout &) = delete;
 
     DescriptorSetLayout(DescriptorSetLayout&& other) noexcept
         : mHandle(std::move(other.mHandle)) {}

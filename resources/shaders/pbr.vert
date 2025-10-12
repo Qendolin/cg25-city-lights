@@ -13,13 +13,14 @@ layout (location = 5) flat out uint out_material;
 #include "descriptors.glsl"
 
 void main() {
-    Instance instance = uInstanceBuffer.instances[gl_DrawID];
+    Section section = uSectionBuffer.sections[gl_DrawID];
+    Instance instance = uInstanceBuffer.instances[section.instance];
 
     vec4 position_ws = instance.transform * vec4(in_position, 1.0);
     gl_Position = uScene.projection * uScene.view * position_ws;
     out_position_ws = position_ws.xyz;
     out_tex_coord = in_tex_coord;
-    out_material = instance.material;
+    out_material = section.material;
 
     // Doesn't support non-uniform scaling
     mat3 normal_matrix = mat3(instance.transform);

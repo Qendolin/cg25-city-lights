@@ -1,12 +1,15 @@
 #pragma once
 
+#include <glm/mat4x4.hpp>
+
 #include "backend/Descriptors.h"
 #include "backend/Pipeline.h"
 #include "backend/VulkanContext.h"
 #include "imgui/ImGui.h"
-#include "scene/GltfLoader.h"
-#include "util/Logger.h"
 
+namespace scene {
+    class Scene;
+}
 class ImGuiBackend;
 class ShaderLoader;
 
@@ -24,16 +27,6 @@ struct alignas(16) SceneInlineUniformBlock {
     glm::vec4 camera; // Padded to 16 bytes
 };
 
-struct alignas(16) InstanceBlock {
-    glm::mat4 transform;
-    glm::uint material;
-};
-
-struct alignas(16) MaterialBlock {
-    glm::vec4 albedoFactors;
-    glm::vec4 mrnFactors; // Padded to 16 bytes
-};
-
 struct PerFrameDescriptorLayout : DescriptorSetLayout {
     static constexpr InlineUniformBlockBinding SceneUniforms{0, vk::ShaderStageFlagBits::eAllGraphics, sizeof(SceneInlineUniformBlock)};
 
@@ -44,39 +37,6 @@ struct PerFrameDescriptorLayout : DescriptorSetLayout {
     }
 };
 
-struct SceneDataDescriptorLayout : DescriptorSetLayout {
-    static constexpr StorageBufferBinding InstanceBuffer{0, vk::ShaderStageFlagBits::eAllGraphics};
-    static constexpr StorageBufferBinding MaterialBuffer{1, vk::ShaderStageFlagBits::eAllGraphics};
-
-    SceneDataDescriptorLayout() = default;
-
-    explicit SceneDataDescriptorLayout(const vk::Device& device) {
-        create(device, {}, InstanceBuffer, MaterialBuffer);
-    }
-};
-
-struct SceneRenderData {
-    vma::UniqueBuffer positions;
-    vma::UniqueAllocation positionsAlloc;
-    vma::UniqueBuffer normals;
-    vma::UniqueAllocation normalsAlloc;
-    vma::UniqueBuffer tangents;
-    vma::UniqueAllocation tangentsAlloc;
-    vma::UniqueBuffer texcoords;
-    vma::UniqueAllocation texcoordsAlloc;
-    vma::UniqueBuffer indices;
-    vma::UniqueAllocation indicesAlloc;
-
-    vma::UniqueBuffer instances;
-    vma::UniqueAllocation instancesAlloc;
-
-    vma::UniqueBuffer materials;
-    vma::UniqueAllocation materialsAlloc;
-
-    vma::UniqueBuffer drawCommands;
-    vma::UniqueAllocation drawCommandsAlloc;
-};
-
 // Temporary until we make the app more sophisticated
 struct AppData {
     std::vector<PerFrameResources> perFrameResources;
@@ -84,11 +44,14 @@ struct AppData {
     vk::UniqueCommandPool transientTransferCommandPool;
     ConfiguredPipeline pipeline;
     PerFrameDescriptorLayout perFrameDescriptorLayout;
-    SceneDataDescriptorLayout sceneDataDescriptorLayout;
     DescriptorAllocator descriptorAllocator;
     std::unique_ptr<ImGuiBackend> imguiBackend;
-    SceneRenderData sceneRenderData;
     DescriptorSet sceneDataDescriptorSet;
+    std::unique_ptr<scene::Scene> scene;
+
+    AppData() noexcept;
+
+    ~AppData();
 };
 
 class Application {
@@ -100,7 +63,6 @@ class Application {
     void createImGuiBackend();
 
     void createPipeline(const ShaderLoader &loader);
-    SceneRenderData uploadSceneData(const SceneData &scene_data);
     void recordCommands(const vk::CommandBuffer& cmd_buf , const PerFrameResources& per_frame);
 
     void drawGui();

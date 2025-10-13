@@ -7,6 +7,7 @@
 #include "../backend/Image.h"
 #include "../backend/ShaderCompiler.h"
 #include "../backend/Swapchain.h"
+#include "../entity/Camera.h"
 #include "../scene/Scene.h"
 
 PbrSceneRenderer::~PbrSceneRenderer() = default;
@@ -18,14 +19,11 @@ PbrSceneRenderer::PbrSceneRenderer(
     createPipeline(device, shader_loader, swapchain);
 }
 
-void PbrSceneRenderer::prepare(const vk::Device &device, const Framebuffer &fb, const scene::GpuData &gpu_data) const {
-    // This is just temporarily here
-    glm::vec3 camera_position = glm::vec3{std::sin(glfwGetTime()), 1, std::cos(glfwGetTime())} * 5.0f;
-    float aspect_ratio = static_cast<float>(fb.area.extent.width) / fb.area.extent.height;
+void PbrSceneRenderer::prepare(const vk::Device &device, const Framebuffer &fb, const scene::GpuData &gpu_data, const Camera& camera) const {
     ShaderParamsInlineUniformBlock uniform_block = {
-        .view = glm::lookAt(camera_position, {0, 0, 0}, {0, 1, 0}),
-        .projection = glm::perspective(glm::radians(90.0f), aspect_ratio, 0.1f, 100.0f),
-        .camera = {camera_position, 0},
+        .view = camera.viewMatrix(),
+        .projection = camera.projectionMatrix(),
+        .camera = {camera.position, 0},
     };
     device.updateDescriptorSets(
             {mShaderParamsDescriptors.get().write(

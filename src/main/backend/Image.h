@@ -100,7 +100,7 @@ struct FramebufferRenderingConfig {
     vk::AttachmentStoreOp stencilStoreOp = vk::AttachmentStoreOp::eStore;
 
     util::static_vector<vk::ClearColorValue, 32> clearColors = {};
-    float clearDepth = 1.0f;
+    float clearDepth = 0.0f;
     uint32_t clearStencil = 0;
 
     consteval static util::static_vector<bool, 32> all(const bool enabled) {

@@ -60,26 +60,26 @@ namespace util {
         /// Peeks at the object for the next frame without advancing the index.
         /// </summary>
         /// <returns>A const reference to the next object in the pool.</returns>
-        [[nodiscard]] const T &peek() const { return mPool.at((mIndex + 1) % mFrames); }
+        [[nodiscard]] T &peek() const { return mPool.at((mIndex + 1) % mFrames); }
 
         /// <summary>
         /// Gets the object for the current frame.
         /// </summary>
         /// <returns>A const reference to the current object.</returns>
-        [[nodiscard]] const T &get() const { return mPool.at(mIndex); }
+        [[nodiscard]] T &get() const { return mPool.at(mIndex); }
 
         /// <summary>
         /// Gets the object at a specific index in the pool.
         /// </summary>
         /// <param name="index">The index of the object to retrieve.</param>
         /// <returns>A const reference to the object at the specified index.</returns>
-        [[nodiscard]] const T &get(size_t index) const { return mPool.at(index); }
+        [[nodiscard]] T &get(size_t index) const { return mPool.at(index); }
 
     private:
         /// <summary>
         /// The pool of objects.
         /// </summary>
-        std::vector<T> mPool;
+        mutable std::vector<T> mPool;
         /// <summary>
         /// The index of the current frame.
         /// </summary>

@@ -17,7 +17,7 @@ namespace gltf {
         /// <summary>
         /// The bounding box for this mesh.
         /// </summary>
-        BoundingBox bounds;
+        util::BoundingBox bounds;
     };
 
     struct Node {
@@ -137,7 +137,7 @@ namespace gltf {
         /// <summary>
         /// A list of bounding boxes for the sections in the scene. They are in local space.
         /// </summary>
-        std::vector<BoundingBox> bounds;
+        std::vector<util::BoundingBox> bounds;
         /// <summary>
         /// A list of all mesh sections in the scene.
         /// </summary>

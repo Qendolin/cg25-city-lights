@@ -6,7 +6,6 @@
 
 // https://fastgltf.readthedocs.io/v0.9.x/overview.html
 
-struct BoundingBox;
 namespace fastgltf {
     class Parser;
     struct Node;

@@ -89,7 +89,7 @@ namespace gltf {
                 }
                 scene_data.index_count += index_accessor.count;
 
-                BoundingBox &bounds = scene_data.bounds.emplace_back() = {};
+                util::BoundingBox &bounds = scene_data.bounds.emplace_back() = {};
                 for (const glm::vec3 &p: fastgltf::iterateAccessor<glm::vec3>(asset, position_accessor)) {
                     bounds.extend(p);
                 }
@@ -158,7 +158,7 @@ namespace gltf {
     }
 
     Loader::Loader() { mParser = std::make_unique<fastgltf::Parser>(); }
-    Loader::~Loader() {}
+    Loader::~Loader() = default;
 
     Scene Loader::load(const std::filesystem::path &path) const {
         auto data = fastgltf::GltfDataBuffer::FromPath(path);

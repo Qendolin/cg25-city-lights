@@ -311,7 +311,7 @@ public:
         /// <summary>Whether depth writes are enabled.</summary>
         bool writeEnabled = true;
         /// <summary>The depth comparison operator.</summary>
-        vk::CompareOp compareOp = vk::CompareOp::eLess;
+        vk::CompareOp compareOp = vk::CompareOp::eGreater;
         /// <summary>Whether depth bounds testing is enabled.</summary>
         bool boundsTest = false;
         /// <summary>The depth bounds for the depth bounds test.</summary>
@@ -361,7 +361,7 @@ public:
         /// <summary>The face culling mode.</summary>
         vk::CullModeFlagBits mode = vk::CullModeFlagBits::eBack;
         /// <summary>The front-face orientation.</summary>
-        vk::FrontFace front = vk::FrontFace::eClockwise;
+        vk::FrontFace front = vk::FrontFace::eCounterClockwise;
     } cull;
 
     /// <summary>Describes the line rasterization state.</summary>

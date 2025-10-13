@@ -58,7 +58,7 @@ namespace scene {
 
         result.instances.reserve(scene_data.nodes.size());
         for (const auto &node: scene_data.nodes) {
-            BoundingBox bounds = {};
+            util::BoundingBox bounds = {};
             if (node.mesh != UINT32_MAX) {
                 bounds = scene_data.meshes[node.mesh].bounds;
             }

@@ -69,6 +69,12 @@ public:
     [[nodiscard]] int maxImageCount() const { return mMaxImageCount; }
 
     /// <summary>
+    /// Gets the index of the currently active image in the swapchain.
+    /// </summary>
+    /// <returns>The active image index.</returns>
+    [[nodiscard]] int activeImageIndex() const { return mActiveImageIndex; }
+
+    /// <summary>
     /// Gets the presentation mode of the swapchain.
     /// </summary>
     /// <returns>The present mode.</returns>

@@ -7,12 +7,14 @@
 #include "../util/PerFrame.h"
 
 
+class Camera;
 namespace scene {
     struct GpuData;
 }
 class Framebuffer;
 class ShaderLoader;
 class Swapchain;
+
 class PbrSceneRenderer {
 public:
 
@@ -40,7 +42,7 @@ public:
             const Swapchain &swapchain
     );
 
-    void prepare(const vk::Device &device, const Framebuffer &fb, const scene::GpuData &gpu_data) const;
+    void prepare(const vk::Device &device, const Framebuffer &fb, const scene::GpuData &gpu_data, const Camera& camera) const;
 
     void render(const vk::CommandBuffer &cmd_buf, const Framebuffer &fb, const scene::GpuData &gpu_data);
 

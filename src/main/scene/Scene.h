@@ -64,7 +64,7 @@ namespace scene {
         /// <summary>
         /// The bounds of this instances mesh in local space.
         /// </summary>
-        BoundingBox bounds;
+        util::BoundingBox bounds;
     };
 
     // Not much right now, but can be expanded as needed

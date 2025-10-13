@@ -1,11 +1,16 @@
 #include "Application.h"
 
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/fast_trigonometry.hpp>
 
 #include "backend/Image.h"
 #include "backend/ShaderCompiler.h"
 #include "backend/Swapchain.h"
 #include "backend/VulkanContext.h"
+#include "entity/Camera.h"
+#include "glfw/Input.h"
 #include "imgui/ImGui.h"
 #include "renderer/PbrSceneRenderer.h"
 #include "scene/Gltf.h"
@@ -55,7 +60,7 @@ void Application::createPerFrameResources() {
 void Application::recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &fb) const {
     const auto &swapchain = context->swapchain();
 
-    pbrSceneRenderer->prepare(context->device(), fb, scene->gpu());
+    pbrSceneRenderer->prepare(context->device(), fb, scene->gpu(), *camera);
 
     cmd_buf.begin(vk::CommandBufferBeginInfo{});
 
@@ -76,14 +81,57 @@ void Application::recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &
     cmd_buf.end();
 }
 
+void Application::processInput() {
+    if (input->isKeyPress(GLFW_KEY_F5)) {
+        Logger::info("Reloading shaders");
+        try {
+            // TODO: Load shaders
+        } catch (const std::exception &exc) {
+            Logger::error("Reload failed: " + std::string(exc.what()));
+        }
+    }
+
+    if (input->isMouseReleased() && input->isMousePress(GLFW_MOUSE_BUTTON_LEFT)) {
+        if (!ImGui::GetIO().WantCaptureMouse)
+            input->captureMouse();
+    } else if (input->isMouseCaptured() && input->isKeyPress(GLFW_KEY_LEFT_ALT)) {
+        input->releaseMouse();
+    }
+
+    if (input->isMouseCaptured()) {
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
+    } else {
+        ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+    }
+
+    if (input->isMouseCaptured()) {
+        // yaw
+        camera->angles.y -= input->mouseDelta().x * glm::radians(0.15f);
+        camera->angles.y = glm::wrapAngle(camera->angles.y);
+
+        // pitch
+        camera->angles.x -= input->mouseDelta().y * glm::radians(0.15f);
+        camera->angles.x = glm::clamp(camera->angles.x, -glm::half_pi<float>(), glm::half_pi<float>());
+
+        glm::vec3 move_input = {
+            input->isKeyDown(GLFW_KEY_D) - input->isKeyDown(GLFW_KEY_A),
+            input->isKeyDown(GLFW_KEY_SPACE) - input->isKeyDown(GLFW_KEY_LEFT_CONTROL),
+            input->isKeyDown(GLFW_KEY_S) - input->isKeyDown(GLFW_KEY_W)
+        };
+        glm::vec3 velocity = move_input * 5.0f;
+        velocity = glm::mat3(glm::rotate(glm::mat4(1.0), camera->angles.y, {0, 1, 0})) * velocity;
+        camera->position += velocity * input->timeDelta();
+    }
+    camera->updateViewMatrix();
+}
+
 void Application::drawGui() { ImGui::ShowDemoWindow(); }
 
 void Application::drawFrame() {
-    SyncObjects &sync_objects = syncObjects.next();
-    vk::CommandBuffer &cmd_buf = commandBuffers.next();
-    Framebuffer &fb = swapchainFramebuffers.next();
     const auto &device = context->device();
     auto &swapchain = context->swapchain();
+    SyncObjects &sync_objects = syncObjects.next();
+    vk::CommandBuffer &cmd_buf = commandBuffers.next();
 
     while (device.waitForFences(*sync_objects.inFlightFence, true, UINT64_MAX) == vk::Result::eTimeout) {
     }
@@ -92,6 +140,10 @@ void Application::drawFrame() {
         // Swapchain was re-created, skip this frame
         return;
     }
+    // Framebuffer needs to be synced to swapchain, so get it explicitly
+    Framebuffer &fb = swapchainFramebuffers.get(swapchain.activeImageIndex());
+
+    camera->setViewport(swapchain.width(), swapchain.height());
 
     imguiBackend->beginFrame();
     drawGui();
@@ -122,6 +174,8 @@ void Application::init() {
     })));
     Logger::info("Using present mode: " + vk::to_string(context->swapchain().presentMode()));
 
+    input = std::make_unique<glfw::Input>(context->window());
+
     imguiBackend = std::make_unique<ImGuiBackend>(
             context->instance(), context->device(), context->physicalDevice(), context->window(), context->swapchain(),
             context->mainQueue, context->swapchain().depthFormat()
@@ -143,6 +197,8 @@ void Application::init() {
     };
     scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/ComplexTest.glb")));
 
+    camera = std::make_unique<Camera>(glm::radians(90.0f), 0.001f, glm::vec3{0, 1, 5}, glm::vec3{});
+
     ShaderLoader shader_loader = {};
     shader_loader.optimize = true;
     shader_loader.debug = true;
@@ -155,7 +211,8 @@ void Application::init() {
 
 void Application::run() {
     while (!context->window().shouldClose()) {
-        glfwPollEvents();
+        input->update();
+        processInput();
         drawFrame();
     }
     context->device().waitIdle();

@@ -20,43 +20,6 @@
 Application::Application() = default;
 Application::~Application() = default;
 
-void Application::createPerFrameResources() {
-    const auto &swapchain = context->swapchain();
-    const auto &device = context->device();
-    const auto &cmd_pool = *commandPool;
-
-    syncObjects.create(swapchain.imageCount(), [&] {
-        return SyncObjects{
-            .availableSemaphore = device.createSemaphoreUnique({}),
-            .finishedSemaphore = device.createSemaphoreUnique({}),
-            .inFlightFence = device.createFenceUnique({.flags = vk::FenceCreateFlagBits::eSignaled}),
-        };
-    });
-    commandBuffers.create(swapchain.imageCount(), [&] {
-        return device
-                .allocateCommandBuffers(
-                        {.commandPool = cmd_pool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1}
-                )
-                .at(0);
-    });
-    swapchainFramebuffers.create(swapchain.imageCount(), [&](int i) {
-        auto fb = Framebuffer(swapchain.area());
-        fb.colorAttachments = {{
-            .image = swapchain.colorImage(i),
-            .view = swapchain.colorViewSrgb(i),
-            .format = swapchain.colorFormatSrgb(),
-            .range = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }};
-        fb.depthAttachment = {
-            .image = context->swapchain().depthImage(),
-            .view = context->swapchain().depthView(),
-            .format = context->swapchain().depthFormat(),
-            .range = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-        };
-        return fb;
-    });
-}
-
 void Application::recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &fb) const {
     const auto &swapchain = context->swapchain();
 
@@ -84,8 +47,9 @@ void Application::recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &
 void Application::processInput() {
     if (input->isKeyPress(GLFW_KEY_F5)) {
         Logger::info("Reloading shaders");
+        context->device().waitIdle();
         try {
-            // TODO: Load shaders
+            recreate();
         } catch (const std::exception &exc) {
             Logger::error("Reload failed: " + std::string(exc.what()));
         }
@@ -94,7 +58,7 @@ void Application::processInput() {
     if (input->isMouseReleased() && input->isMousePress(GLFW_MOUSE_BUTTON_LEFT)) {
         if (!ImGui::GetIO().WantCaptureMouse)
             input->captureMouse();
-    } else if (input->isMouseCaptured() && input->isKeyPress(GLFW_KEY_LEFT_ALT)) {
+    } else if (input->isMouseCaptured() && (input->isKeyPress(GLFW_KEY_ESCAPE) || input->isKeyPress(GLFW_KEY_LEFT_ALT))) {
         input->releaseMouse();
     }
 
@@ -137,6 +101,7 @@ void Application::drawFrame() {
     }
 
     if (!swapchain.advance(*sync_objects.availableSemaphore)) {
+        recreate();
         // Swapchain was re-created, skip this frame
         return;
     }
@@ -163,6 +128,47 @@ void Application::drawFrame() {
     context->mainQueue->submit({submit_info}, *sync_objects.inFlightFence);
 
     swapchain.present(context->presentQueue, vk::PresentInfoKHR().setWaitSemaphores(*sync_objects.finishedSemaphore));
+}
+
+void Application::recreate() {
+    const auto &swapchain = context->swapchain();
+    const auto &device = context->device();
+    const auto &cmd_pool = *commandPool;
+
+    // I don't really like that recrate has to be called explicitly.
+    // I'd prefer an implicit solution, but I couldn't think of a good one right now.
+    pbrSceneRenderer->recreate(context->device(), *shaderLoader, swapchain);
+
+    syncObjects.create(swapchain.imageCount(), [&] {
+        return SyncObjects{
+            .availableSemaphore = device.createSemaphoreUnique({}),
+            .finishedSemaphore = device.createSemaphoreUnique({}),
+            .inFlightFence = device.createFenceUnique({.flags = vk::FenceCreateFlagBits::eSignaled}),
+        };
+    });
+    commandBuffers.create(swapchain.imageCount(), [&] {
+        return device
+                .allocateCommandBuffers(
+                        {.commandPool = cmd_pool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1}
+                )
+                .at(0);
+    });
+    swapchainFramebuffers.create(swapchain.imageCount(), [&](int i) {
+        auto fb = Framebuffer(swapchain.area());
+        fb.colorAttachments = {{
+            .image = swapchain.colorImage(i),
+            .view = swapchain.colorViewSrgb(i),
+            .format = swapchain.colorFormatSrgb(),
+            .range = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+        }};
+        fb.depthAttachment = {
+            .image = context->swapchain().depthImage(),
+            .view = context->swapchain().depthView(),
+            .format = context->swapchain().depthFormat(),
+            .range = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
+        };
+        return fb;
+    });
 }
 
 void Application::init() {
@@ -199,14 +205,12 @@ void Application::init() {
 
     camera = std::make_unique<Camera>(glm::radians(90.0f), 0.001f, glm::vec3{0, 1, 5}, glm::vec3{});
 
-    ShaderLoader shader_loader = {};
-    shader_loader.optimize = true;
-    shader_loader.debug = true;
-    pbrSceneRenderer = std::make_unique<PbrSceneRenderer>(
-            context->device(), *descriptorAllocator, shader_loader, context->swapchain()
-    );
+    shaderLoader = std::make_unique<ShaderLoader>();
+    shaderLoader->optimize = true;
+    shaderLoader->debug = true;
+    pbrSceneRenderer = std::make_unique<PbrSceneRenderer>(context->device(), *descriptorAllocator, context->swapchain());
 
-    createPerFrameResources();
+    recreate();
 }
 
 void Application::run() {

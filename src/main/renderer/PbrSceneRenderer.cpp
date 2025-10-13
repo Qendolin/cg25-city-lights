@@ -1,8 +1,6 @@
 #include "PbrSceneRenderer.h"
 
-#include <GLFW/glfw3.h>
 #include <glm/ext/matrix_clip_space.hpp>
-#include <glm/ext/matrix_transform.hpp>
 
 #include "../backend/Image.h"
 #include "../backend/ShaderCompiler.h"
@@ -13,10 +11,9 @@
 PbrSceneRenderer::~PbrSceneRenderer() = default;
 
 PbrSceneRenderer::PbrSceneRenderer(
-        const vk::Device &device, const DescriptorAllocator &allocator, const ShaderLoader &shader_loader, const Swapchain &swapchain
+        const vk::Device &device, const DescriptorAllocator &allocator, const Swapchain &swapchain
 ) {
     createDescriptors(device, allocator, swapchain);
-    createPipeline(device, shader_loader, swapchain);
 }
 
 void PbrSceneRenderer::prepare(const vk::Device &device, const Framebuffer &fb, const scene::GpuData &gpu_data, const Camera& camera) const {
@@ -46,7 +43,6 @@ void PbrSceneRenderer::render(const vk::CommandBuffer &cmd_buf, const Framebuffe
         .colorStoreOps = {vk::AttachmentStoreOp::eStore},
         .depthLoadOp = vk::AttachmentLoadOp::eClear,
     }));
-
 
     mPipeline.config.viewports = {{fb.viewport()}};
     mPipeline.config.scissors = {{fb.area}};

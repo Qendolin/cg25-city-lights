@@ -38,9 +38,12 @@ public:
     PbrSceneRenderer(
             const vk::Device &device,
             const DescriptorAllocator &allocator,
-            const ShaderLoader &shader_loader,
             const Swapchain &swapchain
     );
+
+    void recreate(const vk::Device &device, const ShaderLoader &shader_loader, const Swapchain &swapchain) {
+        createPipeline(device, shader_loader, swapchain);
+    }
 
     void prepare(const vk::Device &device, const Framebuffer &fb, const scene::GpuData &gpu_data, const Camera& camera) const;
 

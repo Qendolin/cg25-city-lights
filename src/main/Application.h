@@ -34,6 +34,7 @@ class Application {
     util::PerFrame<vk::CommandBuffer> commandBuffers;
     util::PerFrame<Framebuffer> swapchainFramebuffers;
     std::unique_ptr<DescriptorAllocator> descriptorAllocator;
+    std::unique_ptr<ShaderLoader> shaderLoader;
 
     std::unique_ptr<ImGuiBackend> imguiBackend;
     std::unique_ptr<PbrSceneRenderer> pbrSceneRenderer;
@@ -42,7 +43,8 @@ class Application {
     std::unique_ptr<Camera> camera;
     std::unique_ptr<scene::Scene> scene;
 
-    void createPerFrameResources();
+    // Called after the swapchain was invalidated, or when shaders are reloaded, and when the application is initialized
+    void recreate();
 
     void recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &fb) const;
 

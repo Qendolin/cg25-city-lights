@@ -12,20 +12,7 @@ namespace gltf {
     class Loader;
 }
 
-
 namespace scene {
-    struct SceneDescriptorLayout : DescriptorSetLayout {
-        static constexpr StorageBufferBinding SectionBuffer{0, vk::ShaderStageFlagBits::eAllGraphics};
-        static constexpr StorageBufferBinding InstanceBuffer{1, vk::ShaderStageFlagBits::eAllGraphics};
-        static constexpr StorageBufferBinding MaterialBuffer{2, vk::ShaderStageFlagBits::eAllGraphics};
-
-        SceneDescriptorLayout() = default;
-
-        explicit SceneDescriptorLayout(const vk::Device& device) {
-            create(device, {}, SectionBuffer, InstanceBuffer, MaterialBuffer);
-        }
-    };
-
     struct GpuData {
         GpuData() = default;
         ~GpuData() = default;

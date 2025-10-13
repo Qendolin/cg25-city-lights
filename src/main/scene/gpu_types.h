@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/mat4x4.hpp>
+#include "../backend/Descriptors.h"
 
 // Storage buffers use std430 layout alignment rules:
 // scalar = 4
@@ -25,3 +26,16 @@ struct alignas(16) MaterialBlock {
     glm::vec4 mrnFactors; // Padded to 16 bytes
 };
 
+namespace scene {
+    struct SceneDescriptorLayout : DescriptorSetLayout {
+        static constexpr StorageBufferBinding SectionBuffer{0, vk::ShaderStageFlagBits::eAllGraphics};
+        static constexpr StorageBufferBinding InstanceBuffer{1, vk::ShaderStageFlagBits::eAllGraphics};
+        static constexpr StorageBufferBinding MaterialBuffer{2, vk::ShaderStageFlagBits::eAllGraphics};
+
+        SceneDescriptorLayout() = default;
+
+        explicit SceneDescriptorLayout(const vk::Device& device) {
+            create(device, {}, SectionBuffer, InstanceBuffer, MaterialBuffer);
+        }
+    };
+}

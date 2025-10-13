@@ -4,7 +4,10 @@
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
 
+#include "../backend/Image.h"
+#include "../backend/ShaderCompiler.h"
 #include "../backend/Swapchain.h"
+#include "../scene/Scene.h"
 
 PbrSceneRenderer::~PbrSceneRenderer() = default;
 
@@ -53,7 +56,8 @@ void PbrSceneRenderer::render(const vk::CommandBuffer &cmd_buf, const Framebuffe
 
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics, *mPipeline.pipeline);
     cmd_buf.bindDescriptorSets(
-            vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0, {mSceneDescriptors.next(), mShaderParamsDescriptors.next()}, {}
+            vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0,
+            {mSceneDescriptors.next(), mShaderParamsDescriptors.next()}, {}
     );
     cmd_buf.bindIndexBuffer(*gpu_data.indices, 0, vk::IndexType::eUint32);
     cmd_buf.bindVertexBuffers(
@@ -67,13 +71,15 @@ void PbrSceneRenderer::render(const vk::CommandBuffer &cmd_buf, const Framebuffe
 
 void PbrSceneRenderer::createDescriptors(const vk::Device &device, const DescriptorAllocator &allocator, const Swapchain &swapchain) {
     mShaderParamsDescriptorLayout = ShaderParamsDescriptorLayout(device);
-    mShaderParamsDescriptors.create(swapchain.imageCount(), [&]() { return allocator.allocate(mShaderParamsDescriptorLayout); });
+    mShaderParamsDescriptors.create(swapchain.imageCount(), [&]() {
+        return allocator.allocate(mShaderParamsDescriptorLayout);
+    });
 
     mSceneDescriptorLayout = scene::SceneDescriptorLayout(device);
     mSceneDescriptors.create(swapchain.imageCount(), [&]() { return allocator.allocate(mSceneDescriptorLayout); });
 }
 
-void PbrSceneRenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Swapchain& swapchain) {
+void PbrSceneRenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Swapchain &swapchain) {
     auto vert_sh = shader_loader.loadFromSource(device, "resources/shaders/pbr.vert");
     auto frag_sh = shader_loader.loadFromSource(device, "resources/shaders/pbr.frag");
 

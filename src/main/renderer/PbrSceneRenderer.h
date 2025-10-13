@@ -2,13 +2,16 @@
 #include <glm/glm.hpp>
 
 #include "../backend/Descriptors.h"
-#include "../backend/Image.h"
 #include "../backend/Pipeline.h"
-#include "../backend/ShaderCompiler.h"
-#include "../scene/Scene.h"
+#include "../scene/gpu_types.h"
 #include "../util/PerFrame.h"
 
 
+namespace scene {
+    struct GpuData;
+}
+class Framebuffer;
+class ShaderLoader;
 class Swapchain;
 class PbrSceneRenderer {
 public:

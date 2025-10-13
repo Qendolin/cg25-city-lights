@@ -5,6 +5,7 @@
 #include "util/PerFrame.h"
 
 
+struct FrameTimes;
 namespace glfw {
     class Input;
 }
@@ -43,13 +44,15 @@ class Application {
     std::unique_ptr<Camera> camera;
     std::unique_ptr<scene::Scene> scene;
 
+    std::unique_ptr<FrameTimes> debugFrameTimes;
+
     // Called after the swapchain was invalidated, or when shaders are reloaded, and when the application is initialized
     void recreate();
 
     void recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &fb) const;
 
     void processInput();
-    void drawGui();
+    void drawGui() const;
     void drawFrame();
 
 public:

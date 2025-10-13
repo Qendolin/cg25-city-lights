@@ -9,6 +9,7 @@
 #include "backend/ShaderCompiler.h"
 #include "backend/Swapchain.h"
 #include "backend/VulkanContext.h"
+#include "debug/Performance.h"
 #include "entity/Camera.h"
 #include "glfw/Input.h"
 #include "imgui/ImGui.h"
@@ -89,7 +90,10 @@ void Application::processInput() {
     camera->updateViewMatrix();
 }
 
-void Application::drawGui() { ImGui::ShowDemoWindow(); }
+void Application::drawGui() const {
+    debugFrameTimes->update(input->timeDelta());
+    debugFrameTimes->draw();
+}
 
 void Application::drawFrame() {
     const auto &device = context->device();
@@ -107,8 +111,11 @@ void Application::drawFrame() {
     }
     // Framebuffer needs to be synced to swapchain, so get it explicitly
     Framebuffer &fb = swapchainFramebuffers.get(swapchain.activeImageIndex());
-
     camera->setViewport(swapchain.width(), swapchain.height());
+
+    // Update input after waiting for fences
+    input->update();
+    processInput();
 
     imguiBackend->beginFrame();
     drawGui();
@@ -173,9 +180,9 @@ void Application::recreate() {
 
 void Application::init() {
     context = std::make_unique<VulkanContext>(std::move(VulkanContext::create(glfw::WindowCreateInfo{
-        .width = 1024,
-        .height = 1024,
-        .title = "Vulkan Triangle",
+        .width = 1600,
+        .height = 900,
+        .title = "City Lights",
         .resizable = true,
     })));
     Logger::info("Using present mode: " + vk::to_string(context->swapchain().presentMode()));
@@ -204,19 +211,17 @@ void Application::init() {
     scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/ComplexTest.glb")));
 
     camera = std::make_unique<Camera>(glm::radians(90.0f), 0.001f, glm::vec3{0, 1, 5}, glm::vec3{});
+    debugFrameTimes = std::make_unique<FrameTimes>();
 
     shaderLoader = std::make_unique<ShaderLoader>();
     shaderLoader->optimize = true;
     shaderLoader->debug = true;
     pbrSceneRenderer = std::make_unique<PbrSceneRenderer>(context->device(), *descriptorAllocator, context->swapchain());
-
     recreate();
 }
 
 void Application::run() {
     while (!context->window().shouldClose()) {
-        input->update();
-        processInput();
         drawFrame();
     }
     context->device().waitIdle();

@@ -12,6 +12,9 @@
 #include "scene/Scene.h"
 #include "util/Logger.h"
 
+Application::Application() = default;
+Application::~Application() = default;
+
 void Application::createPerFrameResources() {
     const auto &swapchain = context->swapchain();
     const auto &device = context->device();

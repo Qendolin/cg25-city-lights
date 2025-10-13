@@ -44,6 +44,10 @@ class Application {
     void drawFrame();
 
 public:
+
+    Application();
+    ~Application();
+
     void init();
     void run();
 };

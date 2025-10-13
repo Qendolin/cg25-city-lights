@@ -1,149 +1,71 @@
 #include "Application.h"
 
 #include <GLFW/glfw3.h>
-#include <glm/ext/matrix_clip_space.hpp>
-#include <glm/ext/matrix_transform.hpp>
-#include <glm/glm.hpp>
 
 #include "backend/Image.h"
 #include "backend/ShaderCompiler.h"
-#include "backend/StagingBuffer.h"
 #include "backend/Swapchain.h"
+#include "backend/VulkanContext.h"
+#include "imgui/ImGui.h"
+#include "renderer/PbrSceneRenderer.h"
 #include "scene/Gltf.h"
 #include "scene/Scene.h"
 #include "util/Logger.h"
 
-AppData::AppData() noexcept = default;
-AppData::~AppData() = default;
-
 void Application::createPerFrameResources() {
-    const auto &swapchain = mContext->swapchain();
-    const auto &device = mContext->device();
-    const auto &cmd_pool = *mData.commandPool;
-    auto &frame_resources = mData.perFrameResources;
+    const auto &swapchain = context->swapchain();
+    const auto &device = context->device();
+    const auto &cmd_pool = *commandPool;
 
-    for (int i = 0; i < swapchain.imageCount(); i++) {
-        auto &frame = frame_resources[i];
-        frame = {
+    syncObjects.create(swapchain.imageCount(), [&] {
+        return SyncObjects{
             .availableSemaphore = device.createSemaphoreUnique({}),
             .finishedSemaphore = device.createSemaphoreUnique({}),
             .inFlightFence = device.createFenceUnique({.flags = vk::FenceCreateFlagBits::eSignaled}),
-            .descriptorSet = mData.descriptorAllocator.allocate(mData.perFrameDescriptorLayout)
         };
-        frame.commandBuffer = device.allocateCommandBuffers({.commandPool = cmd_pool,
-                                                             .level = vk::CommandBufferLevel::ePrimary,
-                                                             .commandBufferCount = 1})
-                                      .at(0);
-    }
+    });
+    commandBuffers.create(swapchain.imageCount(), [&] {
+        return device
+                .allocateCommandBuffers(
+                        {.commandPool = cmd_pool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1}
+                )
+                .at(0);
+    });
+    swapchainFramebuffers.create(swapchain.imageCount(), [&](int i) {
+        auto fb = Framebuffer(swapchain.area());
+        fb.colorAttachments = {{
+            .image = swapchain.colorImage(i),
+            .view = swapchain.colorViewSrgb(i),
+            .format = swapchain.colorFormatSrgb(),
+            .range = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
+        }};
+        fb.depthAttachment = {
+            .image = context->swapchain().depthImage(),
+            .view = context->swapchain().depthView(),
+            .format = context->swapchain().depthFormat(),
+            .range = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
+        };
+        return fb;
+    });
 }
 
-void Application::createImGuiBackend() {
-    mData.imguiBackend = std::make_unique<ImGuiBackend>(
-            mContext->instance(), mContext->device(), mContext->physicalDevice(), mContext->window(),
-            mContext->swapchain(), mContext->mainQueue, mContext->swapchain().depthFormat()
-    );
-}
+void Application::recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &fb) const {
+    const auto &swapchain = context->swapchain();
 
-void Application::createPipeline(const ShaderLoader &loader) {
-    const auto &device = mContext->device();
-    auto vert_sh = loader.loadFromSource(device, "resources/shaders/pbr.vert");
-    auto frag_sh = loader.loadFromSource(device, "resources/shaders/pbr.frag");
+    pbrSceneRenderer->prepare(context->device(), fb, scene->gpu());
 
-    mData.perFrameDescriptorLayout = PerFrameDescriptorLayout(device);
-
-    PipelineConfig pipeline_config = {
-        .vertexInput =
-                {
-                    .bindings =
-                            {
-                                {.binding = 0, .stride = sizeof(glm::vec3), .inputRate = vk::VertexInputRate::eVertex}, // position
-                                {.binding = 1, .stride = sizeof(glm::vec3), .inputRate = vk::VertexInputRate::eVertex}, // normal
-                                {.binding = 2, .stride = sizeof(glm::vec4), .inputRate = vk::VertexInputRate::eVertex}, // tangent
-                                {.binding = 3, .stride = sizeof(glm::vec2), .inputRate = vk::VertexInputRate::eVertex}, // texcoord
-                            },
-                    .attributes =
-                            {
-                                {.location = 0, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = 0}, // position
-                                {.location = 1, .binding = 1, .format = vk::Format::eR32G32B32Sfloat, .offset = 0}, // normal
-                                {.location = 2, .binding = 2, .format = vk::Format::eR32G32B32A32Sfloat, .offset = 0}, // tangent
-                                {.location = 3, .binding = 3, .format = vk::Format::eR32G32Sfloat, .offset = 0}, // texcoord
-                            },
-                },
-        .descriptorSetLayouts = {mData.scene->gpu().descriptorSetLayout, mData.perFrameDescriptorLayout},
-        .pushConstants = {},
-        .attachments =
-                {
-                    .colorFormats = {mContext->swapchain().colorFormatSrgb()},
-                    .depthFormat = mContext->swapchain().depthFormat(),
-                },
-    };
-
-    mData.pipeline = createGraphicsPipeline(mContext->device(), pipeline_config, {*vert_sh, *frag_sh});
-}
-
-
-void Application::recordCommands(const vk::CommandBuffer &cmd_buf, const PerFrameResources &per_frame) {
-    const auto &swapchain = mContext->swapchain();
     cmd_buf.begin(vk::CommandBufferBeginInfo{});
 
-    Framebuffer fb = {};
-    fb.colorAttachments = {{
-        .image = swapchain.colorImage(),
-        .view = swapchain.colorViewSrgb(),
-        .format = swapchain.colorFormatSrgb(),
-        .range = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-    }};
-    fb.depthAttachment = {
-        .image = mContext->swapchain().depthImage(),
-        .view = mContext->swapchain().depthView(),
-        .format = mContext->swapchain().depthFormat(),
-        .range = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-    };
-
     // Main render pass
-    {
-        cmd_buf.beginRendering(fb.renderingInfo(
-                swapchain.area(),
-                {
-                    .enabledColorAttachments = {true},
-                    .enableDepthAttachment = true,
-                    .enableStencilAttachment = false,
-                    .colorLoadOps = {vk::AttachmentLoadOp::eClear},
-                    .colorStoreOps = {vk::AttachmentStoreOp::eStore},
-                    .depthLoadOp = vk::AttachmentLoadOp::eClear,
-                }
-        ));
-
-        mData.pipeline.config.viewports = {
-            // Flip viewport y axis to be like opengl
-            {vk::Viewport{0.0f, swapchain.height(), swapchain.width(), -swapchain.height(), 0.0f, 1.0f}}
-        };
-        mData.pipeline.config.scissors = {{swapchain.area()}};
-        mData.pipeline.config.apply(cmd_buf);
-
-        cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics, *mData.pipeline.pipeline);
-        cmd_buf.bindDescriptorSets(
-                vk::PipelineBindPoint::eGraphics, *mData.pipeline.layout, 0, {mData.sceneDataDescriptorSet, per_frame.descriptorSet}, {}
-        );
-        cmd_buf.bindIndexBuffer(*mData.scene->gpu().indices, 0, vk::IndexType::eUint32);
-        cmd_buf.bindVertexBuffers(
-                0,
-                {*mData.scene->gpu().positions, *mData.scene->gpu().normals, *mData.scene->gpu().tangents,
-                 *mData.scene->gpu().texcoords},
-                {0, 0, 0, 0}
-        );
-
-        cmd_buf.drawIndexedIndirect(*mData.scene->gpu().drawCommands, 0, mData.scene->gpu().drawCommandCount, sizeof(vk::DrawIndexedIndirectCommand));
-
-        cmd_buf.endRendering();
-    }
-
+    pbrSceneRenderer->render(cmd_buf, fb, scene->gpu());
 
     // ImGui render pass
     {
-        fb.colorAttachments[0].view = swapchain.colorViewLinear();
-        cmd_buf.beginRendering(fb.renderingInfo(swapchain.area(), {}));
-        mData.imguiBackend->render(cmd_buf);
+        // temporarily change view to linear format to fix an ImGui issue.
+        Framebuffer imgui_fb = fb;
+        imgui_fb.colorAttachments[0].view = swapchain.colorViewLinear();
+        cmd_buf.beginRendering(imgui_fb.renderingInfo({}));
+        imguiBackend->render(cmd_buf);
         cmd_buf.endRendering();
     }
 
@@ -153,96 +75,85 @@ void Application::recordCommands(const vk::CommandBuffer &cmd_buf, const PerFram
 
 void Application::drawGui() { ImGui::ShowDemoWindow(); }
 
-void Application::drawFrame(uint32_t frame_index) {
-    PerFrameResources &per_frame = mData.perFrameResources.at(frame_index % mData.perFrameResources.size());
-    const auto &device = mContext->device();
-    auto &swapchain = mContext->swapchain();
+void Application::drawFrame() {
+    SyncObjects &sync_objects = syncObjects.next();
+    vk::CommandBuffer &cmd_buf = commandBuffers.next();
+    Framebuffer &fb = swapchainFramebuffers.next();
+    const auto &device = context->device();
+    auto &swapchain = context->swapchain();
 
-    while (device.waitForFences(*per_frame.inFlightFence, true, UINT64_MAX) == vk::Result::eTimeout) {
+    while (device.waitForFences(*sync_objects.inFlightFence, true, UINT64_MAX) == vk::Result::eTimeout) {
     }
 
-    if (!swapchain.advance(*per_frame.availableSemaphore)) {
+    if (!swapchain.advance(*sync_objects.availableSemaphore)) {
         // Swapchain was re-created, skip this frame
         return;
     }
 
-    mData.imguiBackend->beginFrame();
-
+    imguiBackend->beginFrame();
     drawGui();
 
-    glm::vec3 camera_position = glm::vec3{std::sin(glfwGetTime()), 1, std::cos(glfwGetTime())} * 5.0f;
-    SceneInlineUniformBlock uniform_block = {
-        .view = glm::lookAt(camera_position, {0, 0, 0}, {0, 1, 0}),
-        .projection = glm::perspective(glm::radians(90.0f), swapchain.width() / swapchain.height(), 0.1f, 100.0f),
-        .camera = {camera_position, 0},
-    };
-    device.updateDescriptorSets(
-            {per_frame.descriptorSet.write(
-                    PerFrameDescriptorLayout::SceneUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
-            )},
-            {}
-    );
-
-    per_frame.commandBuffer.reset();
-    recordCommands(per_frame.commandBuffer, per_frame);
+    cmd_buf.reset();
+    recordCommands(cmd_buf, fb);
 
     vk::PipelineStageFlags pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
     vk::SubmitInfo submit_info = vk::SubmitInfo()
-                                         .setCommandBuffers(per_frame.commandBuffer)
-                                         .setWaitSemaphores(*per_frame.availableSemaphore)
+                                         .setCommandBuffers(cmd_buf)
+                                         .setWaitSemaphores(*sync_objects.availableSemaphore)
                                          .setWaitDstStageMask(pipe_stage_flags)
-                                         .setSignalSemaphores(*per_frame.finishedSemaphore);
+                                         .setSignalSemaphores(*sync_objects.finishedSemaphore);
 
-    device.resetFences(*per_frame.inFlightFence);
+    device.resetFences(*sync_objects.inFlightFence);
 
-    mContext->mainQueue->submit({submit_info}, *per_frame.inFlightFence);
+    context->mainQueue->submit({submit_info}, *sync_objects.inFlightFence);
 
-    swapchain.present(mContext->presentQueue, vk::PresentInfoKHR().setWaitSemaphores(*per_frame.finishedSemaphore));
+    swapchain.present(context->presentQueue, vk::PresentInfoKHR().setWaitSemaphores(*sync_objects.finishedSemaphore));
 }
 
 void Application::init() {
-    mContext = std::make_unique<VulkanContext>(std::move(VulkanContext::create(glfw::WindowCreateInfo{
+    context = std::make_unique<VulkanContext>(std::move(VulkanContext::create(glfw::WindowCreateInfo{
         .width = 1024,
         .height = 1024,
         .title = "Vulkan Triangle",
         .resizable = true,
     })));
-    Logger::info("Using present mode: " + vk::to_string(mContext->swapchain().presentMode()));
+    Logger::info("Using present mode: " + vk::to_string(context->swapchain().presentMode()));
 
-    mData.commandPool = mContext->device().createCommandPoolUnique({
+    imguiBackend = std::make_unique<ImGuiBackend>(
+            context->instance(), context->device(), context->physicalDevice(), context->window(), context->swapchain(),
+            context->mainQueue, context->swapchain().depthFormat()
+    );
+
+    commandPool = context->device().createCommandPoolUnique({
         .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-        .queueFamilyIndex = mContext->mainQueue,
+        .queueFamilyIndex = context->mainQueue,
     });
-    mData.transientTransferCommandPool = mContext->device().createCommandPoolUnique({
+    transientTransferCommandPool = context->device().createCommandPoolUnique({
         .flags = vk::CommandPoolCreateFlagBits::eTransient,
-        .queueFamilyIndex = mContext->transferQueue,
+        .queueFamilyIndex = context->transferQueue,
     });
-    mData.descriptorAllocator = DescriptorAllocator(mContext->device());
+    descriptorAllocator = std::make_unique<DescriptorAllocator>(context->device());
 
     gltf::Loader gltf_loader = {};
-    scene::Loader scene_loader = {&gltf_loader, mContext->allocator(), mContext->device(), *mData.transientTransferCommandPool, mContext->transferQueue};
-    mData.scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/ComplexTest.glb")));
-
-    createImGuiBackend();
+    scene::Loader scene_loader = {
+        &gltf_loader, context->allocator(), context->device(), *transientTransferCommandPool, context->transferQueue
+    };
+    scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/ComplexTest.glb")));
 
     ShaderLoader shader_loader = {};
     shader_loader.optimize = true;
     shader_loader.debug = true;
-    createPipeline(shader_loader);
+    pbrSceneRenderer = std::make_unique<PbrSceneRenderer>(
+            context->device(), *descriptorAllocator, shader_loader, context->swapchain()
+    );
 
-    mData.sceneDataDescriptorSet = mData.descriptorAllocator.allocate(mData.scene->gpu().descriptorSetLayout);
-    mData.scene->writeDescriptorSet(mContext->device(), mData.sceneDataDescriptorSet);
-
-    mData.perFrameResources.resize(mContext->swapchain().imageCount());
     createPerFrameResources();
 }
 
 void Application::run() {
-    uint32_t frame_index = 0;
-    while (!mContext->window().shouldClose()) {
+    while (!context->window().shouldClose()) {
         glfwPollEvents();
-        drawFrame(frame_index);
-        frame_index++;
+        drawFrame();
     }
-    mContext->device().waitIdle();
+    context->device().waitIdle();
 }

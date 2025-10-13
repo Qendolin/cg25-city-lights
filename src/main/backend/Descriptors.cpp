@@ -44,7 +44,7 @@ DescriptorAllocator::DescriptorAllocator(const vk::Device &device): mDevice(devi
     });
 }
 
-DescriptorSet DescriptorAllocator::allocate(const DescriptorSetLayout &layout) {
+DescriptorSet DescriptorAllocator::allocate(const DescriptorSetLayout &layout) const {
     auto vk_layout = static_cast<vk::DescriptorSetLayout>(layout);
     vk::DescriptorSetAllocateInfo info = {
         .descriptorPool = *mPool,

@@ -6,31 +6,31 @@
 
 namespace scene {
 
-    Scene::Scene() = default;
-    Scene::Scene(CpuData &&cpu_data, GpuData &&gpu_data)
-        : mCpuData(std::move(cpu_data)), mGpuData(std::move(gpu_data)) {}
-
-    Scene::~Scene() = default;
-
-    void Scene::writeDescriptorSet(const vk::Device &device, const DescriptorSet &descriptor) {
+    void GpuData::writeDescriptorSet(const vk::Device &device, const DescriptorSet &descriptor) const {
         device.updateDescriptorSets(
                 {
                     descriptor.write(
-                            SceneDescriptorSetLayout::SectionBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *mGpuData.sections, .offset = 0, .range = vk::WholeSize}
+                            SceneDescriptorLayout::SectionBuffer,
+                            vk::DescriptorBufferInfo{.buffer = *sections, .offset = 0, .range = vk::WholeSize}
                     ),
                     descriptor.write(
-                            SceneDescriptorSetLayout::InstanceBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *mGpuData.instances, .offset = 0, .range = vk::WholeSize}
+                            SceneDescriptorLayout::InstanceBuffer,
+                            vk::DescriptorBufferInfo{.buffer = *instances, .offset = 0, .range = vk::WholeSize}
                     ),
                     descriptor.write(
-                            SceneDescriptorSetLayout::MaterialBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *mGpuData.materials, .offset = 0, .range = vk::WholeSize}
+                            SceneDescriptorLayout::MaterialBuffer,
+                            vk::DescriptorBufferInfo{.buffer = *materials, .offset = 0, .range = vk::WholeSize}
                     ),
                 },
                 {}
         );
     }
+
+    Scene::Scene() = default;
+    Scene::Scene(CpuData &&cpu_data, GpuData &&gpu_data)
+        : mCpuData(std::move(cpu_data)), mGpuData(std::move(gpu_data)) {}
+
+    Scene::~Scene() = default;
 
     Loader::Loader(
             const gltf::Loader *loader,
@@ -134,7 +134,6 @@ namespace scene {
 
         staging.submit(mTransferQueue);
 
-        result.descriptorSetLayout = SceneDescriptorSetLayout(mDevice);
         return result;
     }
 

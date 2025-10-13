@@ -1,72 +1,47 @@
 #pragma once
 
-#include <glm/mat4x4.hpp>
+#include <vulkan/vulkan.hpp>
 
-#include "backend/Descriptors.h"
-#include "backend/Pipeline.h"
-#include "backend/VulkanContext.h"
-#include "imgui/ImGui.h"
+#include "util/PerFrame.h"
 
+
+class VulkanContext;
+class DescriptorAllocator;
+class Framebuffer;
+class PbrSceneRenderer;
 namespace scene {
     class Scene;
 }
 class ImGuiBackend;
 class ShaderLoader;
 
-struct PerFrameResources {
-    vk::CommandBuffer commandBuffer;
+struct SyncObjects {
     vk::UniqueSemaphore availableSemaphore;
     vk::UniqueSemaphore finishedSemaphore;
     vk::UniqueFence inFlightFence;
-    DescriptorSet descriptorSet;
-};
-
-struct alignas(16) SceneInlineUniformBlock {
-    glm::mat4 view;
-    glm::mat4 projection;
-    glm::vec4 camera; // Padded to 16 bytes
-};
-
-struct PerFrameDescriptorLayout : DescriptorSetLayout {
-    static constexpr InlineUniformBlockBinding SceneUniforms{0, vk::ShaderStageFlagBits::eAllGraphics, sizeof(SceneInlineUniformBlock)};
-
-    PerFrameDescriptorLayout() = default;
-
-    explicit PerFrameDescriptorLayout(const vk::Device& device) {
-        create(device, {}, SceneUniforms);
-    }
-};
-
-// Temporary until we make the app more sophisticated
-struct AppData {
-    std::vector<PerFrameResources> perFrameResources;
-    vk::UniqueCommandPool commandPool;
-    vk::UniqueCommandPool transientTransferCommandPool;
-    ConfiguredPipeline pipeline;
-    PerFrameDescriptorLayout perFrameDescriptorLayout;
-    DescriptorAllocator descriptorAllocator;
-    std::unique_ptr<ImGuiBackend> imguiBackend;
-    DescriptorSet sceneDataDescriptorSet;
-    std::unique_ptr<scene::Scene> scene;
-
-    AppData() noexcept;
-
-    ~AppData();
 };
 
 class Application {
     // Order is important here
-    std::unique_ptr<VulkanContext> mContext;
-    AppData mData;
+    std::unique_ptr<VulkanContext> context;
+    vk::UniqueCommandPool commandPool;
+    vk::UniqueCommandPool transientTransferCommandPool;
+    util::PerFrame<SyncObjects> syncObjects;
+    util::PerFrame<vk::CommandBuffer> commandBuffers;
+    util::PerFrame<Framebuffer> swapchainFramebuffers;
+    std::unique_ptr<DescriptorAllocator> descriptorAllocator;
+
+    std::unique_ptr<ImGuiBackend> imguiBackend;
+    std::unique_ptr<PbrSceneRenderer> pbrSceneRenderer;
+
+    std::unique_ptr<scene::Scene> scene;
 
     void createPerFrameResources();
-    void createImGuiBackend();
 
-    void createPipeline(const ShaderLoader &loader);
-    void recordCommands(const vk::CommandBuffer& cmd_buf , const PerFrameResources& per_frame);
+    void recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &fb) const;
 
     void drawGui();
-    void drawFrame(uint32_t frame_index);
+    void drawFrame();
 
 public:
     void init();

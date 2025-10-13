@@ -14,14 +14,14 @@ namespace gltf {
 
 
 namespace scene {
-    struct SceneDescriptorSetLayout : DescriptorSetLayout {
+    struct SceneDescriptorLayout : DescriptorSetLayout {
         static constexpr StorageBufferBinding SectionBuffer{0, vk::ShaderStageFlagBits::eAllGraphics};
         static constexpr StorageBufferBinding InstanceBuffer{1, vk::ShaderStageFlagBits::eAllGraphics};
         static constexpr StorageBufferBinding MaterialBuffer{2, vk::ShaderStageFlagBits::eAllGraphics};
 
-        SceneDescriptorSetLayout() = default;
+        SceneDescriptorLayout() = default;
 
-        explicit SceneDescriptorSetLayout(const vk::Device& device) {
+        explicit SceneDescriptorLayout(const vk::Device& device) {
             create(device, {}, SectionBuffer, InstanceBuffer, MaterialBuffer);
         }
     };
@@ -59,7 +59,10 @@ namespace scene {
         vma::UniqueBuffer drawCommands;
         vma::UniqueAllocation drawCommandsAlloc;
 
-        SceneDescriptorSetLayout descriptorSetLayout;
+        /// <summary>
+        /// A helper function to write the scene's descriptor set.
+        /// </summary>
+        void writeDescriptorSet(const vk::Device &device, const DescriptorSet &descriptor) const;
     };
 
     struct Instance {
@@ -77,6 +80,7 @@ namespace scene {
         BoundingBox bounds;
     };
 
+    // Not much right now, but can be expanded as needed
     struct CpuData {
         std::vector<Instance> instances;
     };
@@ -92,8 +96,6 @@ namespace scene {
         Scene &operator=(Scene &&other) noexcept = default;
 
         ~Scene();
-
-        void writeDescriptorSet(const vk::Device &device, const DescriptorSet &descriptor);
 
         [[nodiscard]] const CpuData &cpu() const { return mCpuData; }
         [[nodiscard]] const GpuData &gpu() const { return mGpuData; }

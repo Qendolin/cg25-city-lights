@@ -2,6 +2,15 @@
 
 #include <glm/mat4x4.hpp>
 
+// Storage buffers use std430 layout alignment rules:
+// scalar = 4
+// vec2 = 8
+// vec3, vec4 = 16
+// mat2 = 8
+// mat3, mat4 = 16
+// array stride = align(element)
+// struct align = max(member aligns)
+
 struct alignas(16) InstanceBlock {
     glm::mat4 transform;
 };

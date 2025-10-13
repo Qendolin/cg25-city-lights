@@ -60,7 +60,7 @@ void ImageResource::barrier(
         const vk::CommandBuffer &cmd_buf,
         const ImageResourceAccess &begin,
         const ImageResourceAccess &end
-) {
+) const {
     vk::ImageMemoryBarrier2 barrier{
         .srcStageMask = mPrevAccess.stage,
         .srcAccessMask = mPrevAccess.access,
@@ -82,15 +82,17 @@ void ImageResource::barrier(
 }
 
 
-void Attachment::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) {
+void Attachment::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) const {
     ImageResource::barrier(image, range, cmd_buf, begin, end);
 }
 
-void Attachment::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) {
+void Attachment::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) const {
     barrier(cmd_buf, single, single);
 }
 
-vk::RenderingInfo Framebuffer::renderingInfo(const vk::Rect2D &area, const FramebufferRenderingConfig &config) {
+vk::Format Framebuffer::depthFormat() const { return depthAttachment.format; }
+
+vk::RenderingInfo Framebuffer::renderingInfo(const FramebufferRenderingConfig &config) const {
     vk::RenderingInfo result = {
         .flags = config.flags,
         .renderArea = area,

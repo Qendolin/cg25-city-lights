@@ -256,7 +256,7 @@ public:
     /// </summary>
     /// <param name="layout">The layout for the descriptor set to allocate.</param>
     /// <returns>An allocated DescriptorSet.</returns>
-    DescriptorSet allocate(const DescriptorSetLayout& layout);
+    DescriptorSet allocate(const DescriptorSetLayout& layout) const;
 
     /// <summary>
     /// Resets the underlying descriptor pool, invalidating all allocated sets.

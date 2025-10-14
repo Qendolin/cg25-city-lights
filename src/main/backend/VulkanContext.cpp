@@ -96,7 +96,7 @@ vkb::PhysicalDevice createPhysicalDevice(const vkb::Instance &instance, const vk
                 .shaderUniformBufferArrayNonUniformIndexing = true,
                 .shaderSampledImageArrayNonUniformIndexing = true,
                 .shaderStorageBufferArrayNonUniformIndexing = true,
-                .descriptorBindingUniformBufferUpdateAfterBind = true,
+                //.descriptorBindingUniformBufferUpdateAfterBind = true,
                 .descriptorBindingSampledImageUpdateAfterBind = true,
                 .descriptorBindingStorageBufferUpdateAfterBind = true,
                 .descriptorBindingPartiallyBound = true,

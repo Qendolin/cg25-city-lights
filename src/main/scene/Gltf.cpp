@@ -1,10 +1,15 @@
+#include "Gltf.h"
+
 #include <fastgltf/core.hpp>
 #include <fastgltf/glm_element_traits.hpp>
 #include <fastgltf/math.hpp>
-#include <glm/gtc/type_ptr.hpp>.
+#include <glm/gtc/type_ptr.hpp>
+#include <map>
+#include <stb_image.h>
+#include <utility>
 
+#include "../backend/Image.h"
 #include "../util/Logger.h"
-#include "Gltf.h"
 
 template<typename T>
 static void appendFromAccessor(std::vector<T> &dest, const fastgltf::Asset &asset, const fastgltf::Accessor &accessor) {
@@ -14,6 +19,9 @@ static void appendFromAccessor(std::vector<T> &dest, const fastgltf::Asset &asse
 }
 
 namespace gltf {
+
+    Scene::Scene() = default;
+    Scene::~Scene() = default;
 
     void Loader::loadMeshData(
             const fastgltf::Asset &asset,
@@ -26,7 +34,7 @@ namespace gltf {
         for (const auto &mesh: asset.meshes) {
             mesh_primitive_table.emplace_back(primitive_infos.size());
 
-            auto& scene_mesh = scene_data.meshes.emplace_back() = {
+            auto &scene_mesh = scene_data.meshes.emplace_back() = {
                 .name = std::string(mesh.name),
             };
 
@@ -102,12 +110,39 @@ namespace gltf {
                     .material = static_cast<uint32_t>(primitive.materialIndex.value_or(UINT32_MAX)),
                     .bounds = static_cast<uint32_t>(scene_data.bounds.size() - 1),
                 };
-                index_offset += index_accessor.count;
-                vertex_offset += position_accessor.count;
+                index_offset += static_cast<uint32_t>(index_accessor.count);
+                vertex_offset += static_cast<uint32_t>(position_accessor.count);
             }
         }
     }
+
+    void Loader::loadImages(const fastgltf::Asset &asset, Scene &scene_data) {
+        fastgltf::DefaultBufferDataAdapter adapter = {};
+        for (const auto &image: asset.images) {
+            Logger::check(
+                    std::holds_alternative<fastgltf::sources::BufferView>(image.data),
+                    "Image data source must be a buffer view"
+            );
+            size_t buffer_view_index = std::get<fastgltf::sources::BufferView>(image.data).bufferViewIndex;
+            auto src_data = adapter(asset, buffer_view_index);
+            int width, height, ch;
+            auto *data = stbi_load_from_memory(
+                    reinterpret_cast<stbi_uc const *>(src_data.data()), static_cast<int>(src_data.size_bytes()), &width,
+                    &height, &ch, 0
+            );
+
+            int target_ch = ch == 3 ? 4 : ch; // 3 channel images are extended to 4 channels
+            scene_data.images.emplace_back() = PlainImageData::create(width, height, target_ch, ch, data);
+        }
+    }
+
     void Loader::loadMaterials(const fastgltf::Asset &asset, Scene &scene_data) {
+        // Occlusion and metalness-roughness images may need to be merged. This cache is used for deduplication.
+        std::map<std::pair<int32_t, int32_t>, int32_t> omr_cache_map;
+        std::map<int32_t, int32_t> normal_cache_map;
+
+        // FIXME: The image code is way too complex and scuffed
+
         for (const auto &gltf_mat: asset.materials) {
             Material &mat = scene_data.materials.emplace_back();
             mat.albedoFactor = glm::vec4(
@@ -119,6 +154,79 @@ namespace gltf {
             mat.normalFactor = 1.0;
             if (gltf_mat.normalTexture.has_value())
                 mat.normalFactor = gltf_mat.normalTexture->scale;
+
+            if (gltf_mat.pbrData.baseColorTexture.has_value()) {
+                mat.albedoTexture = static_cast<int32_t>(gltf_mat.pbrData.baseColorTexture.value().textureIndex);
+                auto &image = scene_data.images[mat.albedoTexture];
+                if (image.format == vk::Format::eUndefined) // claim image in this format
+                    image.format = vk::Format::eR8G8B8A8Srgb;
+                Logger::check(image.format == vk::Format::eR8G8B8A8Srgb, "Format of albedo texture must be R8G8B8A8_SRGB");
+            }
+
+            std::pair omr_cache_key = {-1, -1};
+            PlainImageData *o_image = nullptr;
+            PlainImageData *mr_image = nullptr;
+            if (gltf_mat.occlusionTexture.has_value()) {
+                auto index = static_cast<int32_t>(gltf_mat.occlusionTexture.value().textureIndex);
+                o_image = &scene_data.images[index];
+                omr_cache_key.first = index;
+            }
+
+            if (gltf_mat.pbrData.metallicRoughnessTexture.has_value()) {
+                auto index = static_cast<int32_t>(gltf_mat.pbrData.metallicRoughnessTexture.value().textureIndex);
+                mr_image = &scene_data.images[index];
+                omr_cache_key.second = index;
+            }
+
+            // OMR texture merging logic
+            if (o_image != nullptr && mr_image != nullptr && o_image == mr_image) {
+                mat.omrTexture = static_cast<int32_t>(gltf_mat.occlusionTexture.value().textureIndex);
+                auto &image = scene_data.images[mat.omrTexture];
+                if (image.format == vk::Format::eUndefined) // claim image in this format
+                    image.format = vk::Format::eR8G8B8A8Unorm;
+                Logger::check(image.format == vk::Format::eR8G8B8A8Unorm, "Format of omr texture must be R8G8B8A8_UNORM");
+            } else if (o_image || mr_image) {
+                if (o_image && mr_image) {
+                    Logger::check(
+                            mr_image->width == o_image->width && mr_image->height == o_image->height,
+                            "Occlusion texture size doesn't match metalness-roughness texture size"
+                    );
+                }
+
+                if (omr_cache_map.contains(omr_cache_key)) {
+                    mat.omrTexture = omr_cache_map.at(omr_cache_key);
+                } else {
+                    PlainImageData *o_or_mr_image = o_image ? o_image : mr_image;
+                    mat.omrTexture = static_cast<int32_t>(scene_data.images.size());
+                    auto omr_image = PlainImageData::create(vk::Format::eR8G8B8A8Unorm, o_or_mr_image->width, o_or_mr_image->height);
+
+                    if (o_image) {
+                        o_image->copyChannels(omr_image, {0});
+                    }
+                    if (mr_image) {
+                        mr_image->copyChannels(omr_image, {1, 2});
+                    } else {
+                        omr_image.fill({1, 2}, {0xff, 0xff});
+                    }
+                    omr_cache_map[omr_cache_key] = mat.omrTexture;
+                    // pushing vector invalidates pointers, so push last
+                    scene_data.images.emplace_back(std::move(omr_image));
+                }
+            }
+
+            if (gltf_mat.normalTexture.has_value()) {
+                auto index = static_cast<int32_t>(gltf_mat.normalTexture.value().textureIndex);
+                if (normal_cache_map.contains(index)) {
+                    mat.normalTexture = normal_cache_map.at(index);
+                } else {
+                    const auto& src_image =  scene_data.images[index];
+                    auto normal = PlainImageData::create(vk::Format::eR8G8Unorm, src_image.width, src_image.height);
+                    src_image.copyChannels(normal, {0, 1});
+                    mat.normalTexture = static_cast<int32_t>(scene_data.images.size());
+                    scene_data.images.emplace_back(std::move(normal));
+                    normal_cache_map[index] = mat.normalTexture;
+                }
+            }
         }
     }
 
@@ -132,7 +240,7 @@ namespace gltf {
     ) {
 
         size_t node_index = scene_data.nodes.size();
-        const auto& scene_node = scene_data.nodes.emplace_back() = {
+        const auto &scene_node = scene_data.nodes.emplace_back() = {
             .name = std::string(node.name),
             .transform = transform,
             .mesh = static_cast<uint32_t>(node.meshIndex.value_or(UINT32_MAX)),
@@ -172,10 +280,12 @@ namespace gltf {
         }
 
         Scene scene_data;
+
+        loadImages(asset.get(), scene_data);
+
+        // Since multiple nodes / primitives can share the same mesh data it's required to load it in separate passes
         std::vector<PrimitiveInfo> primitive_infos;
         std::vector<size_t> mesh_primitive_table; // maps mesh index to primitive info start index
-
-        // Since multiple nodes / primitives can share the same mesh data it's required to load it in seperate passes
         loadMeshData(asset.get(), scene_data, primitive_infos, mesh_primitive_table);
         loadMaterials(asset.get(), scene_data);
         fastgltf::iterateSceneNodes(

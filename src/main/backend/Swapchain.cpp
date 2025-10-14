@@ -194,7 +194,7 @@ bool Swapchain::advance(const vk::Semaphore &image_available_semaphore) {
     return true;
 }
 
-void Swapchain::present(const vk::Queue &queue, vk::PresentInfoKHR &present_info) {
+bool Swapchain::present(const vk::Queue &queue, vk::PresentInfoKHR &present_info) {
     present_info.setSwapchains(*mSwapchain).setImageIndices(mActiveImageIndex);
 
     try {
@@ -208,6 +208,9 @@ void Swapchain::present(const vk::Queue &queue, vk::PresentInfoKHR &present_info
         invalidate();
     }
 
-    if (mInvalid)
+    if (mInvalid) {
         recreate();
+        return false;
+    }
+    return true;
 }

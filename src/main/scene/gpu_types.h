@@ -24,6 +24,12 @@ struct alignas(4) SectionBlock {
 struct alignas(16) MaterialBlock {
     glm::vec4 albedoFactors;
     glm::vec4 mrnFactors; // Padded to 16 bytes
+    // albedo, normal
+    glm::uint packedImageIndices0;
+    // omr, unused
+    glm::uint packedImageIndices1;
+    glm::uint pad0;
+    glm::uint pad1;
 };
 
 namespace scene {
@@ -31,11 +37,12 @@ namespace scene {
         static constexpr StorageBufferBinding SectionBuffer{0, vk::ShaderStageFlagBits::eAllGraphics};
         static constexpr StorageBufferBinding InstanceBuffer{1, vk::ShaderStageFlagBits::eAllGraphics};
         static constexpr StorageBufferBinding MaterialBuffer{2, vk::ShaderStageFlagBits::eAllGraphics};
+        static constexpr CombinedImageSamplerBinding ImageSamplers{3, vk::ShaderStageFlagBits::eAllGraphics, 65536, vk::DescriptorBindingFlagBits::ePartiallyBound};
 
         SceneDescriptorLayout() = default;
 
         explicit SceneDescriptorLayout(const vk::Device& device) {
-            create(device, {}, SectionBuffer, InstanceBuffer, MaterialBuffer);
+            create(device, {}, SectionBuffer, InstanceBuffer, MaterialBuffer, ImageSamplers);
         }
     };
 }

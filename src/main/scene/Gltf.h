@@ -76,6 +76,13 @@ namespace gltf {
         );
 
         /// <summary>
+        /// Loads all images from the glTF asset.
+        /// </summary>
+        /// <param name="asset">The glTF asset.</param>
+        /// <param name="scene_data">The scene data to populate.</param>
+        static void loadImages(const fastgltf::Asset &asset, Scene &scene_data);
+
+        /// <summary>
         /// Loads all materials from the glTF asset.
         /// </summary>
         /// <param name="asset">The glTF asset.</param>

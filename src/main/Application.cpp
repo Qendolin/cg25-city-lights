@@ -5,7 +5,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/fast_trigonometry.hpp>
 
-#include "backend/Image.h"
+#include "backend/Framebuffer.h"
 #include "backend/ShaderCompiler.h"
 #include "backend/Swapchain.h"
 #include "backend/VulkanContext.h"
@@ -24,7 +24,7 @@ Application::~Application() = default;
 void Application::recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &fb) const {
     const auto &swapchain = context->swapchain();
 
-    pbrSceneRenderer->prepare(context->device(), fb, scene->gpu(), *camera);
+    pbrSceneRenderer->prepare(context->device(), *camera);
 
     cmd_buf.begin(vk::CommandBufferBeginInfo{});
 
@@ -134,10 +134,13 @@ void Application::drawFrame() {
 
     context->mainQueue->submit({submit_info}, *sync_objects.inFlightFence);
 
-    swapchain.present(context->presentQueue, vk::PresentInfoKHR().setWaitSemaphores(*sync_objects.finishedSemaphore));
+    if (!swapchain.present(context->presentQueue, vk::PresentInfoKHR().setWaitSemaphores(*sync_objects.finishedSemaphore))) {
+        recreate();
+    }
 }
 
 void Application::recreate() {
+    Logger::debug("Application::recreate called");
     const auto &swapchain = context->swapchain();
     const auto &device = context->device();
     const auto &cmd_pool = *commandPool;
@@ -206,7 +209,13 @@ void Application::init() {
 
     gltf::Loader gltf_loader = {};
     scene::Loader scene_loader = {
-        &gltf_loader, context->allocator(), context->device(), *transientTransferCommandPool, context->transferQueue
+        &gltf_loader,
+        context->allocator(),
+        context->device(),
+        context->physicalDevice(),
+        context->transferQueue,
+        context->mainQueue,
+        *descriptorAllocator
     };
     scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/ComplexTest.glb")));
 

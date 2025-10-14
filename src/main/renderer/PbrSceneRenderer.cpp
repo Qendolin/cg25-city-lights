@@ -2,7 +2,7 @@
 
 #include <glm/ext/matrix_clip_space.hpp>
 
-#include "../backend/Image.h"
+#include "../backend/Framebuffer.h"
 #include "../backend/ShaderCompiler.h"
 #include "../backend/Swapchain.h"
 #include "../entity/Camera.h"
@@ -16,7 +16,7 @@ PbrSceneRenderer::PbrSceneRenderer(
     createDescriptors(device, allocator, swapchain);
 }
 
-void PbrSceneRenderer::prepare(const vk::Device &device, const Framebuffer &fb, const scene::GpuData &gpu_data, const Camera& camera) const {
+void PbrSceneRenderer::prepare(const vk::Device &device, const Camera& camera) const {
     ShaderParamsInlineUniformBlock uniform_block = {
         .view = camera.viewMatrix(),
         .projection = camera.projectionMatrix(),
@@ -28,10 +28,6 @@ void PbrSceneRenderer::prepare(const vk::Device &device, const Framebuffer &fb, 
             )},
             {}
     );
-
-    // Since the data is static, the descriptors don't need to be updated each frame.
-    // But I found it easier to implement this way.
-    gpu_data.writeDescriptorSet(device, mSceneDescriptors.get());
 }
 
 void PbrSceneRenderer::render(const vk::CommandBuffer &cmd_buf, const Framebuffer &fb, const scene::GpuData &gpu_data) {
@@ -51,7 +47,7 @@ void PbrSceneRenderer::render(const vk::CommandBuffer &cmd_buf, const Framebuffe
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics, *mPipeline.pipeline);
     cmd_buf.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0,
-            {mSceneDescriptors.next(), mShaderParamsDescriptors.next()}, {}
+            {gpu_data.sceneDescriptor, mShaderParamsDescriptors.next()}, {}
     );
     cmd_buf.bindIndexBuffer(*gpu_data.indices, 0, vk::IndexType::eUint32);
     cmd_buf.bindVertexBuffers(
@@ -68,15 +64,13 @@ void PbrSceneRenderer::createDescriptors(const vk::Device &device, const Descrip
     mShaderParamsDescriptors.create(swapchain.imageCount(), [&]() {
         return allocator.allocate(mShaderParamsDescriptorLayout);
     });
-
-    mSceneDescriptorLayout = scene::SceneDescriptorLayout(device);
-    mSceneDescriptors.create(swapchain.imageCount(), [&]() { return allocator.allocate(mSceneDescriptorLayout); });
 }
 
 void PbrSceneRenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Swapchain &swapchain) {
     auto vert_sh = shader_loader.loadFromSource(device, "resources/shaders/pbr.vert");
     auto frag_sh = shader_loader.loadFromSource(device, "resources/shaders/pbr.frag");
 
+    auto scene_descriptor_layout = scene::SceneDescriptorLayout(device);
     PipelineConfig pipeline_config = {
         .vertexInput =
                 {
@@ -95,7 +89,7 @@ void PbrSceneRenderer::createPipeline(const vk::Device &device, const ShaderLoad
                                 {.location = 3, .binding = 3, .format = vk::Format::eR32G32Sfloat, .offset = 0}, // texcoord
                             },
                 },
-        .descriptorSetLayouts = {mSceneDescriptorLayout, mShaderParamsDescriptorLayout},
+        .descriptorSetLayouts = {scene_descriptor_layout, mShaderParamsDescriptorLayout},
         .pushConstants = {},
         .attachments =
                 {

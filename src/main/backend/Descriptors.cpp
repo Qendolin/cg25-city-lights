@@ -35,8 +35,7 @@ DescriptorAllocator::DescriptorAllocator(const vk::Device &device): mDevice(devi
         .maxInlineUniformBlockBindings = 4096,
     };
 
-
-    mPool = mDevice.createDescriptorPoolUnique({
+    mPool = mDevice.createDescriptorPool({
         .pNext = &uniform_blocks,
         .maxSets = 1024,
         .poolSizeCount = static_cast<uint32_t>(sizes.size()),
@@ -47,9 +46,13 @@ DescriptorAllocator::DescriptorAllocator(const vk::Device &device): mDevice(devi
 DescriptorSet DescriptorAllocator::allocate(const DescriptorSetLayout &layout) const {
     auto vk_layout = static_cast<vk::DescriptorSetLayout>(layout);
     vk::DescriptorSetAllocateInfo info = {
-        .descriptorPool = *mPool,
+        .descriptorPool = mPool,
         .descriptorSetCount = 1,
         .pSetLayouts = &vk_layout,
     };
     return DescriptorSet(mDevice.allocateDescriptorSets(info)[0]);
+}
+
+void std::default_delete<DescriptorAllocator>::operator()(DescriptorAllocator *a) const noexcept {
+    DescriptorAllocator::Deleter{}(a);
 }

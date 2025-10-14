@@ -5,7 +5,11 @@
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
 #include "../backend/Descriptors.h"
+#include "../backend/DeviceQueue.h"
+#include "../backend/Image.h"
 #include "../util/math.h"
+#include "gpu_types.h"
+
 
 namespace gltf {
     struct Scene;
@@ -22,6 +26,10 @@ namespace scene {
 
         GpuData(GpuData &&other) noexcept = default;
         GpuData &operator=(GpuData &&other) noexcept = default;
+
+        vk::UniqueSampler sampler;
+        std::vector<Image> images;
+        std::vector<vk::UniqueImageView> views;
 
         vma::UniqueBuffer positions;
         vma::UniqueAllocation positionsAlloc;
@@ -42,7 +50,10 @@ namespace scene {
         vma::UniqueBuffer materials;
         vma::UniqueAllocation materialsAlloc;
 
-        uint32_t drawCommandCount;
+        SceneDescriptorLayout sceneDescriptorLayout = {};
+        DescriptorSet sceneDescriptor = {};
+
+        uint32_t drawCommandCount = 0;
         vma::UniqueBuffer drawCommands;
         vma::UniqueAllocation drawCommandsAlloc;
 
@@ -99,8 +110,10 @@ namespace scene {
                 const gltf::Loader *loader,
                 const vma::Allocator &allocator,
                 const vk::Device &device,
-                const vk::CommandPool &transferCommandPool,
-                const vk::Queue &transferQueue
+                const vk::PhysicalDevice &physical_device,
+                const DeviceQueue &transferQueue,
+                const DeviceQueue &graphicsQueue,
+                const DescriptorAllocator& descriptor_allocator
         );
 
         /// <summary>
@@ -117,7 +130,9 @@ namespace scene {
         const gltf::Loader *mLoader;
         vma::Allocator mAllocator;
         vk::Device mDevice;
-        vk::CommandPool mTransferCommandPool;
-        vk::Queue mTransferQueue;
+        vk::PhysicalDevice mPhysicalDevice;
+        DeviceQueue mTransferQueue;
+        DeviceQueue mGraphicsQueue;
+        DescriptorAllocator mDescriptorAllocator;
     };
 } // namespace scene

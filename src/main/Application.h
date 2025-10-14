@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include "backend/Descriptors.h"
 #include "util/PerFrame.h"
 
 
@@ -11,7 +12,6 @@ namespace glfw {
 }
 class Camera;
 class VulkanContext;
-class DescriptorAllocator;
 class Framebuffer;
 class PbrSceneRenderer;
 namespace scene {

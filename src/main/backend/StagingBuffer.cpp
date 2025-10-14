@@ -12,6 +12,7 @@ std::pair<vma::UniqueBuffer, vma::UniqueAllocation> StagingBuffer::upload(
     upload(data, size, *pair.first);
     return std::move(pair);
 }
+
 void StagingBuffer::upload(const void *data, size_t size, const vk::Buffer &dst) {
     vma::AllocationInfo result_info;
     auto [buf, alloc] = mAllocator.createBuffer(
@@ -33,6 +34,27 @@ void StagingBuffer::upload(const void *data, size_t size, const vk::Buffer &dst)
     mCommands.copyBuffer(buf, dst, {vk::BufferCopy{.size = size}});
 }
 
+vk::Buffer StagingBuffer::stage(const void *data, size_t size) {
+    vma::AllocationInfo result_info;
+    auto [buf, alloc] = mAllocator.createBuffer(
+            {
+                .size = size,
+                .usage = vk::BufferUsageFlagBits::eTransferSrc,
+            },
+            {
+                .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped,
+                .usage = vma::MemoryUsage::eAuto,
+                .requiredFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            },
+            &result_info
+    );
+    mAllocations.push_back({buf, alloc});
+
+    std::memcpy(result_info.pMappedData, data, size);
+
+    return buf;
+}
+
 StagingBuffer::StagingBuffer(const vma::Allocator &allocator, const vk::Device &device, const vk::CommandPool &cmd_pool)
     : mDevice(device), mAllocator(allocator), mCommandPool(cmd_pool) {
     createCommandBuffer();
@@ -46,11 +68,13 @@ StagingBuffer::~StagingBuffer() {
     mDevice.freeCommandBuffers(mCommandPool, {mCommands});
 }
 
-void StagingBuffer::submit(const vk::Queue &queue) {
+void StagingBuffer::submit(const vk::Queue &queue, const vk::SubmitInfo &submit_info_) {
     mCommands.end();
 
+    vk::SubmitInfo submit_info = submit_info_;
+    submit_info.setCommandBuffers(mCommands);
     auto fence = mDevice.createFenceUnique(vk::FenceCreateInfo());
-    queue.submit({vk::SubmitInfo().setCommandBuffers(mCommands)}, *fence);
+    queue.submit({submit_info}, *fence);
 
     while (mDevice.waitForFences(*fence, true, UINT64_MAX) == vk::Result::eTimeout) {
     }

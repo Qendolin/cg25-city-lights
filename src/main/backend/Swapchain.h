@@ -190,7 +190,8 @@ public:
     /// </summary>
     /// <param name="queue">The presentation queue.</param>
     /// <param name="present_info">The present info structure.</param>
-    void present(const vk::Queue &queue, vk::PresentInfoKHR &present_info);
+    /// <returns>True if the swapchain is still valid, false otherwise.</returns>
+    [[nodiscard]] bool present(const vk::Queue &queue, vk::PresentInfoKHR &present_info);
 
 private:
     vk::Device mDevice;

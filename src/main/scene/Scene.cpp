@@ -6,26 +6,6 @@
 
 namespace scene {
 
-    void GpuData::writeDescriptorSet(const vk::Device &device, const DescriptorSet &descriptor) const {
-        device.updateDescriptorSets(
-                {
-                    descriptor.write(
-                            SceneDescriptorLayout::SectionBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *sections, .offset = 0, .range = vk::WholeSize}
-                    ),
-                    descriptor.write(
-                            SceneDescriptorLayout::InstanceBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *instances, .offset = 0, .range = vk::WholeSize}
-                    ),
-                    descriptor.write(
-                            SceneDescriptorLayout::MaterialBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *materials, .offset = 0, .range = vk::WholeSize}
-                    ),
-                },
-                {}
-        );
-    }
-
     Scene::Scene() = default;
     Scene::Scene(CpuData &&cpu_data, GpuData &&gpu_data)
         : mCpuData(std::move(cpu_data)), mGpuData(std::move(gpu_data)) {}
@@ -36,14 +16,18 @@ namespace scene {
             const gltf::Loader *loader,
             const vma::Allocator &allocator,
             const vk::Device &device,
-            const vk::CommandPool &transferCommandPool,
-            const vk::Queue &transferQueue
+            const vk::PhysicalDevice &physical_device,
+            const DeviceQueue &transferQueue,
+            const DeviceQueue &graphicsQueue,
+            const DescriptorAllocator &descriptor_allocator
     )
         : mLoader(loader),
           mAllocator(allocator),
           mDevice(device),
-          mTransferCommandPool(transferCommandPool),
-          mTransferQueue(transferQueue) {}
+          mPhysicalDevice(physical_device),
+          mTransferQueue(transferQueue),
+          mGraphicsQueue(graphicsQueue),
+          mDescriptorAllocator(descriptor_allocator) {}
 
     Scene Loader::load(const std::filesystem::path &path) const {
         auto gltf_scene = mLoader->load(path);
@@ -73,8 +57,86 @@ namespace scene {
     }
 
     GpuData Loader::createGpuData(const gltf::Scene &scene_data) const {
+        auto graphics_cmd_pool = mDevice.createCommandPoolUnique(
+                {.flags = vk::CommandPoolCreateFlagBits::eTransient, .queueFamilyIndex = mGraphicsQueue}
+        );
+        auto transfer_cmd_pool = mDevice.createCommandPoolUnique(
+                {.flags = vk::CommandPoolCreateFlagBits::eTransient, .queueFamilyIndex = mTransferQueue}
+        );
+
+        auto graphics_cmds =
+                mDevice.allocateCommandBuffers({.commandPool = *graphics_cmd_pool, .commandBufferCount = 1}).at(0);
+        graphics_cmds.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+
         GpuData result;
-        StagingBuffer staging = {mAllocator, mDevice, mTransferCommandPool};
+        StagingBuffer staging = {mAllocator, mDevice, *transfer_cmd_pool};
+
+        result.sceneDescriptorLayout = SceneDescriptorLayout(mDevice);
+        result.sceneDescriptor = mDescriptorAllocator.allocate(result.sceneDescriptorLayout);
+
+        float max_anisotropy = mPhysicalDevice.getProperties().limits.maxSamplerAnisotropy;
+        result.sampler = mDevice.createSamplerUnique(
+                {.magFilter = vk::Filter::eLinear,
+                 .minFilter = vk::Filter::eLinear,
+                 .mipmapMode = vk::SamplerMipmapMode::eLinear,
+                 .anisotropyEnable = true,
+                 .maxAnisotropy = max_anisotropy,
+                 .maxLod = vk::LodClampNone,
+                 .borderColor = vk::BorderColor::eFloatOpaqueBlack}
+        );
+
+        result.images.reserve(scene_data.images.size());
+        result.views.reserve(scene_data.images.size());
+        // since some images will be skipped, the indices need to be mapped
+        std::vector<size_t> image_index;
+        for (const auto &image_data: scene_data.images) {
+            // image isn't used by any material
+            if (image_data.format == vk::Format::eUndefined) {
+                image_index.emplace_back(-1);
+                continue;
+            }
+            size_t index = result.images.size();
+            image_index.emplace_back(index);
+
+            auto create_info = ImageCreateInfo::from(image_data);
+            create_info.usage |= vk::ImageUsageFlagBits::eSampled;
+
+            Image &image = result.images.emplace_back();
+            image = Image::create(staging.allocator(), create_info);
+            vk::Buffer staged_buffer = staging.stage(image_data.pixels);
+            image.load(staging.commands(), 0, {}, staged_buffer);
+            image.transfer(staging.commands(), graphics_cmds, mTransferQueue, mGraphicsQueue);
+            image.generateMipmaps(graphics_cmds);
+            image.barrier(graphics_cmds, ImageResourceAccess::FragmentShaderRead);
+
+            vk::UniqueImageView &view = result.views.emplace_back();
+            view = image.createDefaultView(mDevice);
+
+            mDevice.updateDescriptorSets(
+                    {result.sceneDescriptor.write(
+                            SceneDescriptorLayout::ImageSamplers,
+                            vk::DescriptorImageInfo{
+                                .sampler = *result.sampler, .imageView = *view, .imageLayout = vk::ImageLayout::eReadOnlyOptimal
+                            },
+                            static_cast<uint32_t>(index)
+                    )},
+                    {}
+            );
+        }
+
+        graphics_cmds.end();
+
+        auto graphics_queue_fence = mDevice.createFenceUnique({});
+        auto image_transfer_semaphore = mDevice.createSemaphoreUnique({});
+        staging.submit(mTransferQueue, vk::SubmitInfo().setSignalSemaphores(*image_transfer_semaphore));
+        vk::PipelineStageFlags semaphore_stage_mask = vk::PipelineStageFlagBits::eTopOfPipe;
+        mGraphicsQueue.queue.submit(
+                {vk::SubmitInfo()
+                         .setWaitSemaphores(*image_transfer_semaphore)
+                         .setCommandBuffers(graphics_cmds)
+                         .setWaitDstStageMask(semaphore_stage_mask)},
+                *graphics_queue_fence
+        );
 
         std::tie(result.positions, result.positionsAlloc) =
                 staging.upload(scene_data.vertex_position_data, vk::BufferUsageFlagBits::eVertexBuffer);
@@ -116,23 +178,50 @@ namespace scene {
         }
         std::tie(result.instances, result.instancesAlloc) =
                 staging.upload(instance_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
-
         std::tie(result.drawCommands, result.drawCommandsAlloc) =
                 staging.upload(draw_commands, vk::BufferUsageFlagBits::eIndirectBuffer);
         result.drawCommandCount = static_cast<uint32_t>(draw_commands.size());
 
         std::vector<MaterialBlock> material_blocks;
         material_blocks.reserve(scene_data.materials.size());
-        for (const auto &material: scene_data.materials) {
+        for (size_t i = 0; i < scene_data.materials.size(); i++) {
+            const auto &material = scene_data.materials[i];
+            uint32_t albedo_texture_index = material.albedoTexture == -1 ? 0xffff : image_index[material.albedoTexture];
+            uint32_t normal_texture_index = material.normalTexture == -1 ? 0xffff : image_index[material.normalTexture];
+            uint32_t omr_texture_index = material.omrTexture == -1 ? 0xffff : image_index[material.omrTexture];
             material_blocks.emplace_back() = {
                 .albedoFactors = material.albedoFactor,
                 .mrnFactors = glm::vec4{material.metalnessFactor, material.roughnessFactor, material.normalFactor, 1.0f},
+                .packedImageIndices0 = albedo_texture_index & 0xffff | (normal_texture_index & 0xffff) << 16,
+                .packedImageIndices1 = omr_texture_index & 0xffff,
             };
         }
         std::tie(result.materials, result.materialsAlloc) =
                 staging.upload(material_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
 
+
+        mDevice.updateDescriptorSets(
+                {
+                    result.sceneDescriptor.write(
+                            SceneDescriptorLayout::SectionBuffer,
+                            vk::DescriptorBufferInfo{.buffer = *result.sections, .offset = 0, .range = vk::WholeSize}
+                    ),
+                    result.sceneDescriptor.write(
+                            SceneDescriptorLayout::InstanceBuffer,
+                            vk::DescriptorBufferInfo{.buffer = *result.instances, .offset = 0, .range = vk::WholeSize}
+                    ),
+                    result.sceneDescriptor.write(
+                            SceneDescriptorLayout::MaterialBuffer,
+                            vk::DescriptorBufferInfo{.buffer = *result.materials, .offset = 0, .range = vk::WholeSize}
+                    ),
+                },
+                {}
+        );
+
         staging.submit(mTransferQueue);
+
+        while (mDevice.waitForFences(*graphics_queue_fence, true, UINT64_MAX) == vk::Result::eTimeout) {
+        }
 
         return result;
     }

@@ -1,5 +1,6 @@
 #version 460
 
+#extension GL_EXT_nonuniform_qualifier : require
 
 layout (location = 0) in vec3 in_position_ws;
 layout (location = 1) in mat3 in_tbn;
@@ -11,10 +12,16 @@ layout (location = 0) out vec4 out_color;
 #include "descriptors.glsl"
 
 const float PI = 3.14159265359;
+const uint NO_TEXTURE = 0xffff;
 
 const int LIGHT_COUNT = 1;
-const vec3 LIGHT_DIRECTION = normalize(vec3(0.5, 1.5, 1));
+const vec3 LIGHT_DIRECTION = normalize(vec3(0.5, 0.2, 1));
 const vec3 LIGHT_RADIANCE = vec3(15.0);
+
+void unpackUint16(in uint packed, out uint lower, out uint upper) {
+    lower = packed & 0xffff;
+    upper = (packed >> 16) & 0xffff;
+}
 
 vec3 transformNormal(mat3 tbn, vec3 tangent_normal) {
     return normalize(tbn * tangent_normal);
@@ -31,7 +38,6 @@ float adjustRoughness(vec3 tangent_normal, float roughness) {
     }
     return roughness;
 }
-
 
 float distributionGGX(vec3 N, vec3 H, float roughness)
 {
@@ -80,21 +86,43 @@ vec3 fresnelSchlickRoughness(float cos_theta, vec3 F0, float roughness)
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+// https://advances.realtimerendering.com/other/2016/naughty_dog/index.html
+float microShadowNaughtyDog(float ao, float n_dot_l) {
+    float aperture = 2.0 * ao; // They use ao^2, but linear looks better imo
+    return clamp(n_dot_l + aperture - 1.0, 0.0, 1.0);
+}
+
 void main() {
     Material material = uMaterialBuffer.materials[in_material];
+    uint albedoTextureIndex, normalTextureIndex;
+    unpackUint16(material.packedImageIndices0, albedoTextureIndex, normalTextureIndex);
+    uint omrTextureIndex, unusedTextureIndex;
+    unpackUint16(material.packedImageIndices1, omrTextureIndex, unusedTextureIndex);
 
     vec4 albedo = material.albedoFactors;
+    if (albedoTextureIndex != NO_TEXTURE) {
+        albedo *= texture(uTextures[nonuniformEXT(albedoTextureIndex)], in_tex_coord);
+    }
 
-    float occusion = 1.0f;
-    float metallic = material.mrnFactors.x;
-    float roughness = material.mrnFactors.y;
-    // I'm not sure if the normalize is required.
-    // When passing just the normal vector from VS to FS it is generally required to normalize it again.
-    // See https://www.lighthouse3d.com/tutorials/glsl-12-tutorial/normalization-issues/
-    // mat3 tbn = mat3(normalize(in_tbn[0]), normalize(in_tbn[1]), normalize(in_tbn[2]));
+    vec3 omr = vec3(1.0, material.mrnFactors.xy);
+    if (omrTextureIndex != NO_TEXTURE) {
+        omr *= texture(uTextures[nonuniformEXT(omrTextureIndex)], in_tex_coord).xyz;
+    }
+    float occusion = omr.x;
+    float metallic = omr.y;
+    float roughness = omr.z;
     mat3 tbn = in_tbn;
 
-    vec3 N = transformNormal(tbn, vec3(0, 0, 1)); // for normal mapping later on
+    // tangent-space normal
+    vec3 normal_ts = vec3(0.0f, 0.0f, 1.0f);
+    if (normalTextureIndex != NO_TEXTURE) {
+        normal_ts.xy = texture(uTextures[nonuniformEXT(normalTextureIndex)], in_tex_coord).xy * 2.0 - 1.0;
+        normal_ts.z = sqrt(1 - normal_ts.x * normal_ts.x - normal_ts.y * normal_ts.y);
+        normal_ts = normalize(normal_ts * vec3(material.mrnFactors.z * .5, material.mrnFactors.z * .5, 1.0)); // increase intensity
+        roughness = adjustRoughness(normal_ts, roughness);
+    }
+
+    vec3 N = transformNormal(tbn, normal_ts);
     vec3 P = in_position_ws;
     vec3 V = normalize(uScene.camera.xyz - P);
     vec3 R = reflect(-V, N);
@@ -121,6 +149,9 @@ void main() {
         vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
 
         float n_dot_l = max(dot(n, L), 0.0);
+
+        float micro_shadow = microShadowNaughtyDog(occusion, n_dot_l);
+        radiance *= micro_shadow;
 
         vec3 numerator = NDF * G * F;
         float denominator = 4.0 * n_dot_v * n_dot_l + 1e-5; // + 1e-5 to prevent divide by zero

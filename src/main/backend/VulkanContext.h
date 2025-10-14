@@ -4,32 +4,13 @@
 #include <vulkan/vulkan.hpp>
 
 #include "../glfw/Window.h"
+#include "DeviceQueue.h"
 
 namespace glfw {
     class Window;
 }
 
 class Swapchain;
-
-/// <summary>
-/// Holds a Vulkan queue and its family index.
-/// </summary>
-struct DeviceQueue {
-    vk::Queue queue = {};
-    uint32_t family = {};
-
-    operator vk::Queue() const { return queue; } // NOLINT(*-explicit-constructor)
-    operator VkQueue() const { return queue; } // NOLINT(*-explicit-constructor)
-    operator uint32_t() const { return family; } // NOLINT(*-explicit-constructor)
-
-    const vk::Queue *operator->() const noexcept {
-        return &queue;
-    }
-
-    vk::Queue *operator->() noexcept {
-        return &queue;
-    }
-};
 
 /// <summary>
 /// Manages the core Vulkan objects for the application, including the instance, device, allocator, and window surface.

@@ -3,7 +3,6 @@
 
 #include "../backend/Descriptors.h"
 #include "../backend/Pipeline.h"
-#include "../scene/gpu_types.h"
 #include "../util/PerFrame.h"
 
 
@@ -45,7 +44,7 @@ public:
         createPipeline(device, shader_loader, swapchain);
     }
 
-    void prepare(const vk::Device &device, const Framebuffer &fb, const scene::GpuData &gpu_data, const Camera& camera) const;
+    void prepare(const vk::Device &device, const Camera &camera) const;
 
     void render(const vk::CommandBuffer &cmd_buf, const Framebuffer &fb, const scene::GpuData &gpu_data);
 
@@ -55,9 +54,6 @@ private:
     void createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Swapchain &swapchain);
 
     ShaderParamsDescriptorLayout mShaderParamsDescriptorLayout;
-    scene::SceneDescriptorLayout mSceneDescriptorLayout;
-
-    util::PerFrame<DescriptorSet> mSceneDescriptors;
     util::PerFrame<DescriptorSet> mShaderParamsDescriptors;
 
     ConfiguredPipeline mPipeline;

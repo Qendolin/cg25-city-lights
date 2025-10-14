@@ -1,193 +1,253 @@
 #pragma once
+#include <filesystem>
+#include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
-#include <vulkan/vulkan.hpp>
+#include "ImageResource.h"
 
-#include "../util/static_vector.h"
-
-/// <summary>
-/// Defines pipeline stage, access type, and image layout for an image resource. This is used for creating image memory barriers.
-/// </summary>
-/// <remarks>
-/// There are a lot of possible image barrier variations, but I've found that only a small subset is actually useful in practice.
-/// So I prefer simply defining all of them as constants when I need one. So far this worked out great in my projects.
-/// </remarks>
-struct ImageResourceAccess {
-    vk::PipelineStageFlags2 stage = vk::PipelineStageFlagBits2::eTopOfPipe;
-    vk::AccessFlags2 access = vk::AccessFlagBits2::eNone;
-    vk::ImageLayout layout = vk::ImageLayout::eUndefined;
-
-    static const ImageResourceAccess TransferWrite;
-    static const ImageResourceAccess ComputeShaderWriteGeneral;
-    static const ImageResourceAccess ComputeShaderReadGeneral;
-    static const ImageResourceAccess ComputeShaderReadOptimal;
-    static const ImageResourceAccess FragmentShaderRead;
-    static const ImageResourceAccess ColorAttachmentWrite;
-    static const ImageResourceAccess DepthAttachmentWrite;
-    static const ImageResourceAccess DepthAttachmentRead;
-    static const ImageResourceAccess PresentSrc;
-};
 
 /// <summary>
-/// Base class for image resources that handles image memory barriers.
+/// A container for raw, plain image data on the CPU.
+/// This class can either own the data or just hold a view of it.
 /// </summary>
-class ImageResource {
-protected:
-    mutable ImageResourceAccess mPrevAccess = {};
+class PlainImageData {
+    unsigned char *mData = nullptr;
+    bool mOwning = false;
 
-    /// <summary>
-    /// Inserts an image memory barrier into the command buffer.
-    /// </summary>
-    /// <param name="image">The image to which the barrier applies.</param>
-    /// <param name="range">The subresource range of the image.</param>
-    /// <param name="cmd_buf">The command buffer to record the barrier to.</param>
-    /// <param name="begin">The resource access state at the beginning of the barrier.</param>
-    /// <param name="end">The resource access state at the end of the barrier.</param>
-    void barrier(
-            vk::Image image,
-            vk::ImageSubresourceRange range,
-            const vk::CommandBuffer &cmd_buf,
-            const ImageResourceAccess &begin,
-            const ImageResourceAccess &end
-    ) const;
-};
-
-/// <summary>
-/// Represents an image attachment, which is a combination of a vk::Image and a vk::ImageView.
-/// </summary>
-struct Attachment : ImageResource {
-    vk::Image image = {};
-    vk::ImageView view = {};
-    vk::Format format = {};
-    vk::ImageSubresourceRange range = {};
-
-    /// <summary>
-    /// Inserts an image memory barrier for the attachment.
-    /// </summary>
-    /// <param name="cmd_buf">The command buffer to record the barrier to.</param>
-    /// <param name="begin">The resource access state at the beginning of the barrier.</param>
-    /// <param name="end">The resource access state at the end of the barrier.</param>
-    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) const;
-
-    /// <summary>
-    /// Inserts an image memory barrier for the attachment, transitioning from the previous state to a new one.
-    /// </summary>
-    /// <param name="cmd_buf">The command buffer to record the barrier to.</param>
-    /// <param name="single">The new resource access state.</param>
-    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) const;
-
-    /// <summary>
-    /// Checks if the attachment is valid (i.e., has a valid image and view).
-    /// </summary>
-    explicit operator bool() const { return image && view; }
-};
-
-/// <summary>
-/// Configuration for dynamic rendering with a framebuffer.
-/// </summary>
-struct FramebufferRenderingConfig {
-    vk::RenderingFlags flags = {};
-    uint32_t layerCount = 1;
-    uint32_t viewMask = 0;
-
-    util::static_vector<bool, 32> enabledColorAttachments = {};
-    bool enableDepthAttachment = true;
-    bool enableStencilAttachment = true;
-    util::static_vector<vk::AttachmentLoadOp, 32> colorLoadOps = {};
-    util::static_vector<vk::AttachmentStoreOp, 32> colorStoreOps = {};
-    vk::AttachmentLoadOp depthLoadOp = vk::AttachmentLoadOp::eLoad;
-    vk::AttachmentStoreOp depthStoreOp = vk::AttachmentStoreOp::eStore;
-    vk::AttachmentLoadOp stencilLoadOp = vk::AttachmentLoadOp::eLoad;
-    vk::AttachmentStoreOp stencilStoreOp = vk::AttachmentStoreOp::eStore;
-
-    util::static_vector<vk::ClearColorValue, 32> clearColors = {};
-    float clearDepth = 0.0f;
-    uint32_t clearStencil = 0;
-
-    consteval static util::static_vector<bool, 32> all(const bool enabled) {
-        std::array<bool, 32> arr{};
-        std::ranges::fill(arr.begin(), arr.end(), enabled);
-        return arr;
-    }
-
-    consteval static util::static_vector<vk::AttachmentLoadOp, 32> all(const vk::AttachmentLoadOp load_op) {
-        std::array<vk::AttachmentLoadOp, 32> arr{};
-        std::ranges::fill(arr.begin(), arr.end(), load_op);
-        return arr;
-    }
-
-    consteval static util::static_vector<vk::AttachmentStoreOp, 32> all(const vk::AttachmentStoreOp store_op) {
-        std::array<vk::AttachmentStoreOp, 32> arr{};
-        std::ranges::fill(arr.begin(), arr.end(), store_op);
-        return arr;
-    }
-};
-
-/// <summary>
-/// Represents a collection of attachments for rendering, used with Vulkan's dynamic rendering feature.
-/// </summary>
-/// <remarks>
-/// With the dynamic rendering extension, VkFramebuffer isn't used.
-/// But the concept of a framebuffer (a collection of attachments) is still useful.
-/// </remarks>
-class Framebuffer {
 public:
-    util::static_vector<Attachment, 32> colorAttachments = {};
-    Attachment depthAttachment = {};
-    Attachment stencilAttachment = {};
-    /// <summary>The rendering area.</summary>
-    const vk::Rect2D area;
+    /// <summary>The width of the image in pixels.</summary>
+    uint32_t width = 0;
+    /// <summary>The height of the image in pixels.</summary>
+    uint32_t height = 0;
+    /// <summary>The number of color channels of the image.</summary>
+    uint32_t channels = 0;
+    /// <summary>A span of the raw pixel data.</summary>
+    std::span<unsigned char> pixels = {};
+    /// <summary>The Vulkan format of the pixel data.</summary>
+    vk::Format format = vk::Format::eUndefined;
 
-    explicit Framebuffer(const vk::Extent2D& extent) : area({ .offset = {0, 0}, .extent = extent}) {
+    /// <summary>
+    /// Creates an empty PlainImageData object.
+    /// </summary>
+    PlainImageData() noexcept;
+    ~PlainImageData() noexcept;
+
+    /// <summary>
+    /// Creates a PlainImageData object from existing pixel data without taking ownership.
+    /// </summary>
+    /// <param name="pixels">The raw pixel data.</param>
+    /// <param name="width">The width of the image.</param>
+    /// <param name="height">The height of the image.</param>
+    /// <param name="channels">The number of color channels of the image.</param>
+    /// <param name="format">The Vulkan format of the pixel data.</param>
+    PlainImageData(std::span<unsigned char> pixels, uint32_t width, uint32_t height, uint32_t channels, vk::Format format);
+
+    /// <summary>
+    /// Creates a PlainImageData object that takes ownership of the provided data.
+    /// </summary>
+    /// <param name="data">A unique_ptr to the raw pixel data.</param>
+    /// <param name="size">The size of the data in bytes.</param>
+    /// <param name="width">The width of the image.</param>
+    /// <param name="height">The height of the image.</param>
+    /// <param name="channels">The number of color channels of the image.</param>
+    /// <param name="format">The Vulkan format of the pixel data.</param>
+    PlainImageData(std::unique_ptr<unsigned char> data, size_t size, uint32_t width, uint32_t height, uint32_t channels, vk::Format format);
+
+    PlainImageData(PlainImageData &&other) noexcept;
+    PlainImageData &operator=(PlainImageData &&other) noexcept;
+
+    PlainImageData(const PlainImageData &other) noexcept;
+    PlainImageData &operator=(const PlainImageData &other) noexcept;
+
+    /// <summary>
+    /// Checks if the image data is valid (i.e., not null).
+    /// </summary>
+    /// <returns>True if the data is valid, false otherwise.</returns>
+    explicit operator bool() const { return static_cast<bool>(mData); }
+
+    /// <summary>
+    /// Copies channels from this image to a destination image based on a mapping.
+    /// For example, mapping {0, 1, 2} would copy R, G, B channels.
+    /// </summary>
+    /// <param name="dst">The destination image data.</param>
+    /// <param name="mapping">An initializer list specifying the channel mapping.</param>
+    void copyChannels(PlainImageData &dst, std::initializer_list<int> mapping) const;
+
+    /// <summary>
+    /// Fills specified channels of the image with given values.
+    /// </summary>
+    /// <param name="channel_list">The channels to fill.</param>
+    /// <param name="values">The values to fill the channels with.</param>
+    void fill(std::initializer_list<int> channel_list, std::initializer_list<unsigned char> values);
+
+    /// <summary>
+    /// Creates a PlainImageData object by loading an image from a file.
+    /// </summary>
+    /// <param name="format">The desired Vulkan format.</param>
+    /// <param name="path">The path to the image file.</param>
+    /// <returns>A new PlainImageData object.</returns>
+    static PlainImageData create(vk::Format format, const std::filesystem::path &path);
+
+    /// <summary>
+    /// Creates a PlainImageData object from raw data.
+    /// </summary>
+    /// <param name="format">The Vulkan format of the data.</param>
+    /// <param name="width">The width of the image.</param>
+    /// <param name="height">The height of the image.</param>
+    /// <param name="channels">The number of channels in the source data. If 0, it's deduced from format.</param>
+    /// <param name="data">The raw pixel data.</param>
+    /// <returns>A new PlainImageData object.</returns>
+    static PlainImageData create(
+            vk::Format format, uint32_t width, uint32_t height, uint32_t channels = 0, const unsigned char *data = nullptr
+    );
+
+    /// <summary>
+    /// Creates a PlainImageData object from raw data, converting the number of channels.
+    /// </summary>
+    /// <param name="width">The width of the image.</param>
+    /// <param name="height">The height of the image.</param>
+    /// <param name="channels">The desired number of channels.</param>
+    /// <param name="src_channels">The number of channels in the source data.</param>
+    /// <param name="data">The raw pixel data.</param>
+    /// <returns>A new PlainImageData object.</returns>
+    static PlainImageData create(
+            uint32_t width, uint32_t height, uint32_t channels, uint32_t src_channels, const unsigned char *data = nullptr
+    );
+};
+
+/// <summary>
+/// A struct holding the creation parameters for a Vulkan image.
+/// </summary>
+struct ImageCreateInfo {
+    /// <summary>The Vulkan format of the image.</summary>
+    vk::Format format = vk::Format::eUndefined;
+    /// <summary>Specifies the intended usage of the image.</summary>
+    vk::ImageUsageFlags usage = {};
+    /// <summary>The type of the image (e.g., 1D, 2D, 3D).</summary>
+    vk::ImageType type = vk::ImageType::e2D;
+    /// <summary>The width of the image.</summary>
+    uint32_t width = 1;
+    /// <summary>The height of the image.</summary>
+    uint32_t height = 1;
+    /// <summary>The depth of the image (for 3D images).</summary>
+    uint32_t depth = 1;
+    /// <summary>The number of mipmap levels. UINT32_MAX means all possible levels.</summary>
+    uint32_t mip_levels = UINT32_MAX;
+    /// <summary>The number of layers in the image array.</summary>
+    uint32_t array_layers = 1;
+
+    /// <summary>
+    /// Creates an ImageCreateInfo struct from a PlainImageData object.
+    /// </summary>
+    /// <param name="plain_image_data">The plain image data.</param>
+    /// <returns>A corresponding ImageCreateInfo struct.</returns>
+    static constexpr ImageCreateInfo from(const PlainImageData &plain_image_data) {
+        return {
+            .format = plain_image_data.format,
+            .width = plain_image_data.width,
+            .height = plain_image_data.height,
+        };
     }
+};
 
-    explicit Framebuffer(const vk::Rect2D& area) : area(area) {
-    }
+/// <summary>
+/// Represents a GPU texture image, which is a wrapper around a Vulkan image and its memory allocation.
+/// This class is a move-only type.
+/// </summary>
+class Image : ImageResource {
+    [[nodiscard]] vk::Image getImage() const { return *mImage; }
 
-    /// <summary>
-    /// Creates a vk::RenderingInfo struct for dynamic rendering.
-    /// </summary>
-    /// <param name="config">The configuration for the rendering pass.</param>
-    /// <returns>A configured vk::RenderingInfo struct.</returns>
-    [[nodiscard]] vk::RenderingInfo renderingInfo(const FramebufferRenderingConfig &config = {}) const;
-
-    /// <summary>
-    /// Returns the format of the depth attachment.
-    /// </summary>
-    /// <returns>The vk::Format of the depth attachment.</returns>
-    [[nodiscard]] vk::Format depthFormat() const;
-
-    /// <summary>
-    /// Returns the format of the stencil attachment.
-    /// </summary>
-    /// <returns>The vk::Format of the stencil attachment.</returns>
-    [[nodiscard]] vk::Format stencilFormat() const {
-        return stencilAttachment.format;
-    }
-
-    /// <summary>
-    /// Returns a vector of formats for all color attachments.
-    /// </summary>
-    /// <returns>A vector of vk::Format for all color attachments.</returns>
-    [[nodiscard]] util::static_vector<vk::Format, 32> colorFormats() const {
-        util::static_vector<vk::Format, 32> result;
-        for (const auto &attachment: colorAttachments) {
-            result.push_back(attachment.format);
-        }
-        return result;
-    }
-
-    /// <summary>
-    /// Returns a Vulkan viewport that covers the framebuffer's area, with the y-axis flipped to match OpenGL conventions.
-    /// </summary>
-    [[nodiscard]] vk::Viewport viewport() const {
-        return vk::Viewport{
-            0.0f, static_cast<float>(area.extent.height), static_cast<float>(area.extent.width),
-            -static_cast<float>(area.extent.height), 0.0f, 1.0f
+    [[nodiscard]] vk::ImageSubresourceRange getResourceRange() const {
+        return {
+            .aspectMask = imageAspectFlags(),
+            .levelCount = info.mip_levels,
+            .layerCount = info.array_layers,
         };
     }
 
+public:
+    ImageCreateInfo info;
+    /// <summary>The raw Vulkan image handle. Use with caution.</summary>
+    vk::Image image;
+
+    /// <summary>
+    /// Creates an empty, invalid Image object.
+    /// </summary>
+    Image() = default;
+
+    /// <summary>
+    /// Constructs an Image from an existing Vulkan image and allocation.
+    /// </summary>
+    /// <param name="image">A VMA unique image handle.</param>
+    /// <param name="allocation">A VMA unique allocation handle.</param>
+    /// <param name="create_info">The creation info for the image.</param>
+    Image(vma::UniqueImage &&image, vma::UniqueAllocation &&allocation, const ImageCreateInfo &create_info);
+
+    Image(const Image &other) = delete;
+    Image &operator=(const Image &other) = delete;
+
+    Image(Image &&other) noexcept = default;
+    Image &operator=(Image &&other) noexcept = default;
+
+    /// <summary>
+    /// Creates a new image.
+    /// </summary>
+    /// <param name="allocator">The VMA allocator.</param>
+    /// <param name="create_info">The creation info for the image.</param>
+    /// <returns>A new Image object.</returns>
+    static Image create(const vma::Allocator &allocator, ImageCreateInfo create_info);
+
+    /// <summary>
+    /// Loads data into a specific mipmap level of the image from a buffer.
+    /// </summary>
+    /// <param name="cmd_buf">The command buffer to record the copy command to.</param>
+    /// <param name="level">The mipmap level to load data into.</param>
+    /// <param name="region">The region of the image to update.</param>
+    /// <param name="data">The buffer containing the data to load.</param>
+    void load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data);
+
+    /// <summary>
+    /// Generates mipmaps for the image. The image must have been created with all mip levels.
+    /// The image must be in a transfer-friendly layout.
+    /// </summary>
+    /// <param name="cmd_buf">The command buffer to record the blit commands to.</param>
+    void generateMipmaps(const vk::CommandBuffer &cmd_buf);
+
+    /// <summary>
+    /// Creates a default image view for this image.
+    /// The view covers all mip levels and array layers.
+    /// </summary>
+    /// <param name="device">The Vulkan logical device.</param>
+    /// <returns>A unique handle to the created image view.</returns>
+    vk::UniqueImageView createDefaultView(const vk::Device &device);
+
+    /// <summary>
+    /// Inserts an image memory barrier for this image.
+    /// </summary>
+    /// <param name="cmd_buf">The command buffer to record the barrier into.</param>
+    /// <param name="begin">The resource access state before the barrier.</param>
+    /// <param name="end">The resource access state after the barrier.</param>
+    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end);
+
+    /// <summary>
+    /// Inserts an image memory barrier, transitioning the image to a single state.
+    /// </summary>
+    /// <param name="cmd_buf">The command buffer to record the barrier into.</param>
+    /// <param name="single">The resource access state to transition to.</param>
+    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single);
+
+    /// <summary>
+    /// Transfers ownership of the image between queue families.
+    /// It does NOT perform any memory barriers or layout transitions. Execution ordering must be handled with a semaphore.
+    /// </summary>
+    /// <param name="src_cmd_buf">The command buffer in the source queue to record the barrier into.</param>
+    /// <param name="dst_cmd_buf">The command buffer in the destination queue to record the barrier into.</param>
+    /// <param name="src_queue">The index of the source queue family.</param>
+    /// <param name="dst_queue">The index of the destination queue family.</param>
+    void transfer(vk::CommandBuffer src_cmd_buf, vk::CommandBuffer dst_cmd_buf, uint32_t src_queue, uint32_t dst_queue);
+
 private:
-    mutable std::array<vk::RenderingAttachmentInfo, 32> mColorAttachmentInfos = {};
-    mutable vk::RenderingAttachmentInfo mDepthAttachmentInfo = {};
-    mutable vk::RenderingAttachmentInfo mStencilAttachmentInfo = {};
+    vma::UniqueImage mImage;
+    vma::UniqueAllocation mAllocation;
+
+    [[nodiscard]] vk::ImageAspectFlags imageAspectFlags() const;
 };

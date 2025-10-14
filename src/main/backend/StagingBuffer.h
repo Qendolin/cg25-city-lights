@@ -53,6 +53,29 @@ public:
     void upload(const void *data, size_t size, const vk::Buffer &dst);
 
     /// <summary>
+    /// Stages a contiguous range of data for uploading to a new buffer on the GPU.
+    /// The buffer is created with TRANSFER_SRC usage.
+    /// </summary>
+    /// <typeparam name="R">The type of the range.</typeparam>
+    /// <param name="data">The range of data to upload.</param>
+    /// <returns>The host-visible staging buffer.</returns>
+    template<std::ranges::contiguous_range R>
+    vk::Buffer stage(R &&data) {
+        using T = std::ranges::range_value_t<R>;
+        size_t size = data.size() * sizeof(T);
+        return std::move(stage(data.data(), size));
+    }
+
+    /// <summary>
+    /// Stages a block of data for uploading to a new buffer on the GPU.
+    /// The buffer is created with TRANSFER_SRC usage.
+    /// </summary>
+    /// <param name="data">A pointer to the data to upload.</param>
+    /// <param name="size">The size of the data in bytes.</param>
+    /// <returns>The host-visible staging buffer.</returns>
+    vk::Buffer stage(const void *data, size_t size);
+
+    /// <summary>
     /// Stages a contiguous range of data for uploading to a destination buffer on the GPU.
     /// </summary>
     /// <typeparam name="R">The type of the range.</typeparam>
@@ -70,7 +93,18 @@ public:
     /// Submits all staged uploads to the GPU.
     /// </summary>
     /// <param name="queue">The Vulkan queue to submit to. It should be a transfer queue.</param>
-    void submit(const vk::Queue &queue);
+    void submit(const vk::Queue &queue, const vk::SubmitInfo& = {});
+
+    /// <summary>
+    /// Returns the command buffer used for staging operations. Only transfer commands may be permitted.
+    /// </summary>
+    [[nodiscard]] vk::CommandBuffer commands() const {
+        return mCommands;
+    }
+
+    [[nodiscard]] vma::Allocator allocator() const {
+        return mAllocator;
+    }
 
 private:
     void createCommandBuffer();

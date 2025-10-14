@@ -6,6 +6,9 @@
 
 #include "../util/math.h"
 
+
+class PlainImageData;
+
 namespace gltf {
 
     struct Mesh {
@@ -104,6 +107,10 @@ namespace gltf {
     /// Holds all the data for a loaded scene.
     /// </summary>
     struct Scene {
+
+        Scene();
+        ~Scene();
+
         /// <summary>
         /// The total number of indices in the scene.
         /// </summary>
@@ -154,5 +161,9 @@ namespace gltf {
         /// A list of all meshes in the scene.
         /// </summary>
         std::vector<Mesh> meshes;
+        /// <summary>
+        /// A list of all images in the scene.
+        /// </summary>
+        std::vector<PlainImageData> images;
     };
-}
+} // namespace gltf

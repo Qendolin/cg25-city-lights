@@ -1,8 +1,8 @@
 #pragma once
 
-#include <vulkan/vulkan.hpp>
 #include <array>
 #include <span>
+#include <vulkan/vulkan.hpp>
 
 /// <summary>
 /// A type-erased descriptor set binding for runtime usage.
@@ -22,19 +22,19 @@ struct Binding {
     /// <param name="stages">The shader stages that can access this binding.</param>
     /// <param name="count">The number of descriptors in the binding (for arrays).</param>
     /// <param name="flags">Additional flags for the binding.</param>
-    constexpr Binding(uint32_t binding,
-                     vk::DescriptorType type,
-                     vk::ShaderStageFlags stages,
-                     uint32_t count = 1,
-                     vk::DescriptorBindingFlags flags = {})
+    constexpr Binding(
+            uint32_t binding,
+            vk::DescriptorType type,
+            vk::ShaderStageFlags stages,
+            uint32_t count = 1,
+            vk::DescriptorBindingFlags flags = {}
+    )
         : binding(binding), type(type), count(count), stages(stages), flags(flags) {}
 
     /// <summary>
     /// Implicit conversion to a Vulkan DescriptorSetLayoutBinding.
     /// </summary>
-    constexpr operator vk::DescriptorSetLayoutBinding() const {
-        return {binding, type, count, stages};
-    }
+    constexpr operator vk::DescriptorSetLayoutBinding() const { return {binding, type, count, stages}; }
 };
 
 /// <summary>
@@ -55,25 +55,20 @@ struct TypedBinding {
     /// <param name="stages">The shader stages that can access this binding.</param>
     /// <param name="count">The number of descriptors in the binding (for arrays).</param>
     /// <param name="flags">Additional flags for the binding.</param>
-    constexpr TypedBinding(uint32_t binding,
-                          vk::ShaderStageFlags stages,
-                          uint32_t count = 1,
-                          vk::DescriptorBindingFlags flags = {})
+    constexpr TypedBinding(
+            uint32_t binding, vk::ShaderStageFlags stages, uint32_t count = 1, vk::DescriptorBindingFlags flags = {}
+    )
         : binding(binding), count(count), stages(stages), flags(flags) {}
 
     /// <summary>
     /// Implicit conversion to a Vulkan DescriptorSetLayoutBinding.
     /// </summary>
-    constexpr operator vk::DescriptorSetLayoutBinding() const {
-        return {binding, Type, count, stages};
-    }
+    constexpr operator vk::DescriptorSetLayoutBinding() const { return {binding, Type, count, stages}; }
 
     /// <summary>
     /// Implicit conversion to a type-erased Binding.
     /// </summary>
-    constexpr operator Binding() const {
-        return {binding, Type, stages, count, flags};
-    }
+    constexpr operator Binding() const { return {binding, Type, stages, count, flags}; }
 
     /// <summary>
     /// Gets the descriptor type of this binding at compile time.
@@ -98,13 +93,12 @@ public:
     DescriptorSetLayout() = default;
     virtual ~DescriptorSetLayout() = default;
 
-    DescriptorSetLayout(const DescriptorSetLayout&) = delete;
+    DescriptorSetLayout(const DescriptorSetLayout &) = delete;
     DescriptorSetLayout &operator=(const DescriptorSetLayout &) = delete;
 
-    DescriptorSetLayout(DescriptorSetLayout&& other) noexcept
-        : mHandle(std::move(other.mHandle)) {}
+    DescriptorSetLayout(DescriptorSetLayout &&other) noexcept : mHandle(std::move(other.mHandle)) {}
 
-    DescriptorSetLayout& operator=(DescriptorSetLayout&& other) noexcept {
+    DescriptorSetLayout &operator=(DescriptorSetLayout &&other) noexcept {
         if (this != &other) {
             mHandle = std::move(other.mHandle);
         }
@@ -114,9 +108,7 @@ public:
     /// <summary>
     /// Implicit conversion to the underlying vk::DescriptorSetLayout handle.
     /// </summary>
-    operator vk::DescriptorSetLayout() const {
-        return *mHandle;
-    }
+    operator vk::DescriptorSetLayout() const { return *mHandle; }
 
 protected:
     /// <summary>
@@ -127,22 +119,15 @@ protected:
     /// <param name="flags">Creation flags for the descriptor set layout.</param>
     /// <param name="...bindings">The descriptor set bindings.</param>
     template<typename... Bindings>
-    void create(const vk::Device& device,
-                vk::DescriptorSetLayoutCreateFlags flags,
-                const Bindings&... bindings) {
+    void create(const vk::Device &device, vk::DescriptorSetLayoutCreateFlags flags, const Bindings &...bindings) {
         std::array<vk::DescriptorSetLayoutBinding, sizeof...(Bindings)> layout_bindings = {
             static_cast<vk::DescriptorSetLayoutBinding>(bindings)...
         };
-        std::array<vk::DescriptorBindingFlags, sizeof...(Bindings)> binding_flags = {
-            bindings.flags...
-        };
+        std::array<vk::DescriptorBindingFlags, sizeof...(Bindings)> binding_flags = {bindings.flags...};
 
         auto chain = vk::StructureChain{
-            vk::DescriptorSetLayoutCreateInfo{}
-                .setFlags(flags)
-                .setBindings(layout_bindings),
-            vk::DescriptorSetLayoutBindingFlagsCreateInfo{}
-                .setBindingFlags(binding_flags)
+            vk::DescriptorSetLayoutCreateInfo{}.setFlags(flags).setBindings(layout_bindings),
+            vk::DescriptorSetLayoutBindingFlagsCreateInfo{}.setBindingFlags(binding_flags)
         };
 
         mHandle = device.createDescriptorSetLayoutUnique(chain.get());
@@ -154,9 +139,7 @@ protected:
     /// <param name="device">The logical Vulkan device.</param>
     /// <param name="flags">Creation flags for the descriptor set layout.</param>
     /// <param name="bindings">A span of descriptor set bindings.</param>
-    void create(const vk::Device& device,
-                vk::DescriptorSetLayoutCreateFlags flags,
-                std::span<const Binding> bindings);
+    void create(const vk::Device &device, vk::DescriptorSetLayoutCreateFlags flags, std::span<const Binding> bindings);
 
 private:
     vk::UniqueDescriptorSetLayout mHandle;
@@ -167,7 +150,6 @@ private:
 /// </summary>
 class DescriptorSet {
 public:
-
     DescriptorSet() = default;
     explicit DescriptorSet(vk::DescriptorSet set) : mHandle(set) {}
 
@@ -179,7 +161,7 @@ public:
     /// <param name="arrayElement">The starting element in the descriptor array.</param>
     /// <returns>A partially filled vk::WriteDescriptorSet structure.</returns>
     template<vk::DescriptorType Type>
-    [[nodiscard]] vk::WriteDescriptorSet write(const TypedBinding<Type>& binding, uint32_t arrayElement = 0) const {
+    [[nodiscard]] vk::WriteDescriptorSet write(const TypedBinding<Type> &binding, uint32_t arrayElement = 0) const {
         return {
             .dstSet = mHandle,
             .dstBinding = binding.binding,
@@ -198,9 +180,9 @@ public:
     /// <param name="arrayElement">The starting element in the descriptor array.</param>
     /// <returns>A complete vk::WriteDescriptorSet structure for an image descriptor.</returns>
     template<vk::DescriptorType Type>
-    [[nodiscard]] vk::WriteDescriptorSet write(const TypedBinding<Type>& binding,
-                                const vk::DescriptorImageInfo& info,
-                                uint32_t arrayElement = 0) const {
+    [[nodiscard]] vk::WriteDescriptorSet write(
+            const TypedBinding<Type> &binding, const vk::DescriptorImageInfo &info, uint32_t arrayElement = 0
+    ) const {
         return write(binding, arrayElement).setImageInfo(info);
     }
 
@@ -213,9 +195,9 @@ public:
     /// <param name="arrayElement">The starting element in the descriptor array.</param>
     /// <returns>A complete vk::WriteDescriptorSet structure for a buffer descriptor.</returns>
     template<vk::DescriptorType Type>
-    [[nodiscard]] vk::WriteDescriptorSet write(const TypedBinding<Type>& binding,
-                                const vk::DescriptorBufferInfo& info,
-                                uint32_t arrayElement = 0) const {
+    [[nodiscard]] vk::WriteDescriptorSet write(
+            const TypedBinding<Type> &binding, const vk::DescriptorBufferInfo &info, uint32_t arrayElement = 0
+    ) const {
         return write(binding, arrayElement).setBufferInfo(info);
     }
 
@@ -226,18 +208,18 @@ public:
     /// <param name="block">The inline uniform block data to write.</param>
     /// <param name="arrayElement">The starting element in the descriptor array.</param>
     /// <returns>A complete vk::WriteDescriptorSet structure for an inline uniform block.</returns>
-    [[nodiscard]] vk::WriteDescriptorSet write(const InlineUniformBlockBinding& binding,
-                                const vk::WriteDescriptorSetInlineUniformBlock& block,
-                                uint32_t arrayElement = 0) const {
+    [[nodiscard]] vk::WriteDescriptorSet write(
+            const InlineUniformBlockBinding &binding,
+            const vk::WriteDescriptorSetInlineUniformBlock &block,
+            uint32_t arrayElement = 0
+    ) const {
         return write(binding, arrayElement).setPNext(&block);
     }
 
     /// <summary>
     /// Implicit conversion to the underlying vk::DescriptorSet handle.
     /// </summary>
-    operator vk::DescriptorSet() const {
-        return mHandle;
-    }
+    operator vk::DescriptorSet() const { return mHandle; }
 
 private:
     vk::DescriptorSet mHandle;
@@ -248,24 +230,39 @@ private:
 /// </summary>
 class DescriptorAllocator {
 public:
+    struct Deleter {
+        void operator()(DescriptorAllocator* a) const noexcept {
+            if (a && a->mPool)
+                a->mDevice.destroyDescriptorPool(a->mPool);
+            delete a;
+        }
+    };
+
     DescriptorAllocator() = default;
-    explicit DescriptorAllocator(const vk::Device& device);
+    explicit DescriptorAllocator(const vk::Device &device);
 
     /// <summary>
     /// Allocates a single descriptor set from the pool.
     /// </summary>
     /// <param name="layout">The layout for the descriptor set to allocate.</param>
     /// <returns>An allocated DescriptorSet.</returns>
-    DescriptorSet allocate(const DescriptorSetLayout& layout) const;
+    DescriptorSet allocate(const DescriptorSetLayout &layout) const;
 
     /// <summary>
     /// Resets the underlying descriptor pool, invalidating all allocated sets.
     /// </summary>
-    void reset() {
-        mDevice.resetDescriptorPool(*mPool);
-    }
+    void reset() const { mDevice.resetDescriptorPool(mPool); }
 
 private:
-    vk::UniqueDescriptorPool mPool;
+    vk::DescriptorPool mPool;
     vk::Device mDevice = {};
+
+    friend struct std::default_delete<DescriptorAllocator>;
 };
+
+template<>
+struct std::default_delete<DescriptorAllocator> {
+    void operator()(DescriptorAllocator *a) const noexcept;
+};
+
+using UniqueDescriptorAllocator = std::unique_ptr<DescriptorAllocator, DescriptorAllocator::Deleter>;

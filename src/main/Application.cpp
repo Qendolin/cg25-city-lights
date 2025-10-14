@@ -3,6 +3,7 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.inl>
 #include <glm/gtx/fast_trigonometry.hpp>
 
 #include "backend/Framebuffer.h"
@@ -10,6 +11,7 @@
 #include "backend/Swapchain.h"
 #include "backend/VulkanContext.h"
 #include "debug/Performance.h"
+#include "debug/SettingsGui.h"
 #include "entity/Camera.h"
 #include "glfw/Input.h"
 #include "imgui/ImGui.h"
@@ -24,7 +26,7 @@ Application::~Application() = default;
 void Application::recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &fb) const {
     const auto &swapchain = context->swapchain();
 
-    pbrSceneRenderer->prepare(context->device(), *camera);
+    pbrSceneRenderer->prepare(context->device(), *camera, settings.sun);
 
     cmd_buf.begin(vk::CommandBufferBeginInfo{});
 
@@ -90,9 +92,11 @@ void Application::processInput() {
     camera->updateViewMatrix();
 }
 
-void Application::drawGui() const {
+void Application::drawGui() {
     debugFrameTimes->update(input->timeDelta());
     debugFrameTimes->draw();
+
+    settingsGui->draw(settings);
 }
 
 void Application::drawFrame() {
@@ -189,6 +193,7 @@ void Application::init() {
         .resizable = true,
     })));
     Logger::info("Using present mode: " + vk::to_string(context->swapchain().presentMode()));
+    context->window().centerOnScreen();
 
     input = std::make_unique<glfw::Input>(context->window());
 
@@ -196,6 +201,7 @@ void Application::init() {
             context->instance(), context->device(), context->physicalDevice(), context->window(), context->swapchain(),
             context->mainQueue, context->swapchain().depthFormat()
     );
+    settingsGui = std::make_unique<SettingsGui>();
 
     commandPool = context->device().createCommandPoolUnique({
         .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,

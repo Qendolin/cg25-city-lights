@@ -3,9 +3,11 @@
 #include <vulkan/vulkan.hpp>
 
 #include "backend/Descriptors.h"
+#include "debug/Settings.h"
 #include "util/PerFrame.h"
 
 
+class SettingsGui;
 struct FrameTimes;
 namespace glfw {
     class Input;
@@ -44,6 +46,9 @@ class Application {
     std::unique_ptr<Camera> camera;
     std::unique_ptr<scene::Scene> scene;
 
+    Settings settings = {};
+    std::unique_ptr<SettingsGui> settingsGui;
+
     std::unique_ptr<FrameTimes> debugFrameTimes;
 
     // Called after the swapchain was invalidated, or when shaders are reloaded, and when the application is initialized
@@ -52,7 +57,7 @@ class Application {
     void recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &fb) const;
 
     void processInput();
-    void drawGui() const;
+    void drawGui();
     void drawFrame();
 
 public:

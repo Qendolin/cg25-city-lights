@@ -78,9 +78,9 @@ namespace gltf {
         /// </summary>
         int32_t albedoTexture = -1;
         /// <summary>
-        /// The index of the occlusion-metallic-roughness (OMR) texture, or -1 if none.
+        /// The index of the occlusion-roughness-metallic (ORM) texture, or -1 if none.
         /// </summary>
-        int32_t omrTexture = -1;
+        int32_t ormTexture = -1;
         /// <summary>
         /// The index of the normal texture, or -1 if none.
         /// </summary>

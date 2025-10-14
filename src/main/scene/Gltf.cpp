@@ -137,8 +137,8 @@ namespace gltf {
     }
 
     void Loader::loadMaterials(const fastgltf::Asset &asset, Scene &scene_data) {
-        // Occlusion and metalness-roughness images may need to be merged. This cache is used for deduplication.
-        std::map<std::pair<int32_t, int32_t>, int32_t> omr_cache_map;
+        // Occlusion and roughness-metalness images may need to be merged. This cache is used for deduplication.
+        std::map<std::pair<int32_t, int32_t>, int32_t> orm_cache_map;
         std::map<int32_t, int32_t> normal_cache_map;
 
         // FIXME: The image code is way too complex and scuffed
@@ -163,54 +163,54 @@ namespace gltf {
                 Logger::check(image.format == vk::Format::eR8G8B8A8Srgb, "Format of albedo texture must be R8G8B8A8_SRGB");
             }
 
-            std::pair omr_cache_key = {-1, -1};
+            std::pair orm_cache_key = {-1, -1};
             PlainImageData *o_image = nullptr;
-            PlainImageData *mr_image = nullptr;
+            PlainImageData *rm_image = nullptr;
             if (gltf_mat.occlusionTexture.has_value()) {
                 auto index = static_cast<int32_t>(gltf_mat.occlusionTexture.value().textureIndex);
                 o_image = &scene_data.images[index];
-                omr_cache_key.first = index;
+                orm_cache_key.first = index;
             }
 
             if (gltf_mat.pbrData.metallicRoughnessTexture.has_value()) {
                 auto index = static_cast<int32_t>(gltf_mat.pbrData.metallicRoughnessTexture.value().textureIndex);
-                mr_image = &scene_data.images[index];
-                omr_cache_key.second = index;
+                rm_image = &scene_data.images[index];
+                orm_cache_key.second = index;
             }
 
-            // OMR texture merging logic
-            if (o_image != nullptr && mr_image != nullptr && o_image == mr_image) {
-                mat.omrTexture = static_cast<int32_t>(gltf_mat.occlusionTexture.value().textureIndex);
-                auto &image = scene_data.images[mat.omrTexture];
+            // ORM texture merging logic
+            if (o_image != nullptr && rm_image != nullptr && o_image == rm_image) {
+                mat.ormTexture = static_cast<int32_t>(gltf_mat.occlusionTexture.value().textureIndex);
+                auto &image = scene_data.images[mat.ormTexture];
                 if (image.format == vk::Format::eUndefined) // claim image in this format
                     image.format = vk::Format::eR8G8B8A8Unorm;
-                Logger::check(image.format == vk::Format::eR8G8B8A8Unorm, "Format of omr texture must be R8G8B8A8_UNORM");
-            } else if (o_image || mr_image) {
-                if (o_image && mr_image) {
+                Logger::check(image.format == vk::Format::eR8G8B8A8Unorm, "Format of orm texture must be R8G8B8A8_UNORM");
+            } else if (o_image || rm_image) {
+                if (o_image && rm_image) {
                     Logger::check(
-                            mr_image->width == o_image->width && mr_image->height == o_image->height,
-                            "Occlusion texture size doesn't match metalness-roughness texture size"
+                            rm_image->width == o_image->width && rm_image->height == o_image->height,
+                            "Occlusion texture size doesn't match roughness-metalness texture size"
                     );
                 }
 
-                if (omr_cache_map.contains(omr_cache_key)) {
-                    mat.omrTexture = omr_cache_map.at(omr_cache_key);
+                if (orm_cache_map.contains(orm_cache_key)) {
+                    mat.ormTexture = orm_cache_map.at(orm_cache_key);
                 } else {
-                    PlainImageData *o_or_mr_image = o_image ? o_image : mr_image;
-                    mat.omrTexture = static_cast<int32_t>(scene_data.images.size());
-                    auto omr_image = PlainImageData::create(vk::Format::eR8G8B8A8Unorm, o_or_mr_image->width, o_or_mr_image->height);
+                    PlainImageData *o_or_rm_image = o_image ? o_image : rm_image;
+                    mat.ormTexture = static_cast<int32_t>(scene_data.images.size());
+                    auto orm_image = PlainImageData::create(vk::Format::eR8G8B8A8Unorm, o_or_rm_image->width, o_or_rm_image->height);
 
                     if (o_image) {
-                        o_image->copyChannels(omr_image, {0});
+                        o_image->copyChannels(orm_image, {0});
                     }
-                    if (mr_image) {
-                        mr_image->copyChannels(omr_image, {1, 2});
+                    if (rm_image) {
+                        rm_image->copyChannels(orm_image, {1, 2});
                     } else {
-                        omr_image.fill({1, 2}, {0xff, 0xff});
+                        orm_image.fill({1, 2}, {0xff, 0xff});
                     }
-                    omr_cache_map[omr_cache_key] = mat.omrTexture;
+                    orm_cache_map[orm_cache_key] = mat.ormTexture;
                     // pushing vector invalidates pointers, so push last
-                    scene_data.images.emplace_back(std::move(omr_image));
+                    scene_data.images.emplace_back(std::move(orm_image));
                 }
             }
 

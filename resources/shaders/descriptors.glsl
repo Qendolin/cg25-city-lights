@@ -12,11 +12,16 @@ struct Section {
 
 struct Material {
     vec4 albedoFactors;
-    vec4 mrnFactors; // metalness, roughness, normal strength
+    vec4 rmnFactors; // roughness, metalness, normal strength
     // lo=albedo, hi=normal
     uint packedImageIndices0;
-    // lo=omr, hi=unused
+    // lo=orm, hi=unused
     uint packedImageIndices1;
+};
+
+struct SunLight {
+    vec4 radiance;
+    vec4 direction;
 };
 
 // Descriptor Sets
@@ -39,4 +44,5 @@ layout (std140, set = 1, binding = 0) uniform SceneUniforms {
     mat4 view;
     mat4 projection;
     vec4 camera;
+    SunLight sun;
 } uScene;

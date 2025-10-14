@@ -6,6 +6,7 @@
 #include "../backend/ShaderCompiler.h"
 #include "../backend/Swapchain.h"
 #include "../entity/Camera.h"
+#include "../scene/Light.h"
 #include "../scene/Scene.h"
 
 PbrSceneRenderer::~PbrSceneRenderer() = default;
@@ -16,11 +17,15 @@ PbrSceneRenderer::PbrSceneRenderer(
     createDescriptors(device, allocator, swapchain);
 }
 
-void PbrSceneRenderer::prepare(const vk::Device &device, const Camera& camera) const {
+void PbrSceneRenderer::prepare(const vk::Device &device, const Camera& camera, const DirectionalLight& sun_light) const {
     ShaderParamsInlineUniformBlock uniform_block = {
         .view = camera.viewMatrix(),
         .projection = camera.projectionMatrix(),
         .camera = {camera.position, 0},
+        .sun = {
+            .radiance = glm::vec4{sun_light.radiance(), 0.0f},
+            .direction = glm::vec4{sun_light.direction(), 0.0f},
+        },
     };
     device.updateDescriptorSets(
             {mShaderParamsDescriptors.get().write(

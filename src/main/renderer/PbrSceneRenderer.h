@@ -6,6 +6,7 @@
 #include "../util/PerFrame.h"
 
 
+struct DirectionalLight;
 class Camera;
 namespace scene {
     struct GpuData;
@@ -18,9 +19,14 @@ class PbrSceneRenderer {
 public:
 
     struct alignas(16) ShaderParamsInlineUniformBlock {
+        struct alignas(16) SunLight {
+            glm::vec4 radiance; // Padded to 16 bytes
+            glm::vec4 direction; // Padded to 16 bytes
+        };
         glm::mat4 view;
         glm::mat4 projection;
         glm::vec4 camera; // Padded to 16 bytes
+        SunLight sun;
     };
 
     struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
@@ -44,7 +50,7 @@ public:
         createPipeline(device, shader_loader, swapchain);
     }
 
-    void prepare(const vk::Device &device, const Camera &camera) const;
+    void prepare(const vk::Device &device, const Camera &camera, const DirectionalLight& sun_light) const;
 
     void render(const vk::CommandBuffer &cmd_buf, const Framebuffer &fb, const scene::GpuData &gpu_data);
 

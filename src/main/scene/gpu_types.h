@@ -23,10 +23,11 @@ struct alignas(4) SectionBlock {
 
 struct alignas(16) MaterialBlock {
     glm::vec4 albedoFactors;
-    glm::vec4 mrnFactors; // Padded to 16 bytes
+    // roughness, metalness, normal strength factors
+    glm::vec4 rmnFactors; // Padded to 16 bytes
     // albedo, normal
     glm::uint packedImageIndices0;
-    // omr, unused
+    // orm, unused
     glm::uint packedImageIndices1;
     glm::uint pad0;
     glm::uint pad1;

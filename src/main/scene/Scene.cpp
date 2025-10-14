@@ -188,12 +188,12 @@ namespace scene {
             const auto &material = scene_data.materials[i];
             uint32_t albedo_texture_index = material.albedoTexture == -1 ? 0xffff : image_index[material.albedoTexture];
             uint32_t normal_texture_index = material.normalTexture == -1 ? 0xffff : image_index[material.normalTexture];
-            uint32_t omr_texture_index = material.omrTexture == -1 ? 0xffff : image_index[material.omrTexture];
+            uint32_t orm_texture_index = material.ormTexture == -1 ? 0xffff : image_index[material.ormTexture];
             material_blocks.emplace_back() = {
                 .albedoFactors = material.albedoFactor,
-                .mrnFactors = glm::vec4{material.metalnessFactor, material.roughnessFactor, material.normalFactor, 1.0f},
+                .rmnFactors = glm::vec4{material.roughnessFactor, material.metalnessFactor, material.normalFactor, 1.0f},
                 .packedImageIndices0 = albedo_texture_index & 0xffff | (normal_texture_index & 0xffff) << 16,
-                .packedImageIndices1 = omr_texture_index & 0xffff,
+                .packedImageIndices1 = orm_texture_index & 0xffff,
             };
         }
         std::tie(result.materials, result.materialsAlloc) =

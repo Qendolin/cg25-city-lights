@@ -15,8 +15,6 @@ const float PI = 3.14159265359;
 const uint NO_TEXTURE = 0xffff;
 
 const int LIGHT_COUNT = 1;
-const vec3 LIGHT_DIRECTION = normalize(vec3(0.5, 0.2, 1));
-const vec3 LIGHT_RADIANCE = vec3(15.0);
 
 void unpackUint16(in uint packed, out uint lower, out uint upper) {
     lower = packed & 0xffff;
@@ -96,29 +94,29 @@ void main() {
     Material material = uMaterialBuffer.materials[in_material];
     uint albedoTextureIndex, normalTextureIndex;
     unpackUint16(material.packedImageIndices0, albedoTextureIndex, normalTextureIndex);
-    uint omrTextureIndex, unusedTextureIndex;
-    unpackUint16(material.packedImageIndices1, omrTextureIndex, unusedTextureIndex);
+    uint ormTextureIndex, unusedTextureIndex;
+    unpackUint16(material.packedImageIndices1, ormTextureIndex, unusedTextureIndex);
 
     vec4 albedo = material.albedoFactors;
     if (albedoTextureIndex != NO_TEXTURE) {
         albedo *= texture(uTextures[nonuniformEXT(albedoTextureIndex)], in_tex_coord);
     }
 
-    vec3 omr = vec3(1.0, material.mrnFactors.xy);
-    if (omrTextureIndex != NO_TEXTURE) {
-        omr *= texture(uTextures[nonuniformEXT(omrTextureIndex)], in_tex_coord).xyz;
+    vec3 orm = vec3(1.0, material.rmnFactors.xy);
+    if (ormTextureIndex != NO_TEXTURE) {
+        orm *= texture(uTextures[nonuniformEXT(ormTextureIndex)], in_tex_coord).xyz;
     }
-    float occusion = omr.x;
-    float metallic = omr.y;
-    float roughness = omr.z;
+    float occlusion = orm.x;
+    float roughness = orm.y;
+    float metallic = orm.z;
     mat3 tbn = in_tbn;
 
     // tangent-space normal
-    vec3 normal_ts = vec3(0.0f, 0.0f, 1.0f);
+    vec3 normal_ts = vec3(0.0, 0.0, 1.0);
     if (normalTextureIndex != NO_TEXTURE) {
         normal_ts.xy = texture(uTextures[nonuniformEXT(normalTextureIndex)], in_tex_coord).xy * 2.0 - 1.0;
         normal_ts.z = sqrt(1 - normal_ts.x * normal_ts.x - normal_ts.y * normal_ts.y);
-        normal_ts = normalize(normal_ts * vec3(material.mrnFactors.z * .5, material.mrnFactors.z * .5, 1.0)); // increase intensity
+        normal_ts = normalize(normal_ts * vec3(material.rmnFactors.z, material.rmnFactors.z, 1.0)); // increase intensity
         roughness = adjustRoughness(normal_ts, roughness);
     }
 
@@ -134,8 +132,8 @@ void main() {
     vec3 Lo = vec3(0.0);
     for (int i = 0; i < LIGHT_COUNT; ++i)
     {
-        vec3 L = LIGHT_DIRECTION;
-        vec3 radiance = LIGHT_RADIANCE;
+        vec3 L = uScene.sun.direction.xyz;
+        vec3 radiance = uScene.sun.radiance.xyz;
 
         // The half way vector
         vec3 H = normalize(V + L);
@@ -150,7 +148,7 @@ void main() {
 
         float n_dot_l = max(dot(n, L), 0.0);
 
-        float micro_shadow = microShadowNaughtyDog(occusion, n_dot_l);
+        float micro_shadow = microShadowNaughtyDog(occlusion, n_dot_l);
         radiance *= micro_shadow;
 
         vec3 numerator = NDF * G * F;
@@ -173,13 +171,14 @@ void main() {
         Lo += (kD * albedo.rgb / PI + specular) * radiance * n_dot_l;
     }
 
-    vec3 ambient = vec3(1.0) * occusion;
+    vec3 ambient = vec3(1.0) * occlusion;
     ambient *= fresnelSchlickRoughness(n_dot_v, F0, roughness);
     ambient *= albedo.rgb;
+    ambient *= 1.0 - metallic;
 
     vec3 color = ambient + Lo;
     // reinhard tonemaping
-    color = color / (color + 1.0f);
+    color = color / (color + 1.0);
     // no gamma correction, swapchain uses srgb format
     out_color = vec4(color, 1.0);
 }

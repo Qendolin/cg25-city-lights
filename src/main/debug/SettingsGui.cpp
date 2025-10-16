@@ -22,6 +22,19 @@ void SettingsGui::draw(Settings &settings) {
         SliderFloat("Power", &settings.sun.power, 0, 50);
         PopID();
     }
+    if (CollapsingHeader("Shadow")) {
+        PushID("shadow");
+        SliderFloat("Extents", &settings.shadow.extents, 0, 100);
+        SliderFloat("Distance", &settings.shadow.distance, 0, 100);
+        SliderFloat("Size Bias", &settings.shadow.sizeBias, -300, 300);
+        DragFloat("Normal Bias", &settings.shadow.normalBias);
+        SliderFloat("Sample Bias", &settings.shadow.sampleBias, 0.0f, 10.0f);
+        SliderFloat("Sample Bias Clamp", &settings.shadow.sampleBiasClamp, 0.0f, 1.0f, "%.5f");
+        DragFloat("Depth Bias Const", &settings.shadow.depthBiasConstant);
+        SliderFloat("Depth Bias Slope", &settings.shadow.depthBiasSlope, -2.5f, 2.5f, "%.5f");
+        SliderFloat("Depth Bias Clamp", &settings.shadow.depthBiasClamp, 0.0f, 0.1f, "%.5f");
+        PopID();
+    }
 
     End();
 }

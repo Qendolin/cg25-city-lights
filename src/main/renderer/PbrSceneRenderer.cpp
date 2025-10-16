@@ -8,34 +8,63 @@
 #include "../entity/Camera.h"
 #include "../scene/Light.h"
 #include "../scene/Scene.h"
+#include "ShadowRenderer.h"
 
 PbrSceneRenderer::~PbrSceneRenderer() = default;
 
-PbrSceneRenderer::PbrSceneRenderer(
-        const vk::Device &device, const DescriptorAllocator &allocator, const Swapchain &swapchain
-) {
+PbrSceneRenderer::PbrSceneRenderer(const vk::Device &device, const DescriptorAllocator &allocator, const Swapchain &swapchain) {
     createDescriptors(device, allocator, swapchain);
+    mShadowSampler = device.createSamplerUnique({
+        .magFilter = vk::Filter::eLinear,
+        .minFilter = vk::Filter::eLinear,
+        .addressModeU = vk::SamplerAddressMode::eClampToBorder,
+        .addressModeV = vk::SamplerAddressMode::eClampToBorder,
+        .compareEnable = true,
+        .compareOp = vk::CompareOp::eGreaterOrEqual,
+        .borderColor = vk::BorderColor::eFloatTransparentBlack,
+    });
 }
 
-void PbrSceneRenderer::prepare(const vk::Device &device, const Camera& camera, const DirectionalLight& sun_light) const {
+void PbrSceneRenderer::prepare(
+        const vk::Device &device, const Camera &camera, const DirectionalLight &sun_light, const ShadowCaster &sun_shadow
+) const {
+    // Divide by resolution to help keep the bias resolution independent
+    float normal_bias = sun_shadow.normalBias / static_cast<float>(sun_shadow.resolution());
     ShaderParamsInlineUniformBlock uniform_block = {
         .view = camera.viewMatrix(),
         .projection = camera.projectionMatrix(),
         .camera = {camera.position, 0},
-        .sun = {
-            .radiance = glm::vec4{sun_light.radiance(), 0.0f},
-            .direction = glm::vec4{sun_light.direction(), 0.0f},
-        },
+        .sun =
+                {
+                    .projectionView = sun_shadow.projectionMatrix() * sun_shadow.viewMatrix(),
+                    .radiance = glm::vec4{sun_light.radiance(), 0.0},
+                    .direction = glm::vec4{sun_light.direction(), 0.0},
+                    .sampleBias = sun_shadow.sampleBias,
+                    .sampleBiasClamp = sun_shadow.sampleBiasClamp,
+                    .normalBias = normal_bias,
+                },
     };
     device.updateDescriptorSets(
             {mShaderParamsDescriptors.get().write(
-                    ShaderParamsDescriptorLayout::SceneUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
-            )},
+                     ShaderParamsDescriptorLayout::SceneUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
+             ),
+             mShaderParamsDescriptors.get().write(
+                     ShaderParamsDescriptorLayout::SunShadowMap,
+                     vk::DescriptorImageInfo{
+                         .sampler = *mShadowSampler,
+                         .imageView = sun_shadow.framebuffer().depthAttachment.view,
+                         .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
+                     }
+             )},
             {}
     );
 }
 
-void PbrSceneRenderer::render(const vk::CommandBuffer &cmd_buf, const Framebuffer &fb, const scene::GpuData &gpu_data) {
+void PbrSceneRenderer::render(
+        const vk::CommandBuffer &cmd_buf, const Framebuffer &fb, const scene::GpuData &gpu_data, const ShadowCaster &sun_shadow
+) {
+    sun_shadow.framebuffer().depthAttachment.barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
+
     cmd_buf.beginRendering(fb.renderingInfo({
         .enabledColorAttachments = {true},
         .enableDepthAttachment = true,
@@ -46,7 +75,7 @@ void PbrSceneRenderer::render(const vk::CommandBuffer &cmd_buf, const Framebuffe
     }));
 
     mPipeline.config.viewports = {{fb.viewport()}};
-    mPipeline.config.scissors = {{fb.area}};
+    mPipeline.config.scissors = {{fb.area()}};
     mPipeline.config.apply(cmd_buf);
 
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics, *mPipeline.pipeline);

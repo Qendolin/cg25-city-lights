@@ -38,11 +38,11 @@ namespace util {
         float f = 1.0f / std::tan(fov / 2.0f);
         // This is a reversed projection matrix with an infinite far plane.
         // clang-format off
-    return {
-        f / aspect_ratio, 0.0f, 0.0f, 0.0f,
-        0.0f, f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, -1.0f,
-        0.0f, 0.0f, near_plane, 0.0f};
+        return {
+            f / aspect_ratio, 0.0f, 0.0f, 0.0f,
+            0.0f, f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, -1.0f,
+            0.0f, 0.0f, near_plane, 0.0f};
         // clang-format on
     }
 

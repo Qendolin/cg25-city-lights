@@ -21,9 +21,9 @@ ConfiguredPipeline createGraphicsPipeline(
         .cullMode = c.cull.mode,
         .frontFace = c.cull.front,
         .depthBiasEnable = c.depth.biasEnabled,
-        .depthBiasConstantFactor = c.depth.bias.depthBiasConstantFactor,
-        .depthBiasClamp = c.depth.bias.depthBiasClamp,
-        .depthBiasSlopeFactor = c.depth.bias.depthBiasSlopeFactor,
+        .depthBiasConstantFactor = c.depth.biasConstant,
+        .depthBiasClamp = c.depth.biasClamp,
+        .depthBiasSlopeFactor = c.depth.biasSlope,
         .lineWidth = c.line.width,
     };
 
@@ -194,7 +194,7 @@ void PipelineConfig::apply(const vk::CommandBuffer &cmd) const {
         cmd.setCullMode(cull.mode);
 
     if (flags.depthBias)
-        cmd.setDepthBias2EXT(depth.bias);
+        cmd.setDepthBias(depth.biasConstant, depth.biasClamp, depth.biasSlope);
 
     if (flags.depthBiasEnable)
         cmd.setDepthBiasEnable(depth.biasEnabled);

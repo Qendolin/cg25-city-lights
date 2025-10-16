@@ -7,6 +7,8 @@
 #include "util/PerFrame.h"
 
 
+class ShadowCaster;
+class ShadowRenderer;
 class SettingsGui;
 struct FrameTimes;
 namespace glfw {
@@ -41,10 +43,12 @@ class Application {
 
     std::unique_ptr<ImGuiBackend> imguiBackend;
     std::unique_ptr<PbrSceneRenderer> pbrSceneRenderer;
+    std::unique_ptr<ShadowRenderer> shadowRenderer;
 
     std::unique_ptr<glfw::Input> input;
     std::unique_ptr<Camera> camera;
     std::unique_ptr<scene::Scene> scene;
+    std::unique_ptr<ShadowCaster> sunShadowCaster;
 
     Settings settings = {};
     std::unique_ptr<SettingsGui> settingsGui;

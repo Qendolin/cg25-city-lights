@@ -318,8 +318,12 @@ public:
         std::pair<float, float> bounds = {0.0f, 1.0f};
         /// <summary>Whether depth bias is enabled.</summary>
         bool biasEnabled = false;
-        /// <summary>The depth bias parameters.</summary>
-        vk::DepthBiasInfoEXT bias = {};
+        /// <summary>The depth bias constant factor.</summary>
+        float biasConstant = 0.0f;
+        /// <summary>The depth bias clamp value.</summary>
+        float biasClamp = 0.0f;
+        /// <summary>The depth bias slope factor.</summary>
+        float biasSlope = 0.0f;
         /// <summary>Whether depth clamping is enabled.</summary>
         bool clampEnabled = true;
     } depth;

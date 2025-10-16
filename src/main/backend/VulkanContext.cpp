@@ -88,6 +88,7 @@ vkb::PhysicalDevice createPhysicalDevice(const vkb::Instance &instance, const vk
             .set_required_features({
                 .multiDrawIndirect = true,
                 .depthClamp = true,
+                .depthBiasClamp = true,
                 .samplerAnisotropy = true,
             })
             .set_required_features_12({

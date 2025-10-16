@@ -107,7 +107,7 @@ namespace scene {
             image.load(staging.commands(), 0, {}, staged_buffer);
             image.transfer(staging.commands(), graphics_cmds, mTransferQueue, mGraphicsQueue);
             image.generateMipmaps(graphics_cmds);
-            image.barrier(graphics_cmds, ImageResourceAccess::FragmentShaderRead);
+            image.barrier(graphics_cmds, ImageResourceAccess::FragmentShaderReadOptimal);
 
             vk::UniqueImageView &view = result.views.emplace_back();
             view = image.createDefaultView(mDevice);

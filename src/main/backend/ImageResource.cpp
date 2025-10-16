@@ -28,10 +28,10 @@ constexpr ImageResourceAccess ImageResourceAccess::ComputeShaderReadOptimal = {
     .layout = vk::ImageLayout::eShaderReadOnlyOptimal
 };
 
-constexpr ImageResourceAccess ImageResourceAccess::FragmentShaderRead = {
+constexpr ImageResourceAccess ImageResourceAccess::FragmentShaderReadOptimal = {
     .stage = vk::PipelineStageFlagBits2::eFragmentShader,
     .access = vk::AccessFlagBits2::eShaderRead,
-    .layout = vk::ImageLayout::eTransferDstOptimal
+    .layout = vk::ImageLayout::eReadOnlyOptimal
 };
 
 constexpr ImageResourceAccess ImageResourceAccess::ColorAttachmentWrite = {

@@ -16,6 +16,7 @@
 #include "glfw/Input.h"
 #include "imgui/ImGui.h"
 #include "renderer/PbrSceneRenderer.h"
+#include "renderer/ShadowRenderer.h"
 #include "scene/Gltf.h"
 #include "scene/Scene.h"
 #include "util/Logger.h"
@@ -26,12 +27,15 @@ Application::~Application() = default;
 void Application::recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &fb) const {
     const auto &swapchain = context->swapchain();
 
-    pbrSceneRenderer->prepare(context->device(), *camera, settings.sun);
+    pbrSceneRenderer->prepare(context->device(), *camera, settings.sun, *sunShadowCaster);
 
     cmd_buf.begin(vk::CommandBufferBeginInfo{});
 
+    // Shadow pass
+    shadowRenderer->render(cmd_buf, scene->gpu(), *sunShadowCaster);
+
     // Main render pass
-    pbrSceneRenderer->render(cmd_buf, fb, scene->gpu());
+    pbrSceneRenderer->render(cmd_buf, fb, scene->gpu(), *sunShadowCaster);
 
     // ImGui render pass
     {
@@ -124,6 +128,18 @@ void Application::drawFrame() {
     imguiBackend->beginFrame();
     drawGui();
 
+    // Should probably move this somewhere else
+    sunShadowCaster->lookAt(camera->position, -settings.sun.direction(), settings.shadow.distance);
+    if (settings.shadow.extents != sunShadowCaster->extents())
+        sunShadowCaster->setExtents(settings.shadow.extents);
+    sunShadowCaster->depthBiasConstant = settings.shadow.depthBiasConstant;
+    sunShadowCaster->depthBiasSlope = settings.shadow.depthBiasSlope;
+    sunShadowCaster->depthBiasClamp = settings.shadow.depthBiasClamp;
+    sunShadowCaster->sampleBias = settings.shadow.sampleBias;
+    sunShadowCaster->sampleBiasClamp = settings.shadow.sampleBiasClamp;
+    sunShadowCaster->normalBias = settings.shadow.normalBias;
+    sunShadowCaster->sizeBias = settings.shadow.sizeBias;
+
     cmd_buf.reset();
     recordCommands(cmd_buf, fb);
 
@@ -152,6 +168,7 @@ void Application::recreate() {
     // I don't really like that recrate has to be called explicitly.
     // I'd prefer an implicit solution, but I couldn't think of a good one right now.
     pbrSceneRenderer->recreate(context->device(), *shaderLoader, swapchain);
+    shadowRenderer->recreate(device, *shaderLoader);
 
     syncObjects.create(swapchain.imageCount(), [&] {
         return SyncObjects{
@@ -214,16 +231,12 @@ void Application::init() {
     descriptorAllocator = std::make_unique<DescriptorAllocator>(context->device());
 
     gltf::Loader gltf_loader = {};
-    scene::Loader scene_loader = {
-        &gltf_loader,
-        context->allocator(),
-        context->device(),
-        context->physicalDevice(),
-        context->transferQueue,
-        context->mainQueue,
-        *descriptorAllocator
-    };
+    scene::Loader scene_loader = {&gltf_loader,           context->allocator(),
+                                  context->device(),      context->physicalDevice(),
+                                  context->transferQueue, context->mainQueue,
+                                  *descriptorAllocator};
     scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/ComplexTest.glb")));
+    sunShadowCaster = std::make_unique<ShadowCaster>(context->device(), context->allocator(), 1024, 25.0f, 0.0f, 100.0f);
 
     camera = std::make_unique<Camera>(glm::radians(90.0f), 0.001f, glm::vec3{0, 1, 5}, glm::vec3{});
     debugFrameTimes = std::make_unique<FrameTimes>();
@@ -232,6 +245,7 @@ void Application::init() {
     shaderLoader->optimize = true;
     shaderLoader->debug = true;
     pbrSceneRenderer = std::make_unique<PbrSceneRenderer>(context->device(), *descriptorAllocator, context->swapchain());
+    shadowRenderer = std::make_unique<ShadowRenderer>();
     recreate();
 }
 

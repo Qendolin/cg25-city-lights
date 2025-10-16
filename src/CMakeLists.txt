@@ -45,7 +45,7 @@ target_compile_definitions(main PRIVATE VULKAN_HPP_NO_CONSTRUCTORS VULKAN_HPP_NO
 target_link_libraries(main PRIVATE Vulkan::Headers)
 target_link_libraries(main PRIVATE GPUOpen::VulkanMemoryAllocator unofficial::VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp)
 target_link_libraries(main PRIVATE glfw)
-target_compile_definitions(main PRIVATE GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_LEFT_HANDED GLM_ENABLE_EXPERIMENTAL)
+target_compile_definitions(main PRIVATE GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_RIGHT_HANDED GLM_ENABLE_EXPERIMENTAL)
 target_link_libraries(main PRIVATE glm::glm)
 target_link_libraries(main PRIVATE unofficial::shaderc::shaderc)
 target_include_directories(main PRIVATE ${Stb_INCLUDE_DIR})

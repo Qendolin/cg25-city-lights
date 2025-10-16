@@ -89,13 +89,13 @@ public:
     util::static_vector<Attachment, 32> colorAttachments = {};
     Attachment depthAttachment = {};
     Attachment stencilAttachment = {};
-    /// <summary>The rendering area.</summary>
-    const vk::Rect2D area;
 
-    explicit Framebuffer(const vk::Extent2D& extent) : area({ .offset = {0, 0}, .extent = extent}) {
+    Framebuffer() = default;
+
+    explicit Framebuffer(const vk::Extent2D& extent) : mArea({ .offset = {0, 0}, .extent = extent}) {
     }
 
-    explicit Framebuffer(const vk::Rect2D& area) : area(area) {
+    explicit Framebuffer(const vk::Rect2D& area) : mArea(area) {
     }
 
     /// <summary>
@@ -131,17 +131,28 @@ public:
         return result;
     }
 
+    /// <returns>The rendering area.</summary>
+    [[nodiscard]] vk::Rect2D area() const {
+        return mArea;
+    }
+
+    /// <returns>The extents of the rendering area.</summary>
+    [[nodiscard]] vk::Extent2D extent() const {
+        return mArea.extent;
+    }
+
     /// <summary>
     /// Returns a Vulkan viewport that covers the framebuffer's area, with the y-axis flipped to match OpenGL conventions.
     /// </summary>
     [[nodiscard]] vk::Viewport viewport() const {
         return vk::Viewport{
-            0.0f, static_cast<float>(area.extent.height), static_cast<float>(area.extent.width),
-            -static_cast<float>(area.extent.height), 0.0f, 1.0f
+            0.0f, static_cast<float>(mArea.extent.height), static_cast<float>(mArea.extent.width),
+            -static_cast<float>(mArea.extent.height), 0.0f, 1.0f
         };
     }
 
 private:
+    vk::Rect2D mArea;
     mutable std::array<vk::RenderingAttachmentInfo, 32> mColorAttachmentInfos = {};
     mutable vk::RenderingAttachmentInfo mDepthAttachmentInfo = {};
     mutable vk::RenderingAttachmentInfo mStencilAttachmentInfo = {};

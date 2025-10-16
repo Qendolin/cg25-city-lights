@@ -6,6 +6,7 @@
 #include "../util/PerFrame.h"
 
 
+class ShadowCaster;
 struct DirectionalLight;
 class Camera;
 namespace scene {
@@ -20,8 +21,13 @@ public:
 
     struct alignas(16) ShaderParamsInlineUniformBlock {
         struct alignas(16) SunLight {
-            glm::vec4 radiance; // Padded to 16 bytes
-            glm::vec4 direction; // Padded to 16 bytes
+            glm::mat4 projectionView;
+            glm::vec4 radiance;
+            glm::vec4 direction;
+            float sampleBias;
+            float sampleBiasClamp;
+            float normalBias;
+            float pad0;
         };
         glm::mat4 view;
         glm::mat4 projection;
@@ -31,11 +37,12 @@ public:
 
     struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
         static constexpr InlineUniformBlockBinding SceneUniforms{0, vk::ShaderStageFlagBits::eAllGraphics, sizeof(ShaderParamsInlineUniformBlock)};
+        static constexpr CombinedImageSamplerBinding SunShadowMap{1, vk::ShaderStageFlagBits::eFragment};
 
         ShaderParamsDescriptorLayout() = default;
 
         explicit ShaderParamsDescriptorLayout(const vk::Device& device) {
-            create(device, {}, SceneUniforms);
+            create(device, {}, SceneUniforms, SunShadowMap);
         }
     };
 
@@ -50,9 +57,11 @@ public:
         createPipeline(device, shader_loader, swapchain);
     }
 
-    void prepare(const vk::Device &device, const Camera &camera, const DirectionalLight& sun_light) const;
+    void prepare(const vk::Device &device, const Camera &camera, const DirectionalLight& sun_light, const ShadowCaster& sun_shadow) const;
 
-    void render(const vk::CommandBuffer &cmd_buf, const Framebuffer &fb, const scene::GpuData &gpu_data);
+    void render(
+            const vk::CommandBuffer &cmd_buf, const Framebuffer &fb, const scene::GpuData &gpu_data, const ShadowCaster &sun_shadow
+    );
 
 private:
     void createDescriptors(const vk::Device &device, const DescriptorAllocator &allocator, const Swapchain &swapchain);
@@ -63,4 +72,5 @@ private:
     util::PerFrame<DescriptorSet> mShaderParamsDescriptors;
 
     ConfiguredPipeline mPipeline;
+    vk::UniqueSampler mShadowSampler;
 };

@@ -14,7 +14,7 @@ vk::Format Framebuffer::depthFormat() const { return depthAttachment.format; }
 vk::RenderingInfo Framebuffer::renderingInfo(const FramebufferRenderingConfig &config) const {
     vk::RenderingInfo result = {
         .flags = config.flags,
-        .renderArea = area,
+        .renderArea = mArea,
         .layerCount = config.layerCount,
         .viewMask = config.viewMask,
     };

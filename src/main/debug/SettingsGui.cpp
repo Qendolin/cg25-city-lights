@@ -24,9 +24,10 @@ void SettingsGui::draw(Settings &settings) {
     }
     if (CollapsingHeader("Shadow")) {
         PushID("shadow");
-        SliderFloat("Extents", &settings.shadow.extents, 0, 100);
-        SliderFloat("Distance", &settings.shadow.distance, 0, 100);
-        SliderFloat("Size Bias", &settings.shadow.sizeBias, -300, 300);
+        DragFloat("Dimension", &settings.shadow.dimension);
+        DragFloat("Start", &settings.shadow.start);
+        DragFloat("End", &settings.shadow.end);
+        SliderFloat("Extrusion Bias", &settings.shadow.extrusionBias, -10, 10);
         DragFloat("Normal Bias", &settings.shadow.normalBias);
         SliderFloat("Sample Bias", &settings.shadow.sampleBias, 0.0f, 10.0f);
         SliderFloat("Sample Bias Clamp", &settings.shadow.sampleBiasClamp, 0.0f, 1.0f, "%.5f");

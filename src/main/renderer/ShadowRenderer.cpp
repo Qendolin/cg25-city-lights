@@ -7,9 +7,9 @@
 #include "../scene/Scene.h"
 
 ShadowCaster::ShadowCaster(
-        const vk::Device &device, const vma::Allocator &allocator, uint32_t resolution, float extents, float near_plane, float far_plane
+        const vk::Device &device, const vma::Allocator &allocator, uint32_t resolution, float dimension, float start, float end
 )
-    : mExtents(extents), mNearPlane(near_plane), mFarPlane(far_plane), mResolution(resolution) {
+    : dimension(dimension), start(start), end(end), mResolution(resolution) {
     mDepthImage = Image::create(
             allocator,
             {
@@ -30,8 +30,12 @@ ShadowCaster::ShadowCaster(
         .range = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
     };
     // clang-format off
+}
 
-    updateProjectionMatrix();
+glm::mat4 ShadowCaster::projectionMatrix() const{
+    float half_extent = 0.5f * dimension;
+    // swap near and far plane for reverse z
+    return glm::ortho(-half_extent, half_extent, -half_extent, half_extent, end, start);
 }
 
 void ShadowCaster::lookAt(const glm::vec3 &target, const glm::vec3 &direction, float distance, const glm::vec3 &up_) {
@@ -48,7 +52,9 @@ void ShadowCaster::lookAt(const glm::vec3 &target, const glm::vec3 &direction, f
             up = {0, 0, 1};
     }
 
-    mViewMatrix = glm::lookAt(target - glm::normalize(direction) * distance, target, up);
+    glm::vec3 eye = target - glm::normalize(direction) * distance;
+    // add direction to target to make it work for distance = 0
+    mViewMatrix = glm::lookAt(eye, target + direction, up);
 }
 
 void ShadowCaster::lookAt(const glm::vec3 &target, float azimuth, float elevation, float distance, const glm::vec3 &up) {
@@ -58,12 +64,6 @@ void ShadowCaster::lookAt(const glm::vec3 &target, float azimuth, float elevatio
         glm::cos(azimuth) * glm::cos(elevation),
     };
     lookAt(target, -direction, distance, up);
-}
-
-void ShadowCaster::updateProjectionMatrix() {
-    float half_extent = 0.5f * mExtents;
-    // swap near and far plane for reverse z
-    mProjectionMatrix = glm::ortho(-half_extent, half_extent, -half_extent, half_extent, mFarPlane, mNearPlane);
 }
 
 ShadowRenderer::~ShadowRenderer() = default;
@@ -98,7 +98,7 @@ void ShadowRenderer::render(const vk::CommandBuffer &cmd_buf, const scene::GpuDa
 
     ShaderParamsPushConstants shader_params = {
         .projectionViewMatrix = shadow_caster.projectionMatrix() * shadow_caster.viewMatrix(),
-        .sizeBias = shadow_caster.sizeBias / static_cast<float>(shadow_caster.resolution()),
+        .sizeBias = shadow_caster.extrusionBias / static_cast<float>(shadow_caster.resolution()),
     };
     cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(shader_params), &shader_params);
 

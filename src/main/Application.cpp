@@ -129,16 +129,8 @@ void Application::drawFrame() {
     drawGui();
 
     // Should probably move this somewhere else
-    sunShadowCaster->lookAt(camera->position, -settings.sun.direction(), settings.shadow.distance);
-    if (settings.shadow.extents != sunShadowCaster->extents())
-        sunShadowCaster->setExtents(settings.shadow.extents);
-    sunShadowCaster->depthBiasConstant = settings.shadow.depthBiasConstant;
-    sunShadowCaster->depthBiasSlope = settings.shadow.depthBiasSlope;
-    sunShadowCaster->depthBiasClamp = settings.shadow.depthBiasClamp;
-    sunShadowCaster->sampleBias = settings.shadow.sampleBias;
-    sunShadowCaster->sampleBiasClamp = settings.shadow.sampleBiasClamp;
-    sunShadowCaster->normalBias = settings.shadow.normalBias;
-    sunShadowCaster->sizeBias = settings.shadow.sizeBias;
+    sunShadowCaster->lookAt(camera->position, -settings.sun.direction());
+    settings.shadow.applyTo(*sunShadowCaster);
 
     cmd_buf.reset();
     recordCommands(cmd_buf, fb);
@@ -236,7 +228,7 @@ void Application::init() {
                                   context->transferQueue, context->mainQueue,
                                   *descriptorAllocator};
     scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/ComplexTest.glb")));
-    sunShadowCaster = std::make_unique<ShadowCaster>(context->device(), context->allocator(), 1024, 25.0f, 0.0f, 100.0f);
+    sunShadowCaster = std::make_unique<ShadowCaster>(context->device(), context->allocator(), settings.shadow.resolution, settings.shadow.dimension, settings.shadow.start, settings.shadow.end);
 
     camera = std::make_unique<Camera>(glm::radians(90.0f), 0.001f, glm::vec3{0, 1, 5}, glm::vec3{});
     debugFrameTimes = std::make_unique<FrameTimes>();

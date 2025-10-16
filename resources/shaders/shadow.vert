@@ -8,7 +8,7 @@ layout(location = 1) in vec3 in_normal;
 layout (push_constant) uniform ShaderParamConstants
 {
     mat4 projectionView;
-    float sizeBias;
+    float extrusionBias;
     float pad0;
     float pad1;
     float pad2;
@@ -18,5 +18,5 @@ void main() {
     Section section = uSectionBuffer.sections[gl_DrawID];
     Instance instance = uInstanceBuffer.instances[section.instance];
 
-    gl_Position = cParams.projectionView * instance.transform * vec4(in_position - in_normal * cParams.sizeBias, 1.0);
+    gl_Position = cParams.projectionView * instance.transform * vec4(in_position + in_normal * cParams.extrusionBias, 1.0);
 }

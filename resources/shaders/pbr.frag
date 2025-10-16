@@ -100,7 +100,7 @@ float sampleShadow(vec3 P_shadow_ndc, float n_dot_l) {
     shadow_uvz.y = 1.0 - shadow_uvz.y; // TODO: I think I know why Y is flipped, but I need to figure out how to bes solve it.
 
     float bias = uParams.sun.sampleBias * texel_size.x * tan(acos(n_dot_l));
-    bias = clamp(bias, 0.0, uParams.sun.sampleBiasClamp);
+    bias = clamp(bias, 0.0, uParams.sun.sampleBiasClamp * texel_size.x);
 
     // GPU Gems 1 / Chapter 11.4
     vec2 offset = vec2(fract(gl_FragCoord.x * 0.5) > 0.25, fract(gl_FragCoord.y * 0.5) > 0.25); // mod

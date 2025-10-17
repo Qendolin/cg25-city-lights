@@ -3,10 +3,12 @@
 #include <vulkan/vulkan.hpp>
 
 #include "backend/Descriptors.h"
+#include "backend/Framebuffer.h"
 #include "debug/Settings.h"
 #include "util/PerFrame.h"
 
 
+class FinalizeRenderer;
 class ShadowCaster;
 class ShadowRenderer;
 class SettingsGui;
@@ -41,9 +43,14 @@ class Application {
     std::unique_ptr<DescriptorAllocator> descriptorAllocator;
     std::unique_ptr<ShaderLoader> shaderLoader;
 
+    std::unique_ptr<Framebuffer> hdrFramebuffer;
+    std::unique_ptr<AttachmentImage> hdrColorAttachment;
+    std::unique_ptr<AttachmentImage> hdrDepthAttachment;
+
     std::unique_ptr<ImGuiBackend> imguiBackend;
     std::unique_ptr<PbrSceneRenderer> pbrSceneRenderer;
     std::unique_ptr<ShadowRenderer> shadowRenderer;
+    std::unique_ptr<FinalizeRenderer> finalizeRenderer;
 
     std::unique_ptr<glfw::Input> input;
     std::unique_ptr<Camera> camera;

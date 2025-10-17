@@ -97,7 +97,6 @@ float sampleShadow(vec3 P_shadow_ndc, float n_dot_l) {
     vec2 texel_size = vec2(1.0) / textureSize(uSunShadowMap, 0).xy;
     // z is seperate because we are using 0..1 depth
     vec3 shadow_uvz = vec3(P_shadow_ndc.xy * 0.5 + 0.5, P_shadow_ndc.z);
-    shadow_uvz.y = 1.0 - shadow_uvz.y; // TODO: I think I know why Y is flipped, but I need to figure out how to bes solve it.
 
     float bias = uParams.sun.sampleBias * texel_size.x * tan(acos(n_dot_l));
     bias = clamp(bias, 0.0, uParams.sun.sampleBiasClamp * texel_size.x);
@@ -206,9 +205,5 @@ void main() {
     ambient *= 1.0 - metallic;
 
     vec3 color = ambient + Lo;
-    // reinhard tonemaping
-    color = color / (color + 1.0);
-    // no gamma correction, swapchain uses srgb format
     out_color = vec4(color, 1.0);
-//    out_color = vec4(shadow);
 }

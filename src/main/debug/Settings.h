@@ -20,5 +20,14 @@ struct Settings {
 
         void applyTo(ShadowCaster &caster) const;
     } shadow;
+    struct AgXParams {
+        float ev_min = -12.47393f;
+        float ev_max = 4.026069f;
+        float mid_gray = 1.0f;
+        float offset = 0.02f;
+        float slope = 0.98f;
+        float power = 1.2f;
+        float saturation = 1.0f;
+    } agx;
 };
 

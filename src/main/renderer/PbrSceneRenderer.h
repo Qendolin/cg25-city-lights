@@ -53,8 +53,8 @@ public:
             const Swapchain &swapchain
     );
 
-    void recreate(const vk::Device &device, const ShaderLoader &shader_loader, const Swapchain &swapchain) {
-        createPipeline(device, shader_loader, swapchain);
+    void recreate(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &fb) {
+        createPipeline(device, shader_loader, fb);
     }
 
     void prepare(const vk::Device &device, const Camera &camera, const DirectionalLight& sun_light, const ShadowCaster& sun_shadow) const;
@@ -66,11 +66,11 @@ public:
 private:
     void createDescriptors(const vk::Device &device, const DescriptorAllocator &allocator, const Swapchain &swapchain);
 
-    void createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Swapchain &swapchain);
+    void createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &fb);
 
     ShaderParamsDescriptorLayout mShaderParamsDescriptorLayout;
     util::PerFrame<DescriptorSet> mShaderParamsDescriptors;
 
-    ConfiguredPipeline mPipeline;
+    ConfiguredGraphicsPipeline mPipeline;
     vk::UniqueSampler mShadowSampler;
 };

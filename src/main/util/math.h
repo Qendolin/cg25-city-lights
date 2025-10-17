@@ -1,6 +1,7 @@
 #pragma once
 #include <glm/common.hpp>
 #include <glm/vec3.hpp>
+#include <glm/mat4x4.hpp>
 
 namespace util {
 
@@ -33,6 +34,40 @@ namespace util {
             max = glm::max(max, other.max);
         }
     };
+
+    inline int32_t divCeil(int32_t x, int32_t y) {
+        return (x + y - 1) / y;
+    }
+
+    inline uint32_t divCeil(uint32_t x, uint32_t y) {
+        return (x + y - 1) / y;
+    }
+
+    inline int32_t nextLowestPowerOfTwo(int32_t n) {
+        if (n <= 0) return 0;  // No power of two for zero or negative numbers
+
+        uint32_t u = static_cast<uint32_t>(n);
+        u |= (u >> 1);
+        u |= (u >> 2);
+        u |= (u >> 4);
+        u |= (u >> 8);
+        u |= (u >> 16);
+
+        return static_cast<int32_t>(u - (u >> 1));
+    }
+
+    inline uint32_t nextLowestPowerOfTwo(uint32_t n) {
+        if (n == 0) return 0;
+
+        // Shift right until only the highest bit remains
+        n |= (n >> 1);
+        n |= (n >> 2);
+        n |= (n >> 4);
+        n |= (n >> 8);
+        n |= (n >> 16);
+
+        return n - (n >> 1);
+    }
 
     inline glm::mat4 createReverseZInfiniteProjectionMatrix(float aspect_ratio, float fov, float near_plane) {
         float f = 1.0f / std::tan(fov / 2.0f);

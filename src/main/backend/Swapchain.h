@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vector>
 #include <GLFW/glfw3.h>
+#include <vector>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 #include <vulkan/vulkan.hpp>
 
@@ -26,23 +26,19 @@ public:
     /// <param name="surface">The window surface.</param>
     /// <param name="window">The GLFW window.</param>
     /// <param name="allocator">The VMA allocator.</param>
-    Swapchain(const vk::Device& device, const vk::PhysicalDevice& physical_device, const vk::SurfaceKHR& surface, const glfw::Window& window, const vma::Allocator& allocator);
-
-    /// <summary>
-    /// Gets the sRGB color format of the swapchain.
-    /// </summary>
-    /// <returns>The sRGB color format.</returns>
-    [[nodiscard]] vk::Format colorFormatSrgb() const { return mSurfaceFormat.format; }
+    Swapchain(
+            const vk::Device &device,
+            const vk::PhysicalDevice &physical_device,
+            const vk::SurfaceKHR &surface,
+            const glfw::Window &window,
+            const vma::Allocator &allocator
+    );
 
     /// <summary>
     /// Gets the linear color format of the swapchain.
     /// </summary>
     /// <returns>The linear color format, or the sRGB format if a linear format is not available.</returns>
-    [[nodiscard]] vk::Format colorFormatLinear() const {
-        if (mSurfaceFormatLinear == vk::Format::eUndefined)
-            return colorFormatSrgb();
-        return mSurfaceFormatLinear;
-    }
+    [[nodiscard]] vk::Format colorFormatLinear() const { return mSurfaceFormat.format; }
 
     /// <summary>
     /// Gets the depth format of the swapchain.
@@ -118,38 +114,17 @@ public:
     [[nodiscard]] vk::Image colorImage(int i) const { return mSwapchainImages.at(i); }
 
     /// <summary>
-    /// Gets the sRGB image view for the currently active color image.
-    /// </summary>
-    /// <returns>The active sRGB image view.</returns>
-    [[nodiscard]] vk::ImageView colorViewSrgb() const { return *mSwapchainImageViewsSrgb.at(mActiveImageIndex); }
-
-    /// <summary>
-    /// Gets the sRGB image view for the color image at the specified index.
-    /// </summary>
-    /// <param name="i">The index of the image.</param>
-    /// <returns>The sRGB image view.</returns>
-    [[nodiscard]] vk::ImageView colorViewSrgb(int i) const { return *mSwapchainImageViewsSrgb.at(i); }
-
-    /// <summary>
     /// Gets the linear image view for the currently active color image.
     /// </summary>
-    /// <returns>The active linear image view, or the sRGB view if a linear format is not available.</returns>
-    [[nodiscard]] vk::ImageView colorViewLinear() const {
-        if (mSurfaceFormatLinear == vk::Format::eUndefined)
-            return colorViewSrgb();
-        return *mSwapchainImageViewsUnorm.at(mActiveImageIndex);
-    }
+    /// <returns>The active linear image view.</returns>
+    [[nodiscard]] vk::ImageView colorViewLinear() const { return *mSwapchainImageViewsUnorm.at(mActiveImageIndex); }
 
     /// <summary>
     /// Gets the linear image view for the color image at the specified index.
     /// </summary>
     /// <param name="i">The index of the image.</param>
-    /// <returns>The linear image view, or the sRGB view if a linear format is not available.</returns>
-    [[nodiscard]] vk::ImageView colorViewLinear(int i) const {
-        if (mSurfaceFormatLinear == vk::Format::eUndefined)
-            return colorViewSrgb(i);
-        return *mSwapchainImageViewsUnorm.at(i);
-    }
+    /// <returns>The linear image view.</returns>
+    [[nodiscard]] vk::ImageView colorViewLinear(int i) const { return *mSwapchainImageViewsUnorm.at(i); }
 
     /// <summary>
     /// Gets the depth image.
@@ -201,12 +176,10 @@ private:
     vma::Allocator mAllocator;
 
     vk::SurfaceFormatKHR mSurfaceFormat = {.format = vk::Format::eUndefined, .colorSpace = vk::ColorSpaceKHR::eSrgbNonlinear};
-    vk::Format mSurfaceFormatLinear = vk::Format::eUndefined;
 
     vk::Extent2D mSurfaceExtents = {};
     vk::UniqueSwapchainKHR mSwapchain;
     std::vector<vk::Image> mSwapchainImages;
-    std::vector<vk::UniqueImageView> mSwapchainImageViewsSrgb;
     std::vector<vk::UniqueImageView> mSwapchainImageViewsUnorm;
 
     vma::UniqueImage mDepthImage;

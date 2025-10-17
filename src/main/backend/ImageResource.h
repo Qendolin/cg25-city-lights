@@ -15,6 +15,7 @@ struct ImageResourceAccess {
     vk::ImageLayout layout = vk::ImageLayout::eUndefined;
 
     static const ImageResourceAccess TransferWrite;
+    static const ImageResourceAccess TransferRead;
     static const ImageResourceAccess ComputeShaderWriteGeneral;
     static const ImageResourceAccess ComputeShaderReadGeneral;
     static const ImageResourceAccess ComputeShaderReadOptimal;

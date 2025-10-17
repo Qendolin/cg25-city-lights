@@ -27,6 +27,7 @@ ShadowCaster::ShadowCaster(
         .image = mDepthImage.image,
         .view = *mDepthImageView,
         .format = mDepthImage.info.format,
+        .extents = {mDepthImage.info.width, mDepthImage.info.height},
         .range = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
     };
     // clang-format off
@@ -82,7 +83,7 @@ void ShadowRenderer::render(const vk::CommandBuffer &cmd_buf, const scene::GpuDa
         .depthLoadOp = vk::AttachmentLoadOp::eClear,
     }));
 
-    mPipeline.config.viewports = {{fb.viewport()}};
+    mPipeline.config.viewports = {{fb.viewport(false)}};
     mPipeline.config.scissors = {{fb.area()}};
     mPipeline.config.depth.biasConstant = shadow_caster.depthBiasConstant;
     mPipeline.config.depth.biasClamp = shadow_caster.depthBiasClamp;
@@ -111,7 +112,7 @@ void ShadowRenderer::createPipeline(const vk::Device &device, const ShaderLoader
     auto vert_sh = shader_loader.loadFromSource(device, "resources/shaders/shadow.vert");
 
     auto scene_descriptor_layout = scene::SceneDescriptorLayout(device);
-    PipelineConfig pipeline_config = {
+    GraphicsPipelineConfig pipeline_config = {
         .vertexInput =
                 {
                     .bindings =
@@ -127,8 +128,9 @@ void ShadowRenderer::createPipeline(const vk::Device &device, const ShaderLoader
                 },
         .descriptorSetLayouts = {scene_descriptor_layout},
         .pushConstants = {vk::PushConstantRange{vk::ShaderStageFlagBits::eVertex, 0, sizeof(ShaderParamsPushConstants)}},
-        .depth = { .biasEnabled = true, .clampEnabled = false },
         .attachments = {.depthFormat = ShadowCaster::DepthFormat},
+        .depth = { .biasEnabled = true, .clampEnabled = false },
+        .cull = {.front = vk::FrontFace::eClockwise },
         .dynamic = {.depthBias = true}
     };
 

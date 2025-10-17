@@ -84,5 +84,5 @@ public:
 private:
     void createPipeline(const vk::Device &device, const ShaderLoader &shader_loader);
 
-    ConfiguredPipeline mPipeline;
+    ConfiguredGraphicsPipeline mPipeline;
 };

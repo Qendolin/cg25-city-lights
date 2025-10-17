@@ -74,7 +74,7 @@ void PbrSceneRenderer::render(
         .depthLoadOp = vk::AttachmentLoadOp::eClear,
     }));
 
-    mPipeline.config.viewports = {{fb.viewport()}};
+    mPipeline.config.viewports = {{fb.viewport(true)}};
     mPipeline.config.scissors = {{fb.area()}};
     mPipeline.config.apply(cmd_buf);
 
@@ -100,12 +100,12 @@ void PbrSceneRenderer::createDescriptors(const vk::Device &device, const Descrip
     });
 }
 
-void PbrSceneRenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Swapchain &swapchain) {
+void PbrSceneRenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer& fb) {
     auto vert_sh = shader_loader.loadFromSource(device, "resources/shaders/pbr.vert");
     auto frag_sh = shader_loader.loadFromSource(device, "resources/shaders/pbr.frag");
 
     auto scene_descriptor_layout = scene::SceneDescriptorLayout(device);
-    PipelineConfig pipeline_config = {
+    GraphicsPipelineConfig pipeline_config = {
         .vertexInput =
                 {
                     .bindings =
@@ -127,8 +127,8 @@ void PbrSceneRenderer::createPipeline(const vk::Device &device, const ShaderLoad
         .pushConstants = {},
         .attachments =
                 {
-                    .colorFormats = {swapchain.colorFormatSrgb()},
-                    .depthFormat = swapchain.depthFormat(),
+                    .colorFormats = fb.colorFormats(),
+                    .depthFormat = fb.depthFormat(),
                 },
     };
 

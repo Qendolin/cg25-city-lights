@@ -10,6 +10,12 @@ constexpr ImageResourceAccess ImageResourceAccess::TransferWrite = {
     .layout = vk::ImageLayout::eTransferDstOptimal
 };
 
+constexpr ImageResourceAccess ImageResourceAccess::TransferRead = {
+    .stage = vk::PipelineStageFlagBits2::eTransfer,
+    .access = vk::AccessFlagBits2::eTransferRead,
+    .layout = vk::ImageLayout::eTransferSrcOptimal
+};
+
 constexpr ImageResourceAccess ImageResourceAccess::ComputeShaderWriteGeneral = {
     .stage = vk::PipelineStageFlagBits2::eComputeShader,
     .access = vk::AccessFlagBits2::eShaderWrite,

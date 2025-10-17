@@ -36,6 +36,17 @@ void SettingsGui::draw(Settings &settings) {
         SliderFloat("Depth Bias Clamp", &settings.shadow.depthBiasClamp, 0.0f, 0.1f, "%.5f");
         PopID();
     }
+    if (CollapsingHeader("Tonemap")) {
+        PushID("tonemap");
+        DragFloat("EV Min", &settings.agx.ev_min);
+        DragFloat("EV Max", &settings.agx.ev_max);
+        SliderFloat("Mid Gray", &settings.agx.mid_gray, 0.0, 5.0);
+        SliderFloat("Offset", &settings.agx.offset, -1.0, 1.0);
+        SliderFloat("Slope", &settings.agx.slope, 0.0, 5.0);
+        SliderFloat("Power", &settings.agx.power, 0.0, 5.0);
+        SliderFloat("Saturation", &settings.agx.saturation, 0.0, 5.0);
+        PopID();
+    }
 
     End();
 }

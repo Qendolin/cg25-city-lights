@@ -15,6 +15,7 @@
 #include "entity/Camera.h"
 #include "glfw/Input.h"
 #include "imgui/ImGui.h"
+#include "renderer/FinalizeRenderer.h"
 #include "renderer/PbrSceneRenderer.h"
 #include "renderer/ShadowRenderer.h"
 #include "scene/Gltf.h"
@@ -27,15 +28,17 @@ Application::~Application() = default;
 void Application::recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &fb) const {
     const auto &swapchain = context->swapchain();
 
-    pbrSceneRenderer->prepare(context->device(), *camera, settings.sun, *sunShadowCaster);
 
     cmd_buf.begin(vk::CommandBufferBeginInfo{});
+    pbrSceneRenderer->prepare(context->device(), *camera, settings.sun, *sunShadowCaster);
 
     // Shadow pass
     shadowRenderer->render(cmd_buf, scene->gpu(), *sunShadowCaster);
 
     // Main render pass
-    pbrSceneRenderer->render(cmd_buf, fb, scene->gpu(), *sunShadowCaster);
+    pbrSceneRenderer->render(cmd_buf, *hdrFramebuffer, scene->gpu(), *sunShadowCaster);
+
+    finalizeRenderer->render(context->device(), cmd_buf, hdrFramebuffer->colorAttachments[0], fb.colorAttachments[0], settings.agx);
 
     // ImGui render pass
     {
@@ -157,10 +160,17 @@ void Application::recreate() {
     const auto &device = context->device();
     const auto &cmd_pool = *commandPool;
 
+    hdrColorAttachment = std::make_unique<AttachmentImage>(context->allocator(), context->device(), vk::Format::eR16G16B16A16Sfloat, context->swapchain().area().extent, vk::ImageUsageFlagBits::eSampled);
+    hdrDepthAttachment = std::make_unique<AttachmentImage>(context->allocator(), context->device(), vk::Format::eD32Sfloat, context->swapchain().area().extent);
+    hdrFramebuffer = std::make_unique<Framebuffer>(context->swapchain().area());
+    hdrFramebuffer->depthAttachment = *hdrDepthAttachment;
+    hdrFramebuffer->colorAttachments = {*hdrColorAttachment};
+
     // I don't really like that recrate has to be called explicitly.
     // I'd prefer an implicit solution, but I couldn't think of a good one right now.
-    pbrSceneRenderer->recreate(context->device(), *shaderLoader, swapchain);
+    pbrSceneRenderer->recreate(context->device(), *shaderLoader, *hdrFramebuffer);
     shadowRenderer->recreate(device, *shaderLoader);
+    finalizeRenderer->recreate(device, *shaderLoader);
 
     syncObjects.create(swapchain.imageCount(), [&] {
         return SyncObjects{
@@ -180,14 +190,16 @@ void Application::recreate() {
         auto fb = Framebuffer(swapchain.area());
         fb.colorAttachments = {{
             .image = swapchain.colorImage(i),
-            .view = swapchain.colorViewSrgb(i),
-            .format = swapchain.colorFormatSrgb(),
+            .view = swapchain.colorViewLinear(i),
+            .format = swapchain.colorFormatLinear(),
+            .extents = swapchain.extents(),
             .range = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
         }};
         fb.depthAttachment = {
             .image = context->swapchain().depthImage(),
             .view = context->swapchain().depthView(),
             .format = context->swapchain().depthFormat(),
+            .extents = swapchain.extents(),
             .range = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
         };
         return fb;
@@ -238,6 +250,7 @@ void Application::init() {
     shaderLoader->debug = true;
     pbrSceneRenderer = std::make_unique<PbrSceneRenderer>(context->device(), *descriptorAllocator, context->swapchain());
     shadowRenderer = std::make_unique<ShadowRenderer>();
+    finalizeRenderer = std::make_unique<FinalizeRenderer>(context->device(), *descriptorAllocator, context->swapchain());
     recreate();
 }
 

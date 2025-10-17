@@ -251,11 +251,20 @@ struct DynamicStateFlags {
     bool viewport = true;
 };
 
+/// <summary>
+/// Configuration for creating a Vulkan compute pipeline.
+/// </summary>
+struct ComputePipelineConfig {
+    /// <summary>Layouts of descriptor sets used by the pipeline.</summary>
+    util::static_vector<vk::DescriptorSetLayout, 4> descriptorSetLayouts;
+    /// <summary>Push constant ranges used by the pipeline.</summary>
+    util::static_vector<vk::PushConstantRange, 32> pushConstants;
+};
 
 /// <summary>
 /// Configuration for creating a Vulkan graphics pipeline.
 /// </summary>
-struct PipelineConfig {
+struct GraphicsPipelineConfig {
 private:
     static constexpr std::array<uint32_t, 1> DEFAULT_SAMPLE_MASK = {UINT32_MAX};
     static constexpr std::array<vk::PipelineColorBlendAttachmentState, 1> DEFAULT_BLEND_STATE = {
@@ -285,6 +294,16 @@ public:
     util::static_vector<vk::DescriptorSetLayout, 4> descriptorSetLayouts;
     /// <summary>Push constant ranges used by the pipeline.</summary>
     util::static_vector<vk::PushConstantRange, 32> pushConstants;
+
+    /// <summary>Describes the formats of attachments used in the render pass.</summary>
+    struct AttachmentsInfo {
+        /// <summary>The formats of the color attachments.</summary>
+        util::static_vector<vk::Format, 32> colorFormats;
+        /// <summary>The format of the depth attachment.</summary>
+        vk::Format depthFormat = vk::Format::eD32Sfloat;
+        /// <summary>The format of the stencil attachment.</summary>
+        vk::Format stencilFormat = vk::Format::eUndefined;
+    } attachments;
 
     /// <summary>Describes the primitive assembly state.</summary>
     struct PrimitiveAssemblyInfo {
@@ -327,16 +346,6 @@ public:
         /// <summary>Whether depth clamping is enabled.</summary>
         bool clampEnabled = true;
     } depth;
-
-    /// <summary>Describes the formats of attachments used in the render pass.</summary>
-    struct AttachmentsInfo {
-        /// <summary>The formats of the color attachments.</summary>
-        util::static_vector<vk::Format, 32> colorFormats;
-        /// <summary>The format of the depth attachment.</summary>
-        vk::Format depthFormat = vk::Format::eD32Sfloat;
-        /// <summary>The format of the stencil attachment.</summary>
-        vk::Format stencilFormat = vk::Format::eUndefined;
-    } attachments;
 
     /// <summary>Describes the color blending state.</summary>
     struct BlendInfo {
@@ -400,13 +409,23 @@ struct Pipeline {
     vk::Pipeline pipeline = {};
 };
 
-struct ConfiguredPipeline {
+struct ConfiguredGraphicsPipeline {
     vk::ShaderStageFlags stages = {};
     vk::UniquePipelineLayout layout = {};
     vk::UniquePipeline pipeline = {};
-    PipelineConfig config = {};
+    GraphicsPipelineConfig config = {};
 };
 
-ConfiguredPipeline createGraphicsPipeline(
-        const vk::Device &device, const PipelineConfig &c, std::initializer_list<CompiledShaderStage> stages
+struct ConfiguredComputePipeline {
+    vk::UniquePipelineLayout layout = {};
+    vk::UniquePipeline pipeline = {};
+    ComputePipelineConfig config = {};
+};
+
+ConfiguredGraphicsPipeline createGraphicsPipeline(
+        const vk::Device &device, const GraphicsPipelineConfig &c, std::initializer_list<CompiledShaderStage> stages
+);
+
+ConfiguredComputePipeline createComputePipeline(
+        const vk::Device &device, const ComputePipelineConfig &c, const CompiledShaderStage& shader
 );

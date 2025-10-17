@@ -3,8 +3,8 @@
 #include "../glfw/Context.h"
 #include "../util/Logger.h"
 
-ConfiguredPipeline createGraphicsPipeline(
-        const vk::Device &device, const PipelineConfig &c, std::initializer_list<CompiledShaderStage> stages
+ConfiguredGraphicsPipeline createGraphicsPipeline(
+        const vk::Device &device, const GraphicsPipelineConfig &c, std::initializer_list<CompiledShaderStage> stages
 ) {
     auto vertex_input_state = vk::PipelineVertexInputStateCreateInfo()
                                       .setVertexAttributeDescriptions(c.vertexInput.attributes)
@@ -151,9 +151,36 @@ ConfiguredPipeline createGraphicsPipeline(
         .config = c,
     };
 }
+ConfiguredComputePipeline createComputePipeline(
+        const vk::Device &device, const ComputePipelineConfig& c, const CompiledShaderStage& shader
+) {
+
+    vk::PipelineShaderStageCreateInfo shader_stage_create_info = {
+        .stage = shader.stage,
+        .module = shader.module,
+        .pName = "main",
+    };
+
+    auto layout = device.createPipelineLayoutUnique(
+            vk::PipelineLayoutCreateInfo().setSetLayouts(c.descriptorSetLayouts).setPushConstantRanges(c.pushConstants)
+    );
+
+    vk::ComputePipelineCreateInfo pipeline_create_info = {
+        .stage = shader_stage_create_info,
+        .layout = *layout,
+    };
+
+    auto pipeline = device.createComputePipelineUnique(nullptr, pipeline_create_info);
+
+    return {
+        .layout = std::move(layout),
+        .pipeline = std::move(pipeline.value),
+        .config = c,
+    };
+}
 
 
-void PipelineConfig::apply(const vk::CommandBuffer &cmd) const {
+void GraphicsPipelineConfig::apply(const vk::CommandBuffer &cmd) const {
     const DynamicStateFlags &flags = dynamic;
     if (flags.blendConstants)
         cmd.setBlendConstants(blend.constants.data());

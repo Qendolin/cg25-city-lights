@@ -1,10 +1,10 @@
 #pragma once
 
+#include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 #include <vulkan/vulkan.hpp>
 
 #include "../util/static_vector.h"
 #include "ImageResource.h"
-
 
 /// <summary>
 /// Represents an image attachment, which is a combination of a vk::Image and a vk::ImageView.
@@ -13,6 +13,7 @@ struct Attachment : ImageResource {
     vk::Image image = {};
     vk::ImageView view = {};
     vk::Format format = {};
+    vk::Extent2D extents = {};
     vk::ImageSubresourceRange range = {};
 
     /// <summary>
@@ -34,6 +35,46 @@ struct Attachment : ImageResource {
     /// Checks if the attachment is valid (i.e., has a valid image and view).
     /// </summary>
     explicit operator bool() const { return image && view; }
+};
+
+
+/// <summary>
+/// Represents an image attachment, which is a combination of a vk::Image and a vk::ImageView.
+/// </summary>
+class AttachmentImage {
+    vma::UniqueImage mImage = {};
+    vma::UniqueAllocation mImageAlloc = {};
+    vk::UniqueImageView mView = {};
+    vk::Format mFormat = {};
+    vk::Extent2D mExtent = {};
+    vk::ImageSubresourceRange mRange = {};
+
+public:
+    AttachmentImage(
+            vma::UniqueImage &&image,
+            vma::UniqueAllocation &&alloc,
+            vk::UniqueImageView &&image_view,
+            vk::Format format,
+            const vk::Extent2D &extent,
+            const vk::ImageSubresourceRange &range
+    );
+
+    AttachmentImage(const vma::Allocator &allocator, const vk::Device &device, vk::Format format, const vk::Extent2D& extent, vk::ImageUsageFlags usage_flags = {});
+
+    operator Attachment() const { // NOLINT(*-explicit-constructor)
+        return {
+           .image = *mImage,
+           .view = *mView,
+           .format = mFormat,
+           .extents = mExtent,
+           .range = mRange
+        };
+    }
+
+    /// <summary>
+    /// Checks if the attachment is valid (i.e., has a valid image and view).
+    /// </summary>
+    explicit operator bool() const { return mImage && mView; }
 };
 
 /// <summary>
@@ -92,11 +133,9 @@ public:
 
     Framebuffer() = default;
 
-    explicit Framebuffer(const vk::Extent2D& extent) : mArea({ .offset = {0, 0}, .extent = extent}) {
-    }
+    explicit Framebuffer(const vk::Extent2D &extent) : mArea({.offset = {0, 0}, .extent = extent}) {}
 
-    explicit Framebuffer(const vk::Rect2D& area) : mArea(area) {
-    }
+    explicit Framebuffer(const vk::Rect2D &area) : mArea(area) {}
 
     /// <summary>
     /// Creates a vk::RenderingInfo struct for dynamic rendering.
@@ -115,9 +154,7 @@ public:
     /// Returns the format of the stencil attachment.
     /// </summary>
     /// <returns>The vk::Format of the stencil attachment.</returns>
-    [[nodiscard]] vk::Format stencilFormat() const {
-        return stencilAttachment.format;
-    }
+    [[nodiscard]] vk::Format stencilFormat() const { return stencilAttachment.format; }
 
     /// <summary>
     /// Returns a vector of formats for all color attachments.
@@ -131,25 +168,16 @@ public:
         return result;
     }
 
-    /// <returns>The rendering area.</summary>
-    [[nodiscard]] vk::Rect2D area() const {
-        return mArea;
-    }
+    /// <returns>The rendering area.</returns>
+    [[nodiscard]] vk::Rect2D area() const { return mArea; }
 
-    /// <returns>The extents of the rendering area.</summary>
-    [[nodiscard]] vk::Extent2D extent() const {
-        return mArea.extent;
-    }
+    /// <returns>The extents of the rendering area.</returns>
+    [[nodiscard]] vk::Extent2D extent() const { return mArea.extent; }
 
     /// <summary>
     /// Returns a Vulkan viewport that covers the framebuffer's area, with the y-axis flipped to match OpenGL conventions.
     /// </summary>
-    [[nodiscard]] vk::Viewport viewport() const {
-        return vk::Viewport{
-            0.0f, static_cast<float>(mArea.extent.height), static_cast<float>(mArea.extent.width),
-            -static_cast<float>(mArea.extent.height), 0.0f, 1.0f
-        };
-    }
+    [[nodiscard]] vk::Viewport viewport(bool flip_y) const;
 
 private:
     vk::Rect2D mArea;

@@ -19,7 +19,7 @@ void Swapchain::create() {
     auto surface_present_modes = mPhysicalDevice.getSurfacePresentModesKHR(mSurface);
 
     auto surface_format_iter = std::find_if(surface_formats.begin(), surface_formats.end(), [](auto &&format) {
-        return (format.format == vk::Format::eB8G8R8A8Srgb || format.format == vk::Format::eR8G8B8A8Srgb) &&
+        return (format.format == vk::Format::eB8G8R8A8Unorm || format.format == vk::Format::eR8G8B8A8Unorm) &&
                format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
     });
     if (surface_format_iter == surface_formats.end())
@@ -72,32 +72,16 @@ void Swapchain::create() {
     );
 
     // need to be destroyed before swapchain is
-    mSwapchainImageViewsSrgb.clear();
     mSwapchainImageViewsUnorm.clear();
 
-    mSurfaceFormatLinear = vk::Format::eUndefined;
-    vk::SwapchainCreateFlagsKHR create_flags = vk::SwapchainCreateFlagBitsKHR::eMutableFormat;
-    if (mSurfaceFormat.format == vk::Format::eR8G8B8A8Srgb)
-        mSurfaceFormatLinear = vk::Format::eR8G8B8A8Unorm;
-    else if (mSurfaceFormat.format == vk::Format::eB8G8R8A8Srgb)
-        mSurfaceFormatLinear = vk::Format::eB8G8R8A8Unorm;
-
-
-    std::vector swapchain_image_formats = {mSurfaceFormat.format, mSurfaceFormatLinear};
-
-    auto swapchain_image_formats_info = vk::ImageFormatListCreateInfo()
-            .setViewFormats(swapchain_image_formats);
-
     mSwapchain = mDevice.createSwapchainKHRUnique({
-        .pNext = &swapchain_image_formats_info,
-        .flags = create_flags,
         .surface = mSurface,
         .minImageCount = swapchain_image_count,
         .imageFormat = mSurfaceFormat.format,
         .imageColorSpace = mSurfaceFormat.colorSpace,
         .imageExtent = mSurfaceExtents,
         .imageArrayLayers = 1,
-        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
+        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eStorage,
         .imageSharingMode = vk::SharingMode::eExclusive,
         .preTransform = surface_capabilities.currentTransform,
         .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
@@ -123,11 +107,7 @@ void Swapchain::create() {
                 .layerCount = 1,
             },
         };
-        mSwapchainImageViewsSrgb.emplace_back(mDevice.createImageViewUnique(image_view_create_info));
-        if (mSurfaceFormatLinear != vk::Format::eUndefined) {
-            image_view_create_info.format = mSurfaceFormatLinear;
-            mSwapchainImageViewsUnorm.emplace_back(mDevice.createImageViewUnique(image_view_create_info));
-        }
+        mSwapchainImageViewsUnorm.emplace_back(mDevice.createImageViewUnique(image_view_create_info));
     }
 
     std::tie(mDepthImage, mDepthImageAllocation) = mAllocator.createImageUnique(

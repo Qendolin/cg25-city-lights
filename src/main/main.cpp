@@ -1,4 +1,3 @@
-
 #include <iostream>
 #include <cpptrace/utils.hpp>
 #include <filesystem>

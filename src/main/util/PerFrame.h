@@ -47,13 +47,12 @@ namespace util {
         // clang-format on
 
         /// <summary>
-        /// Gets the current object and advances the internal index to the next frame.
+        /// Advances the internal index to the next frame and returns the next object.
         /// </summary>
-        /// <returns>A reference to the current object.</returns>
+        /// <returns>A reference to the next object.</returns>
         T &next() {
-            T &result = mPool.at(mIndex);
             mIndex = (mIndex + 1) % mFrames;
-            return result;
+            return mPool.at(mIndex);
         }
 
         /// <summary>

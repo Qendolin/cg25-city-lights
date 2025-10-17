@@ -6,18 +6,15 @@
 #include <glm/gtc/type_ptr.inl>
 #include <glm/gtx/fast_trigonometry.hpp>
 
-#include "backend/Framebuffer.h"
-#include "backend/ShaderCompiler.h"
+#include "RenderSystem.h"
 #include "backend/Swapchain.h"
 #include "backend/VulkanContext.h"
 #include "debug/Performance.h"
 #include "debug/SettingsGui.h"
 #include "entity/Camera.h"
+#include "entity/ShadowCaster.h"
 #include "glfw/Input.h"
 #include "imgui/ImGui.h"
-#include "renderer/FinalizeRenderer.h"
-#include "renderer/PbrSceneRenderer.h"
-#include "renderer/ShadowRenderer.h"
 #include "scene/Gltf.h"
 #include "scene/Scene.h"
 #include "util/Logger.h"
@@ -25,41 +22,13 @@
 Application::Application() = default;
 Application::~Application() = default;
 
-void Application::recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &fb) const {
-    const auto &swapchain = context->swapchain();
-
-
-    cmd_buf.begin(vk::CommandBufferBeginInfo{});
-    pbrSceneRenderer->prepare(context->device(), *camera, settings.sun, *sunShadowCaster);
-
-    // Shadow pass
-    shadowRenderer->render(cmd_buf, scene->gpu(), *sunShadowCaster);
-
-    // Main render pass
-    pbrSceneRenderer->render(cmd_buf, *hdrFramebuffer, scene->gpu(), *sunShadowCaster);
-
-    finalizeRenderer->render(context->device(), cmd_buf, hdrFramebuffer->colorAttachments[0], fb.colorAttachments[0], settings.agx);
-
-    // ImGui render pass
-    {
-        // temporarily change view to linear format to fix an ImGui issue.
-        Framebuffer imgui_fb = fb;
-        imgui_fb.colorAttachments[0].view = swapchain.colorViewLinear();
-        cmd_buf.beginRendering(imgui_fb.renderingInfo({}));
-        imguiBackend->render(cmd_buf);
-        cmd_buf.endRendering();
-    }
-
-    fb.colorAttachments[0].barrier(cmd_buf, ImageResourceAccess::PresentSrc);
-    cmd_buf.end();
-}
 
 void Application::processInput() {
     if (input->isKeyPress(GLFW_KEY_F5)) {
-        Logger::info("Reloading shaders");
+        Logger::info("Reloading render system");
         context->device().waitIdle();
         try {
-            recreate();
+            renderSystem->recreate();
         } catch (const std::exception &exc) {
             Logger::error("Reload failed: " + std::string(exc.what()));
         }
@@ -106,157 +75,69 @@ void Application::drawGui() {
     settingsGui->draw(settings);
 }
 
-void Application::drawFrame() {
-    const auto &device = context->device();
-    auto &swapchain = context->swapchain();
-    SyncObjects &sync_objects = syncObjects.next();
-    vk::CommandBuffer &cmd_buf = commandBuffers.next();
-
-    while (device.waitForFences(*sync_objects.inFlightFence, true, UINT64_MAX) == vk::Result::eTimeout) {
-    }
-
-    if (!swapchain.advance(*sync_objects.availableSemaphore)) {
-        recreate();
-        // Swapchain was re-created, skip this frame
-        return;
-    }
-    // Framebuffer needs to be synced to swapchain, so get it explicitly
-    Framebuffer &fb = swapchainFramebuffers.get(swapchain.activeImageIndex());
-    camera->setViewport(swapchain.width(), swapchain.height());
-
-    // Update input after waiting for fences
-    input->update();
-    processInput();
-
-    imguiBackend->beginFrame();
-    drawGui();
-
-    // Should probably move this somewhere else
-    sunShadowCaster->lookAt(camera->position, -settings.sun.direction());
-    settings.shadow.applyTo(*sunShadowCaster);
-
-    cmd_buf.reset();
-    recordCommands(cmd_buf, fb);
-
-    vk::PipelineStageFlags pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    vk::SubmitInfo submit_info = vk::SubmitInfo()
-                                         .setCommandBuffers(cmd_buf)
-                                         .setWaitSemaphores(*sync_objects.availableSemaphore)
-                                         .setWaitDstStageMask(pipe_stage_flags)
-                                         .setSignalSemaphores(*sync_objects.finishedSemaphore);
-
-    device.resetFences(*sync_objects.inFlightFence);
-
-    context->mainQueue->submit({submit_info}, *sync_objects.inFlightFence);
-
-    if (!swapchain.present(context->presentQueue, vk::PresentInfoKHR().setWaitSemaphores(*sync_objects.finishedSemaphore))) {
-        recreate();
-    }
-}
-
-void Application::recreate() {
-    Logger::debug("Application::recreate called");
-    const auto &swapchain = context->swapchain();
-    const auto &device = context->device();
-    const auto &cmd_pool = *commandPool;
-
-    hdrColorAttachment = std::make_unique<AttachmentImage>(context->allocator(), context->device(), vk::Format::eR16G16B16A16Sfloat, context->swapchain().area().extent, vk::ImageUsageFlagBits::eSampled);
-    hdrDepthAttachment = std::make_unique<AttachmentImage>(context->allocator(), context->device(), vk::Format::eD32Sfloat, context->swapchain().area().extent);
-    hdrFramebuffer = std::make_unique<Framebuffer>(context->swapchain().area());
-    hdrFramebuffer->depthAttachment = *hdrDepthAttachment;
-    hdrFramebuffer->colorAttachments = {*hdrColorAttachment};
-
-    // I don't really like that recrate has to be called explicitly.
-    // I'd prefer an implicit solution, but I couldn't think of a good one right now.
-    pbrSceneRenderer->recreate(context->device(), *shaderLoader, *hdrFramebuffer);
-    shadowRenderer->recreate(device, *shaderLoader);
-    finalizeRenderer->recreate(device, *shaderLoader);
-
-    syncObjects.create(swapchain.imageCount(), [&] {
-        return SyncObjects{
-            .availableSemaphore = device.createSemaphoreUnique({}),
-            .finishedSemaphore = device.createSemaphoreUnique({}),
-            .inFlightFence = device.createFenceUnique({.flags = vk::FenceCreateFlagBits::eSignaled}),
-        };
-    });
-    commandBuffers.create(swapchain.imageCount(), [&] {
-        return device
-                .allocateCommandBuffers(
-                        {.commandPool = cmd_pool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1}
-                )
-                .at(0);
-    });
-    swapchainFramebuffers.create(swapchain.imageCount(), [&](int i) {
-        auto fb = Framebuffer(swapchain.area());
-        fb.colorAttachments = {{
-            .image = swapchain.colorImage(i),
-            .view = swapchain.colorViewLinear(i),
-            .format = swapchain.colorFormatLinear(),
-            .extents = swapchain.extents(),
-            .range = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }};
-        fb.depthAttachment = {
-            .image = context->swapchain().depthImage(),
-            .view = context->swapchain().depthView(),
-            .format = context->swapchain().depthFormat(),
-            .extents = swapchain.extents(),
-            .range = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-        };
-        return fb;
-    });
-}
-
 void Application::init() {
     context = std::make_unique<VulkanContext>(std::move(VulkanContext::create(glfw::WindowCreateInfo{
         .width = 1600,
         .height = 900,
         .title = "City Lights",
         .resizable = true,
+        .visible = false,
     })));
     Logger::info("Using present mode: " + vk::to_string(context->swapchain().presentMode()));
     context->window().centerOnScreen();
+    glfwShowWindow(context->window());
 
+    // imgui must be initialized after input
     input = std::make_unique<glfw::Input>(context->window());
 
-    imguiBackend = std::make_unique<ImGuiBackend>(
-            context->instance(), context->device(), context->physicalDevice(), context->window(), context->swapchain(),
-            context->mainQueue, context->swapchain().depthFormat()
-    );
-    settingsGui = std::make_unique<SettingsGui>();
+    renderSystem = std::make_unique<RenderSystem>(context.get());
 
-    commandPool = context->device().createCommandPoolUnique({
-        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-        .queueFamilyIndex = context->mainQueue,
-    });
-    transientTransferCommandPool = context->device().createCommandPoolUnique({
-        .flags = vk::CommandPoolCreateFlagBits::eTransient,
-        .queueFamilyIndex = context->transferQueue,
-    });
-    descriptorAllocator = std::make_unique<DescriptorAllocator>(context->device());
+    settingsGui = std::make_unique<SettingsGui>();
 
     gltf::Loader gltf_loader = {};
     scene::Loader scene_loader = {&gltf_loader,           context->allocator(),
                                   context->device(),      context->physicalDevice(),
                                   context->transferQueue, context->mainQueue,
-                                  *descriptorAllocator};
+                                  renderSystem->descriptorAllocator()};
+
     scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/ComplexTest.glb")));
-    sunShadowCaster = std::make_unique<ShadowCaster>(context->device(), context->allocator(), settings.shadow.resolution, settings.shadow.dimension, settings.shadow.start, settings.shadow.end);
+    sunShadowCaster = std::make_unique<ShadowCaster>(
+            context->device(), context->allocator(), settings.shadow.resolution, settings.shadow.dimension,
+            settings.shadow.start, settings.shadow.end
+    );
 
     camera = std::make_unique<Camera>(glm::radians(90.0f), 0.001f, glm::vec3{0, 1, 5}, glm::vec3{});
     debugFrameTimes = std::make_unique<FrameTimes>();
 
-    shaderLoader = std::make_unique<ShaderLoader>();
-    shaderLoader->optimize = true;
-    shaderLoader->debug = true;
-    pbrSceneRenderer = std::make_unique<PbrSceneRenderer>(context->device(), *descriptorAllocator, context->swapchain());
-    shadowRenderer = std::make_unique<ShadowRenderer>();
-    finalizeRenderer = std::make_unique<FinalizeRenderer>(context->device(), *descriptorAllocator, context->swapchain());
-    recreate();
+    renderSystem->recreate();
 }
 
 void Application::run() {
     while (!context->window().shouldClose()) {
-        drawFrame();
+        renderSystem->begin();
+
+        input->update();
+        processInput();
+
+        renderSystem->imGuiBackend().beginFrame();
+
+        drawGui();
+
+        camera->setViewport(context->swapchain().width(), context->swapchain().height());
+
+        // Should probably move this somewhere else
+        sunShadowCaster->lookAt(camera->position, -settings.sun.direction());
+        settings.shadow.applyTo(*sunShadowCaster);
+
+        renderSystem->draw({
+            .gltfScene = scene->gpu(),
+            .camera = *camera,
+            .sunShadowCaster = *sunShadowCaster,
+            .sunLight = settings.sun,
+            .settings = settings
+        });
+
+        renderSystem->submit();
     }
     context->device().waitIdle();
 }

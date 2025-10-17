@@ -14,11 +14,9 @@ namespace scene {
 }
 class Framebuffer;
 class ShaderLoader;
-class Swapchain;
 
 class PbrSceneRenderer {
 public:
-
     struct alignas(16) ShaderParamsInlineUniformBlock {
         struct alignas(16) SunLight {
             glm::mat4 projectionView;
@@ -36,36 +34,36 @@ public:
     };
 
     struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
-        static constexpr InlineUniformBlockBinding SceneUniforms{0, vk::ShaderStageFlagBits::eAllGraphics, sizeof(ShaderParamsInlineUniformBlock)};
+        static constexpr InlineUniformBlockBinding SceneUniforms{
+            0, vk::ShaderStageFlagBits::eAllGraphics, sizeof(ShaderParamsInlineUniformBlock)
+        };
         static constexpr CombinedImageSamplerBinding SunShadowMap{1, vk::ShaderStageFlagBits::eFragment};
 
         ShaderParamsDescriptorLayout() = default;
 
-        explicit ShaderParamsDescriptorLayout(const vk::Device& device) {
+        explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
             create(device, {}, SceneUniforms, SunShadowMap);
         }
     };
 
     ~PbrSceneRenderer();
-    PbrSceneRenderer(
-            const vk::Device &device,
-            const DescriptorAllocator &allocator,
-            const Swapchain &swapchain
-    );
+    PbrSceneRenderer(const vk::Device &device, const DescriptorAllocator &allocator);
 
     void recreate(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &fb) {
         createPipeline(device, shader_loader, fb);
     }
 
-    void prepare(const vk::Device &device, const Camera &camera, const DirectionalLight& sun_light, const ShadowCaster& sun_shadow) const;
-
-    void render(
-            const vk::CommandBuffer &cmd_buf, const Framebuffer &fb, const scene::GpuData &gpu_data, const ShadowCaster &sun_shadow
+    void execute(
+            const vk::Device &device,
+            const vk::CommandBuffer &cmd_buf,
+            const Framebuffer &fb,
+            const Camera &camera,
+            const scene::GpuData &gpu_data,
+            const DirectionalLight &sun_light,
+            const ShadowCaster &sun_shadow
     );
 
 private:
-    void createDescriptors(const vk::Device &device, const DescriptorAllocator &allocator, const Swapchain &swapchain);
-
     void createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &fb);
 
     ShaderParamsDescriptorLayout mShaderParamsDescriptorLayout;

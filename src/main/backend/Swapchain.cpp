@@ -4,6 +4,7 @@
 #include <algorithm>
 
 #include "../util/Logger.h"
+#include "../util/globals.h"
 
 Swapchain::Swapchain(
     const vk::Device &device,
@@ -55,7 +56,7 @@ void Swapchain::create() {
             .getSurfaceCapabilities2KHR(surface_capabilities_query.get<vk::PhysicalDeviceSurfaceInfo2KHR>())
             .surfaceCapabilities;
 
-    uint32_t swapchain_image_count = 3;
+    uint32_t swapchain_image_count = util::MaxFramesInFlight;
     if (surface_capabilities.maxImageCount > 0)
         swapchain_image_count = std::min(swapchain_image_count, surface_capabilities.maxImageCount);
     swapchain_image_count = std::max(swapchain_image_count, surface_capabilities.minImageCount);

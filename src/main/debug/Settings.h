@@ -1,5 +1,5 @@
 #pragma once
-#include "../scene/Light.h"
+#include "../entity/Light.h"
 
 class ShadowCaster;
 
@@ -10,7 +10,7 @@ struct Settings {
         float dimension = 20.0f;
         float start = -1000.0f;
         float end = 1000.0f;
-        float extrusionBias = 5.0f;
+        float extrusionBias = -0.5f;
         float normalBias = 7.0f;
         float sampleBias = 0.1f;
         float sampleBiasClamp = 0.02f;

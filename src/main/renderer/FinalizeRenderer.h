@@ -6,7 +6,6 @@
 
 
 struct Attachment;
-class Swapchain;
 class ShaderLoader;
 namespace vk {
     class Device;
@@ -29,8 +28,7 @@ public:
     ~FinalizeRenderer();
     FinalizeRenderer(
             const vk::Device &device,
-            const DescriptorAllocator &allocator,
-            const Swapchain& swapchain
+            const DescriptorAllocator &allocator
     );
 
 
@@ -38,7 +36,7 @@ public:
         createPipeline(device, shader_loader);
     }
 
-    void render(const vk::Device& device, const vk::CommandBuffer &cmd_buf, const Attachment & hdr_attachment, const Attachment & sdr_attachment, const Settings::AgXParams& agx_params);
+    void execute(const vk::Device& device, const vk::CommandBuffer &cmd_buf, const Attachment & hdr_attachment, const Attachment & sdr_attachment, const Settings::AgXParams& agx_params);
 
 private:
     void createPipeline(const vk::Device &device, const ShaderLoader &shader_loader);

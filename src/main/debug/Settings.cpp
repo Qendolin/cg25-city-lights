@@ -1,6 +1,6 @@
 #include "Settings.h"
 
-#include "../renderer/ShadowRenderer.h"
+#include "../entity/ShadowCaster.h"
 
 void Settings::Shadow::applyTo(ShadowCaster &caster) const {
     caster.dimension = dimension;

@@ -50,6 +50,9 @@ class AttachmentImage {
     vk::ImageSubresourceRange mRange = {};
 
 public:
+
+    AttachmentImage() = default;
+
     AttachmentImage(
             vma::UniqueImage &&image,
             vma::UniqueAllocation &&alloc,

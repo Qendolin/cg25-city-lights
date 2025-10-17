@@ -3,15 +3,15 @@
 #include "../backend/Framebuffer.h"
 #include "../backend/Pipeline.h"
 #include "../backend/ShaderCompiler.h"
-#include "../backend/Swapchain.h"
 #include "../debug/Settings.h"
+#include "../util/globals.h"
 #include "../util/math.h"
 
 FinalizeRenderer::~FinalizeRenderer() = default;
 
-FinalizeRenderer::FinalizeRenderer(const vk::Device &device, const DescriptorAllocator &allocator, const Swapchain &swapchain) {
+FinalizeRenderer::FinalizeRenderer(const vk::Device &device, const DescriptorAllocator &allocator) {
     mShaderParamsDescriptorLayout = ShaderParamsDescriptorLayout(device);
-    mShaderParamsDescriptors.create(swapchain.imageCount(), [&]() {
+    mShaderParamsDescriptors.create(util::MaxFramesInFlight, [&]() {
         return allocator.allocate(mShaderParamsDescriptorLayout);
     });
     mSampler = device.createSamplerUnique({});
@@ -30,7 +30,7 @@ void FinalizeRenderer::createPipeline(const vk::Device &device, const ShaderLoad
     mPipeline = createComputePipeline(device, pipeline_config, *comp_sh);
 }
 
-void FinalizeRenderer::render(
+void FinalizeRenderer::execute(
         const vk::Device &device,
         const vk::CommandBuffer &cmd_buf,
         const Attachment &hdr_attachment,

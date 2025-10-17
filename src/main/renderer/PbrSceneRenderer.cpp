@@ -4,16 +4,19 @@
 
 #include "../backend/Framebuffer.h"
 #include "../backend/ShaderCompiler.h"
-#include "../backend/Swapchain.h"
 #include "../entity/Camera.h"
-#include "../scene/Light.h"
+#include "../entity/Light.h"
+#include "../entity/ShadowCaster.h"
 #include "../scene/Scene.h"
-#include "ShadowRenderer.h"
+#include "../util/globals.h"
 
 PbrSceneRenderer::~PbrSceneRenderer() = default;
 
-PbrSceneRenderer::PbrSceneRenderer(const vk::Device &device, const DescriptorAllocator &allocator, const Swapchain &swapchain) {
-    createDescriptors(device, allocator, swapchain);
+PbrSceneRenderer::PbrSceneRenderer(const vk::Device &device, const DescriptorAllocator &allocator) {
+    mShaderParamsDescriptorLayout = ShaderParamsDescriptorLayout(device);
+    mShaderParamsDescriptors.create(util::MaxFramesInFlight, [&]() {
+        return allocator.allocate(mShaderParamsDescriptorLayout);
+    });
     mShadowSampler = device.createSamplerUnique({
         .magFilter = vk::Filter::eLinear,
         .minFilter = vk::Filter::eLinear,
@@ -25,9 +28,15 @@ PbrSceneRenderer::PbrSceneRenderer(const vk::Device &device, const DescriptorAll
     });
 }
 
-void PbrSceneRenderer::prepare(
-        const vk::Device &device, const Camera &camera, const DirectionalLight &sun_light, const ShadowCaster &sun_shadow
-) const {
+void PbrSceneRenderer::execute(
+        const vk::Device &device,
+        const vk::CommandBuffer &cmd_buf,
+        const Framebuffer &fb,
+        const Camera &camera,
+        const scene::GpuData &gpu_data,
+        const DirectionalLight &sun_light,
+        const ShadowCaster &sun_shadow
+) {
     // Divide by resolution to help keep the bias resolution independent
     float normal_bias = sun_shadow.normalBias / static_cast<float>(sun_shadow.resolution());
     ShaderParamsInlineUniformBlock uniform_block = {
@@ -44,25 +53,24 @@ void PbrSceneRenderer::prepare(
                     .normalBias = normal_bias,
                 },
     };
+    mShaderParamsDescriptors.next();
     device.updateDescriptorSets(
-            {mShaderParamsDescriptors.get().write(
-                     ShaderParamsDescriptorLayout::SceneUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
-             ),
-             mShaderParamsDescriptors.get().write(
-                     ShaderParamsDescriptorLayout::SunShadowMap,
-                     vk::DescriptorImageInfo{
-                         .sampler = *mShadowSampler,
-                         .imageView = sun_shadow.framebuffer().depthAttachment.view,
-                         .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
-                     }
-             )},
+            {
+                mShaderParamsDescriptors.get().write(
+                        ShaderParamsDescriptorLayout::SceneUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
+                ),
+                mShaderParamsDescriptors.get().write(
+                        ShaderParamsDescriptorLayout::SunShadowMap,
+                        vk::DescriptorImageInfo{
+                            .sampler = *mShadowSampler,
+                            .imageView = sun_shadow.framebuffer().depthAttachment.view,
+                            .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
+                        }
+                ),
+            },
             {}
     );
-}
 
-void PbrSceneRenderer::render(
-        const vk::CommandBuffer &cmd_buf, const Framebuffer &fb, const scene::GpuData &gpu_data, const ShadowCaster &sun_shadow
-) {
     sun_shadow.framebuffer().depthAttachment.barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
 
     cmd_buf.beginRendering(fb.renderingInfo({
@@ -81,7 +89,7 @@ void PbrSceneRenderer::render(
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics, *mPipeline.pipeline);
     cmd_buf.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0,
-            {gpu_data.sceneDescriptor, mShaderParamsDescriptors.next()}, {}
+            {gpu_data.sceneDescriptor, mShaderParamsDescriptors.get()}, {}
     );
     cmd_buf.bindIndexBuffer(*gpu_data.indices, 0, vk::IndexType::eUint32);
     cmd_buf.bindVertexBuffers(
@@ -93,14 +101,7 @@ void PbrSceneRenderer::render(
     cmd_buf.endRendering();
 }
 
-void PbrSceneRenderer::createDescriptors(const vk::Device &device, const DescriptorAllocator &allocator, const Swapchain &swapchain) {
-    mShaderParamsDescriptorLayout = ShaderParamsDescriptorLayout(device);
-    mShaderParamsDescriptors.create(swapchain.imageCount(), [&]() {
-        return allocator.allocate(mShaderParamsDescriptorLayout);
-    });
-}
-
-void PbrSceneRenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer& fb) {
+void PbrSceneRenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &fb) {
     auto vert_sh = shader_loader.loadFromSource(device, "resources/shaders/pbr.vert");
     auto frag_sh = shader_loader.loadFromSource(device, "resources/shaders/pbr.frag");
 

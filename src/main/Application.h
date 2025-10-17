@@ -8,6 +8,7 @@
 #include "util/PerFrame.h"
 
 
+class RenderSystem;
 class FinalizeRenderer;
 class ShadowCaster;
 class ShadowRenderer;
@@ -26,31 +27,10 @@ namespace scene {
 class ImGuiBackend;
 class ShaderLoader;
 
-struct SyncObjects {
-    vk::UniqueSemaphore availableSemaphore;
-    vk::UniqueSemaphore finishedSemaphore;
-    vk::UniqueFence inFlightFence;
-};
-
 class Application {
     // Order is important here
     std::unique_ptr<VulkanContext> context;
-    vk::UniqueCommandPool commandPool;
-    vk::UniqueCommandPool transientTransferCommandPool;
-    util::PerFrame<SyncObjects> syncObjects;
-    util::PerFrame<vk::CommandBuffer> commandBuffers;
-    util::PerFrame<Framebuffer> swapchainFramebuffers;
-    std::unique_ptr<DescriptorAllocator> descriptorAllocator;
-    std::unique_ptr<ShaderLoader> shaderLoader;
-
-    std::unique_ptr<Framebuffer> hdrFramebuffer;
-    std::unique_ptr<AttachmentImage> hdrColorAttachment;
-    std::unique_ptr<AttachmentImage> hdrDepthAttachment;
-
-    std::unique_ptr<ImGuiBackend> imguiBackend;
-    std::unique_ptr<PbrSceneRenderer> pbrSceneRenderer;
-    std::unique_ptr<ShadowRenderer> shadowRenderer;
-    std::unique_ptr<FinalizeRenderer> finalizeRenderer;
+    std::unique_ptr<RenderSystem> renderSystem;
 
     std::unique_ptr<glfw::Input> input;
     std::unique_ptr<Camera> camera;
@@ -62,14 +42,8 @@ class Application {
 
     std::unique_ptr<FrameTimes> debugFrameTimes;
 
-    // Called after the swapchain was invalidated, or when shaders are reloaded, and when the application is initialized
-    void recreate();
-
-    void recordCommands(const vk::CommandBuffer &cmd_buf, Framebuffer &fb) const;
-
     void processInput();
     void drawGui();
-    void drawFrame();
 
 public:
 

@@ -34,7 +34,7 @@ class RenderSystem {
     util::PerFrame<vk::CommandBuffer> mCommandBuffers;
     util::PerFrame<Framebuffer> mSwapchainFramebuffers;
 
-    DescriptorAllocator mDescriptorAllocator;
+    UniqueDescriptorAllocator mDescriptorAllocator;
 
     ShaderLoader mShaderLoader;
 
@@ -49,8 +49,7 @@ class RenderSystem {
     std::unique_ptr<FinalizeRenderer> mFinalizeRenderer;
 
 public:
-
-    RenderSystem(VulkanContext *context);
+    explicit RenderSystem(VulkanContext *context);
 
     void recreate();
 

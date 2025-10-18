@@ -2,6 +2,7 @@
 
 #include <array>
 #include <span>
+#include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 #include <vulkan/vulkan.hpp>
 
 /// <summary>
@@ -230,16 +231,14 @@ private:
 /// </summary>
 class DescriptorAllocator {
 public:
-    struct Deleter {
-        void operator()(DescriptorAllocator* a) const noexcept {
-            if (a && a->mPool)
-                a->mDevice.destroyDescriptorPool(a->mPool);
-            delete a;
-        }
-    };
-
     DescriptorAllocator() = default;
     explicit DescriptorAllocator(const vk::Device &device);
+
+    DescriptorAllocator(const DescriptorAllocator &other) = default;
+    DescriptorAllocator &operator=(const DescriptorAllocator &other) = default;
+
+    DescriptorAllocator(DescriptorAllocator &&other) noexcept;
+    DescriptorAllocator &operator=(DescriptorAllocator &&other) noexcept;
 
     /// <summary>
     /// Allocates a single descriptor set from the pool.
@@ -257,12 +256,22 @@ private:
     vk::DescriptorPool mPool;
     vk::Device mDevice = {};
 
-    friend struct std::default_delete<DescriptorAllocator>;
+    friend class UniqueDescriptorAllocator;
 };
 
-template<>
-struct std::default_delete<DescriptorAllocator> {
-    void operator()(DescriptorAllocator *a) const noexcept;
-};
+class UniqueDescriptorAllocator : public DescriptorAllocator {
+    public:
 
-using UniqueDescriptorAllocator = std::unique_ptr<DescriptorAllocator, DescriptorAllocator::Deleter>;
+    UniqueDescriptorAllocator() = default;
+    explicit UniqueDescriptorAllocator(const vk::Device &device) : DescriptorAllocator(device) {}
+
+    UniqueDescriptorAllocator(const UniqueDescriptorAllocator &other) = delete;
+    UniqueDescriptorAllocator(UniqueDescriptorAllocator &&other) noexcept = default;
+    UniqueDescriptorAllocator &operator=(const UniqueDescriptorAllocator &other) = delete;
+    UniqueDescriptorAllocator &operator=(UniqueDescriptorAllocator &&other) noexcept = default;
+
+    ~UniqueDescriptorAllocator() {
+        if (mPool)
+            mDevice.destroyDescriptorPool(mPool);
+    }
+};

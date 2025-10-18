@@ -11,7 +11,7 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
         .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
         .queueFamilyIndex = context->mainQueue,
     });
-    mDescriptorAllocator = DescriptorAllocator(context->device());
+    mDescriptorAllocator = UniqueDescriptorAllocator(context->device());
 
     mShaderLoader = ShaderLoader();
     mShaderLoader.optimize = true;

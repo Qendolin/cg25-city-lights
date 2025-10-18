@@ -23,7 +23,7 @@ void DescriptorSetLayout::create(const vk::Device &device, vk::DescriptorSetLayo
     mHandle = device.createDescriptorSetLayoutUnique(chain.get());
 }
 
-DescriptorAllocator::DescriptorAllocator(const vk::Device &device): mDevice(device) {
+DescriptorAllocator::DescriptorAllocator(const vk::Device &device) : mDevice(device) {
     std::vector<vk::DescriptorPoolSize> sizes = {
         {vk::DescriptorType::eCombinedImageSampler, 1024},
         {vk::DescriptorType::eUniformBuffer, 1024},
@@ -43,6 +43,17 @@ DescriptorAllocator::DescriptorAllocator(const vk::Device &device): mDevice(devi
     });
 }
 
+DescriptorAllocator::DescriptorAllocator(DescriptorAllocator &&other) noexcept
+    : mPool(std::exchange(other.mPool, VK_NULL_HANDLE)), mDevice(std::exchange(other.mDevice, VK_NULL_HANDLE)) {}
+
+DescriptorAllocator &DescriptorAllocator::operator=(DescriptorAllocator &&other) noexcept {
+    if (this == &other)
+        return *this;
+    mPool = std::exchange(other.mPool, VK_NULL_HANDLE);
+    mDevice = std::exchange(other.mDevice, VK_NULL_HANDLE);
+    return *this;
+}
+
 DescriptorSet DescriptorAllocator::allocate(const DescriptorSetLayout &layout) const {
     auto vk_layout = static_cast<vk::DescriptorSetLayout>(layout);
     vk::DescriptorSetAllocateInfo info = {
@@ -51,8 +62,4 @@ DescriptorSet DescriptorAllocator::allocate(const DescriptorSetLayout &layout) c
         .pSetLayouts = &vk_layout,
     };
     return DescriptorSet(mDevice.allocateDescriptorSets(info)[0]);
-}
-
-void std::default_delete<DescriptorAllocator>::operator()(DescriptorAllocator *a) const noexcept {
-    DescriptorAllocator::Deleter{}(a);
 }

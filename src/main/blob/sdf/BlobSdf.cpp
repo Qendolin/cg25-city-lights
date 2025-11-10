@@ -8,17 +8,14 @@ void BlobSdf::advanceTime(float dt) {
 }
 
 float BlobSdf::value(glm::vec3 point) const {
-    float x = time;
-
-    glm::vec3 offset1 = {.0f, 0.2f + 1.3 * x, 0.f};
-
     // Core sphere
     float s0 = sphere(point, 0.5);
 
     // TODO: Multiple Spheres rotating around core sphere to simulate blobbiness
     
     // Moving sphere - simulates dripping effect
-    float s1 = sphere(point - offset1, 0.2);
+    glm::vec3 offset = {.0f, 0.2f + 1.3 * time, 0.f};
+    float s1 = sphere(point - offset, 0.2);
 
     float val = smoothMin(s0, s1, 0.4);
 

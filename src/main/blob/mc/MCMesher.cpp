@@ -1,15 +1,16 @@
 #include "MCMesher.h"
 
 MCMesher::MCMesher(float intervalStart, float intervalEnd, int gridSize, float isoValue)
-    : intervalStart(intervalStart), intervalEnd(intervalEnd), gridSize(gridSize), isoValue(isoValue) {
-    if (gridSize <= 0)
-        throw std::invalid_argument("gridSize must be > 0");
-    stepSize = (intervalEnd - intervalStart) / static_cast<float>(gridSize);
+    : intervalStart{ intervalStart },
+      intervalEnd{ intervalEnd },
+      gridSize{ gridSize },
+      isoValue{ isoValue },
+      stepSize{ (intervalEnd - intervalStart) / static_cast<float>(gridSize) } {
+    assert(stepSize > 0 && "Invalid MC resolution");
 }
 
-std::vector<glm::vec3> MCMesher::marchingCubes(const SDF& sdf) {
-
-    std::vector<glm::vec3> meshVertices;
+std::vector<VertexData> MCMesher::marchingCubes(const Sdf& sdf) const {
+    std::vector<VertexData> meshVertices;
 
     float x0 = intervalStart;
 
@@ -23,10 +24,9 @@ std::vector<glm::vec3> MCMesher::marchingCubes(const SDF& sdf) {
 
             for (int k{0}; k < gridSize; ++k) {
                 float z1 = intervalStart + (k + 1) * stepSize;
-                
-                for (const glm::vec3 &vertex: getCellMeshVertices(x0, y0, z0, x1, y1, z1, sdf)) {
+
+                for (const VertexData &vertex: getCellMeshVertices(sdf, x0, y0, z0, x1, y1, z1))
                     meshVertices.push_back(vertex);
-                }
 
                 z0 = z1; // Set new starting points to end points without recalculation
             }
@@ -40,34 +40,40 @@ std::vector<glm::vec3> MCMesher::marchingCubes(const SDF& sdf) {
     return meshVertices;
 }
 
-std::vector<glm::vec3> MCMesher::getCellMeshVertices(float x0, float y0, float z0, float x1,
-        float y1, float z1, const SDF &sdf) {
+std::vector<VertexData> MCMesher::getCellMeshVertices(const Sdf& sdf, float x0, float y0, float z0,
+    float x1, float y1, float z1
+) const {
     const std::array<glm::vec3, 8> vertices = buildCellVertices(x0, y0, z0, x1, y1, z1);
-    const std::array<float, 8> samples = sampleGrid(vertices, sdf);
+    const std::array<float, 8> samples = sampleGrid(sdf, vertices);
     int cubeLookupIndex = getLookupIndex(samples);
     std::array<glm::vec3, 12> intersections = getIntersections(cubeLookupIndex, vertices, samples);
 
-    std::vector<glm::vec3> cellMeshVertices;
+    std::vector<VertexData> cellMeshVertices;
 
     cellMeshVertices.reserve(12);
 
     const int *row = triangleTable[cubeLookupIndex];
-    
-    for (int i = 0; i < 12 && row[i] != -1; i += 3) {
-        const int e0 = row[i + 0];
-        const int e1 = row[i + 1];
-        const int e2 = row[i + 2];
 
-        cellMeshVertices.emplace_back(intersections[e0]);
-        cellMeshVertices.emplace_back(intersections[e1]);
-        cellMeshVertices.emplace_back(intersections[e2]);
+    for (int i = 0; i < 12 && row[i] != -1; i += 3) {
+        const glm::vec3 p0 = intersections[row[i + 0]];
+        const glm::vec3 p1 = intersections[row[i + 1]];
+        const glm::vec3 p2 = intersections[row[i + 2]];
+
+        const glm::vec3 n0 = calculateNormal(sdf, p0);
+        const glm::vec3 n1 = calculateNormal(sdf, p1);
+        const glm::vec3 n2 = calculateNormal(sdf, p2);
+
+        cellMeshVertices.emplace_back(VertexData{p0, n0});
+        cellMeshVertices.emplace_back(VertexData{p1, n1});
+        cellMeshVertices.emplace_back(VertexData{p2, n2});
     }
 
     return cellMeshVertices;
 }
 
 std::array<glm::vec3, 8> MCMesher::buildCellVertices(float x0, float y0, float z0, float x1,
-        float y1, float z1) {
+    float y1, float z1
+) const {
     std::array<glm::vec3, 8> cellVertices;
 
     cellVertices[0] = glm::vec3(x0, y0, z0);
@@ -82,19 +88,20 @@ std::array<glm::vec3, 8> MCMesher::buildCellVertices(float x0, float y0, float z
     return cellVertices;
 }
 
-std::array<float, 8> MCMesher::sampleGrid(const std::array<glm::vec3, 8> &vertices,
-        const SDF &sdf) {
+std::array<float, 8> MCMesher::sampleGrid(const Sdf& sdf,
+    const std::array<glm::vec3, 8>& vertices
+) const {
     std::array<float, 8> samples;
 
     for (size_t i{0}; i < 8; ++i) {
         const glm::vec3 &vertex = vertices[i];
-        samples[i] = sdf(vertex.x, vertex.y, vertex.z);
+        samples[i] = sdf.value(vertex);
     }
 
     return samples;
 }
 
-int MCMesher::getLookupIndex(const std::array<float, 8> &samples) {
+int MCMesher::getLookupIndex(const std::array<float, 8>& samples) const {
     int lookupIndex = 0;
 
     for (int i = 0; i < 8; i++)
@@ -103,15 +110,14 @@ int MCMesher::getLookupIndex(const std::array<float, 8> &samples) {
     return lookupIndex;
 }
 
-glm::vec3 MCMesher::interpolate(const glm::vec3& p0, const glm::vec3& p1, float v0,
-                                float v1) const {
+glm::vec3 MCMesher::interpolate(const glm::vec3& p0, const glm::vec3& p1, float v0, float v1) const {
     float t = (isoValue - v0) / (v1 - v0);
     return p0 + t * (p1 - p0);
 }
 
 std::array<glm::vec3, 12> MCMesher::getIntersections(int cubeLookupIndex,
-                                                     const std::array<glm::vec3, 8>& vertices,
-                                                     const std::array<float, 8>& samples) {
+    const std::array<glm::vec3, 8>& vertices, const std::array<float, 8>& samples
+) const {
     std::array<glm::vec3, 12> intersections{};
 
     int intersectionKey = edgeTable[cubeLookupIndex];
@@ -122,38 +128,48 @@ std::array<glm::vec3, 12> MCMesher::getIntersections(int cubeLookupIndex,
             int vertexIndex0 = edgeVertexIndices[intersectionIndex][0];
             int vertexIndex1 = edgeVertexIndices[intersectionIndex][1];
 
-            glm::vec3 intersection = interpolate(vertices[vertexIndex0], vertices[vertexIndex1],
-                samples[vertexIndex0], samples[vertexIndex1]);
+            glm::vec3 intersection = interpolate(
+                vertices[vertexIndex0], vertices[vertexIndex1],
+                samples[vertexIndex0], samples[vertexIndex1]
+            );
             intersections[intersectionIndex] = intersection;
         }
 
         intersectionIndex++;
         intersectionKey >>= 1;
     }
-
+    
     return intersections;
 }
 
-/* TEMP
-void MCMesher::tempWriteToObj(const std::string &path, const std::vector<glm::vec3> &vertices) {
+glm::vec3 MCMesher::calculateNormal(const Sdf& sdf, const glm::vec3& p) const {
+    float dx = sdf.value({p.x + EPS, p.y, p.z}) - sdf.value({p.x - EPS, p.y, p.z});
+    float dy = sdf.value({p.x, p.y + EPS, p.z}) - sdf.value({p.x, p.y - EPS, p.z});
+    float dz = sdf.value({p.x, p.y, p.z + EPS}) - sdf.value({p.x, p.y, p.z - EPS});
+    return glm::normalize(glm::vec3(dx, dy, dz));
+}
+
+// TEMP for writing to an OBJ file for debugging
+void MCMesher::writeToObj(const std::string& path, const std::vector<VertexData>& vertices) const {
     assert(!vertices.empty() && vertices.size() % 3 == 0);
 
     std::ofstream out(path);
     assert(out);
 
-    out << "# simple triangle-soup OBJ\n" << "o Mesh\n";
+    out << "# MC Meshed OBJ\n"
+        << "o Mesh\n";
     out << std::setprecision(7) << std::fixed;
 
     for (const auto &v: vertices)
-        out << "v " << v.x << ' ' << v.y << ' ' << v.z << '\n';
+        out << "v " << v.position.x << ' ' << v.position.y << ' ' << v.position.z << '\n';
+
+    for (const auto &v: vertices)
+        out << "vn " << v.normal.x << ' ' << v.normal.y << ' ' << v.normal.z << '\n';
 
     const size_t triCount = vertices.size() / 3;
-
     for (size_t t = 0; t < triCount; ++t) {
         const size_t i = 3 * t + 1;
-        out << "f " << i << ' ' << (i + 1) << ' ' << (i + 2) << '\n';
+        out << "f " << i << "//" << i << ' ' << i + 1 << "//" << i + 1 << ' ' << i + 2 << "//"
+            << i + 2 << '\n';
     }
 }
-
-float MCMesher::sdfUnitSphere(float x, float y, float z) { return std::sqrt(x * x + y * y + z * z) - 1; }
-*/

@@ -4,7 +4,7 @@
 
 struct BlobSdf : public Sdf {
 private:
-    float time; // time in seconds, wraps at 1 to 0
+    float time{}; // time in seconds, wraps at 1 to 0
 
 public:
     void advanceTime(float dt);

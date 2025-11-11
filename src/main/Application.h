@@ -7,7 +7,6 @@
 #include "debug/Settings.h"
 #include "util/PerFrame.h"
 
-
 class RenderSystem;
 class FinalizeRenderer;
 class ShadowCaster;
@@ -27,6 +26,21 @@ namespace scene {
 class ImGuiBackend;
 class ShaderLoader;
 
+// TODO:
+// Why do we not forward declare by including the header files here instead of in the cpp file?
+namespace blob {
+    class BlobSdf;
+    class Mesher;
+    class Model;
+};
+
+struct BlobMesherConfig {
+    float intervalStart;
+    float intervalEnd;
+    int resolution;
+    float isoValue;
+};
+
 class Application {
     // Order is important here
     std::unique_ptr<VulkanContext> context;
@@ -42,11 +56,16 @@ class Application {
 
     std::unique_ptr<FrameTimes> debugFrameTimes;
 
+    static constexpr BlobMesherConfig BLOB_MESHER_CONFIG{-1, 1, 24, 0};
+    std::unique_ptr<blob::BlobSdf> blobSdf;
+    std::unique_ptr<blob::Mesher> mcMesher;
+
+    std::unique_ptr<blob::Model> blobModel;
+
     void processInput();
     void drawGui();
 
 public:
-
     Application();
     ~Application();
 

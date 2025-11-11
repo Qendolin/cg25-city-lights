@@ -1,6 +1,7 @@
 #include "Application.h"
 
 #include <GLFW/glfw3.h>
+#include <chrono>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.inl>
@@ -9,6 +10,8 @@
 #include "RenderSystem.h"
 #include "backend/Swapchain.h"
 #include "backend/VulkanContext.h"
+#include "blob/meshing/Mesher.h"
+#include "blob/sdf/BlobSdf.h"
 #include "debug/Performance.h"
 #include "debug/SettingsGui.h"
 #include "entity/Camera.h"
@@ -95,10 +98,15 @@ void Application::init() {
     settingsGui = std::make_unique<SettingsGui>();
 
     gltf::Loader gltf_loader = {};
-    scene::Loader scene_loader = {&gltf_loader,           context->allocator(),
-                                  context->device(),      context->physicalDevice(),
-                                  context->transferQueue, context->mainQueue,
-                                  renderSystem->descriptorAllocator()};
+    scene::Loader scene_loader = {
+        &gltf_loader,
+        context->allocator(),
+        context->device(),
+        context->physicalDevice(),
+        context->transferQueue,
+        context->mainQueue,
+        renderSystem->descriptorAllocator()
+    };
 
     scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/ComplexTest.glb")));
     sunShadowCaster = std::make_unique<ShadowCaster>(
@@ -110,9 +118,24 @@ void Application::init() {
     debugFrameTimes = std::make_unique<FrameTimes>();
 
     renderSystem->recreate();
+
+    blobSdf = std::make_unique<blob::BlobSdf>();
+    mcMesher = std::make_unique<blob::Mesher>(
+            BLOB_MESHER_CONFIG.intervalStart, BLOB_MESHER_CONFIG.intervalEnd, BLOB_MESHER_CONFIG.resolution,
+            BLOB_MESHER_CONFIG.isoValue
+    );
+
+    blobModel = std::make_unique<blob::Model>(context->allocator());
 }
 
 void Application::run() {
+    using clock = std::chrono::steady_clock;
+    using fsec = std::chrono::duration<float>;
+    
+    clock::time_point currentTime = clock::now();
+    clock::time_point prevTime = currentTime;
+    float dt{0};
+
     while (!context->window().shouldClose()) {
         renderSystem->begin();
 
@@ -129,13 +152,23 @@ void Application::run() {
         sunShadowCaster->lookAt(camera->position, -settings.sun.direction());
         settings.shadow.applyTo(*sunShadowCaster);
 
-        renderSystem->draw({
-            .gltfScene = scene->gpu(),
-            .camera = *camera,
-            .sunShadowCaster = *sunShadowCaster,
-            .sunLight = settings.sun,
-            .settings = settings
-        });
+        clock::time_point currentTime = clock::now();
+        float dt = fsec(currentTime - prevTime).count();
+        prevTime = currentTime;
+        
+        // TEMP
+        // "renderSystem->getCommandBuffer()" THIS IS NOT GOOD!
+        blobSdf->advanceTime(dt);
+        blobModel->updateVertices(renderSystem->getCommandBuffer(), mcMesher->marchingCubes(*blobSdf));
+
+        renderSystem->draw(
+                {.gltfScene = scene->gpu(),
+                 .camera = *camera,
+                 .sunShadowCaster = *sunShadowCaster,
+                 .sunLight = settings.sun,
+                 .settings = settings,
+                 .blobModel = *blobModel}
+        );
 
         renderSystem->submit();
     }

@@ -3,22 +3,29 @@
 #include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
 
+#include "../../util/static_vector.h"
+
 namespace blob {
 
     struct VertexData {
         glm::vec3 position{};
         glm::vec3 normal{};
 
-        static std::vector<vk::VertexInputBindingDescription> getBindingDescriptions() {
-            std::vector<vk::VertexInputBindingDescription> bindingDescriptions(1);
-            bindingDescriptions[0].binding = 0;
-            bindingDescriptions[0].stride = sizeof(VertexData);
-            bindingDescriptions[0].inputRate = vk::VertexInputRate::eVertex;
+        static util::static_vector<vk::VertexInputBindingDescription, 16> getBindingDescriptions() {
+            util::static_vector<vk::VertexInputBindingDescription, 16> bindingDescriptions;
+            
+            vk::VertexInputBindingDescription bindingDescription;
+            bindingDescription.binding = 0;
+            bindingDescription.stride = sizeof(VertexData);
+            bindingDescription.inputRate = vk::VertexInputRate::eVertex;
+            bindingDescriptions.push_back(bindingDescription);
+
             return bindingDescriptions;
         }
 
-        static std::vector<vk::VertexInputAttributeDescription> getAttributeDescriptions() {
-            std::vector<vk::VertexInputAttributeDescription> attributeDescriptions(2);
+        static util::static_vector<vk::VertexInputAttributeDescription, 16> getAttributeDescriptions() {
+            util::static_vector<vk::VertexInputAttributeDescription, 16> attributeDescriptions;
+            attributeDescriptions.resize(2);
 
             attributeDescriptions[0].binding = 0;
             attributeDescriptions[0].location = 0;

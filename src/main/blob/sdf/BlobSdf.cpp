@@ -17,12 +17,12 @@ namespace blob {
 
         // Moving sphere - simulates dripping effect
         glm::vec3 offset = {.0f, 0.2f + 1.3 * time, 0.f};
-        float s1 = sphere(point - offset, 0.2);
+        float s1 = sphere(point + offset, 0.2);
 
         float val = smoothMin(s0, s1, 0.4);
 
         // Simulate ground - assuming the sdf sampling volume ends at y = 1
-        return smoothMin(val, 1.02f - point.y, 0.2);
+        return smoothMin(val, point.y + 1.02f, 0.2);
     }
 
 } // namespace blob

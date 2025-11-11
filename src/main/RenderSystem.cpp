@@ -21,6 +21,7 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mPbrSceneRenderer = std::make_unique<PbrSceneRenderer>(context->device(), mDescriptorAllocator);
     mShadowRenderer = std::make_unique<ShadowRenderer>();
     mFinalizeRenderer = std::make_unique<FinalizeRenderer>(context->device(), mDescriptorAllocator);
+    mBlobRenderer = std::make_unique<BlobRenderer>();
 }
 
 void RenderSystem::recreate() {
@@ -41,9 +42,10 @@ void RenderSystem::recreate() {
 
     // I don't really like that recrate has to be called explicitly.
     // I'd prefer an implicit solution, but I couldn't think of a good one right now.
-    mPbrSceneRenderer->recreate(mContext->device(), mShaderLoader, mHdrFramebuffer);
+    mPbrSceneRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mShadowRenderer->recreate(device, mShaderLoader);
     mFinalizeRenderer->recreate(device, mShaderLoader);
+    mBlobRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
 
     // These "need" to match the swapchain image count exactly
     mSyncObjects.create(swapchain.imageCount(), [&] {
@@ -94,6 +96,9 @@ void RenderSystem::draw(const RenderData &rd) {
     mPbrSceneRenderer->execute(
             mContext->device(), cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene, rd.sunLight, rd.sunShadowCaster
     );
+
+    // Blob render pass
+    mBlobRenderer->execute(cmd_buf, mHdrFramebuffer, rd.camera, rd.blobModel);
 
     // Post-processing pass
     mFinalizeRenderer->execute(

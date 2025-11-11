@@ -1,5 +1,7 @@
 #include "Model.h"
 
+#include <glm/gtc/matrix_transform.hpp>
+#include <iostream>
 #include <memory>
 #include <tuple>
 
@@ -8,6 +10,7 @@ namespace blob {
     Model::Model(const vma::Allocator &allocator) : allocator{allocator} {
         createVertexStagingBuffer();
         createVertexBuffer();
+        modelMatrix = glm::translate(modelMatrix, {0.f, 1.f, 1.5f});
     }
 
     Model::~Model() {
@@ -18,7 +21,8 @@ namespace blob {
     void Model::updateVertices(vk::CommandBuffer commandBuffer, const std::vector<VertexData> &vertices) {
         vertexCount = static_cast<uint32_t>(vertices.size());
 
-        assert(vertices.size() <= MAX_VERTICES && "Temp: Insufficient buffer capacity");
+        // TEMP
+        assert(vertices.size() <= MAX_VERTICES && "Insufficient buffer capacity");
 
         VkDeviceSize dataSize = sizeof(VertexData) * vertexCount;
 
@@ -43,14 +47,6 @@ namespace blob {
                 vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eVertexInput, {}, {}, barrier, {}
         );
     }
-
-    void Model::bind(vk::CommandBuffer commandBuffer) const {
-        vk::Buffer buffers[] = {vertexBuffer};
-        vk::DeviceSize offsets[] = {0};
-        commandBuffer.bindVertexBuffers(0, 1, buffers, offsets);
-    }
-
-    void Model::draw(vk::CommandBuffer commandBuffer) const { commandBuffer.draw(vertexCount, 0, 0, 0); }
 
     void Model::createVertexStagingBuffer() {
         vk::BufferCreateInfo bufferCreateInfo{};

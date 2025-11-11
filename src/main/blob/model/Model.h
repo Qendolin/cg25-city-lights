@@ -1,9 +1,10 @@
 #pragma once
 
-#include "VertexData.h"
-
-#include <vulkan/vulkan.hpp>
+#include <GLM/glm.hpp>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
+#include <vulkan/vulkan.hpp>
+
+#include "VertexData.h"
 
 namespace blob {
 
@@ -23,6 +24,8 @@ namespace blob {
         vk::Buffer vertexBuffer;
         vma::Allocation vertexAlloc;
 
+        glm::mat4 modelMatrix{1.f};
+
     public:
         Model(const vma::Allocator &device);
         ~Model();
@@ -31,8 +34,10 @@ namespace blob {
         Model &operator=(const Model &) = delete;
 
         void updateVertices(vk::CommandBuffer commandBuffer, const std::vector<VertexData> &vertices);
-        void bind(vk::CommandBuffer commandBuffer) const;
-        void draw(vk::CommandBuffer commandBuffer) const;
+
+        vk::Buffer getVertexBuffer() const { return vertexBuffer; }
+        uint32_t getVertexCount() const { return vertexCount; }
+        glm::mat4 getModelMatrix() const { return modelMatrix; }
 
     private:
         void createVertexStagingBuffer();

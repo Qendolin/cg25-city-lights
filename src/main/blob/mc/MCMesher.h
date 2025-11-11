@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../sdf/Sdf.h"
-#include "VertexData.h"
+#include "../model/VertexData.h"
 
 #include <glm/glm.hpp>
 
@@ -317,14 +317,14 @@ private:
 
     static constexpr float EPS = 1e-3f;
 
-    const int gridSize;
+    const int resolution;
     const float intervalStart;
     const float intervalEnd;
     const float isoValue;
     const float stepSize;
 
 public:
-    MCMesher(float intervalStart, float intervalEnd, int gridSize, float isoValue);
+    MCMesher(float intervalStart, float intervalEnd, int resolution, float isoValue);
     std::vector<VertexData> marchingCubes(const Sdf& sdf) const;
 
 private:

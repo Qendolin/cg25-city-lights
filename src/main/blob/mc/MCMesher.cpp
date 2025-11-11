@@ -1,11 +1,11 @@
 #include "MCMesher.h"
 
-MCMesher::MCMesher(float intervalStart, float intervalEnd, int gridSize, float isoValue)
+MCMesher::MCMesher(float intervalStart, float intervalEnd, int resolution, float isoValue)
     : intervalStart{ intervalStart },
       intervalEnd{ intervalEnd },
-      gridSize{ gridSize },
+      resolution{ resolution },
       isoValue{ isoValue },
-      stepSize{ (intervalEnd - intervalStart) / static_cast<float>(gridSize) } {
+      stepSize{ (intervalEnd - intervalStart) / static_cast<float>(resolution) } {
     assert(stepSize > 0 && "Invalid MC resolution");
 }
 
@@ -14,15 +14,15 @@ std::vector<VertexData> MCMesher::marchingCubes(const Sdf& sdf) const {
 
     float x0 = intervalStart;
 
-    for (int i{0}; i < gridSize; ++i) {
+    for (int i{0}; i < resolution; ++i) {
         float x1 = intervalStart + (i + 1) * stepSize;
         float y0 = intervalStart;
 
-        for (int j{0}; j < gridSize; ++j) {
+        for (int j{0}; j < resolution; ++j) {
             float y1 = intervalStart + (j + 1) * stepSize;
             float z0 = intervalStart;
 
-            for (int k{0}; k < gridSize; ++k) {
+            for (int k{0}; k < resolution; ++k) {
                 float z1 = intervalStart + (k + 1) * stepSize;
 
                 for (const VertexData &vertex: getCellMeshVertices(sdf, x0, y0, z0, x1, y1, z1))

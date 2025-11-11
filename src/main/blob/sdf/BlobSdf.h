@@ -2,11 +2,15 @@
 
 #include "sdf.h"
 
-struct BlobSdf : public Sdf {
-private:
-    float time{}; // time in seconds, wraps at 1 to 0
+namespace blob {
 
-public:
-    void advanceTime(float dt);
-    float value(glm::vec3 p) const override;
-};
+    struct BlobSdf : public Sdf {
+    private:
+        float time{}; // time in seconds, wraps at 1 to 0
+
+    public:
+        void advanceTime(float dt);
+        float value(glm::vec3 p) const override;
+    };
+
+}

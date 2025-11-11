@@ -2,23 +2,27 @@
 
 #include <cmath>
 
-void BlobSdf::advanceTime(float dt) {
-    time += dt;
-    time -= std::floor(time);
-}
+namespace blob {
 
-float BlobSdf::value(glm::vec3 point) const {
-    // Core sphere
-    float s0 = sphere(point, 0.5);
+    void BlobSdf::advanceTime(float dt) {
+        time += dt;
+        time -= std::floor(time);
+    }
 
-    // TODO: Multiple Spheres rotating around core sphere to simulate blobbiness
-    
-    // Moving sphere - simulates dripping effect
-    glm::vec3 offset = {.0f, 0.2f + 1.3 * time, 0.f};
-    float s1 = sphere(point - offset, 0.2);
+    float BlobSdf::value(glm::vec3 point) const {
+        // Core sphere
+        float s0 = sphere(point, 0.5);
 
-    float val = smoothMin(s0, s1, 0.4);
+        // TODO: Multiple Spheres rotating around core sphere to simulate blobbiness
 
-    // Simulate ground - assuming the sdf sampling volume ends at y = 1
-    return smoothMin(val, 1.02f - point.y, 0.2);
-}
+        // Moving sphere - simulates dripping effect
+        glm::vec3 offset = {.0f, 0.2f + 1.3 * time, 0.f};
+        float s1 = sphere(point - offset, 0.2);
+
+        float val = smoothMin(s0, s1, 0.4);
+
+        // Simulate ground - assuming the sdf sampling volume ends at y = 1
+        return smoothMin(val, 1.02f - point.y, 0.2);
+    }
+
+} // namespace blob

@@ -3,6 +3,7 @@
 #include <GLM/glm.hpp>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 #include <vulkan/vulkan.hpp>
+#include <vector>
 
 #include "VertexData.h"
 
@@ -10,12 +11,12 @@ namespace blob {
 
     class Model {
     private:
-        static constexpr int MAX_VERTICES = 10000; // TODO Temp
+        static constexpr std::size_t MAX_VERTICES = 9999;
         static constexpr vk::DeviceSize VERTEX_BUFFER_SIZE = sizeof(VertexData) * MAX_VERTICES;
 
-        const vma::Allocator &allocator;
+        std::vector<VertexData> vertices;
 
-        uint32_t vertexCount;
+        const vma::Allocator &allocator;
 
         void *stagingData = nullptr;
         vk::Buffer vertexStagingBuffer;
@@ -32,12 +33,14 @@ namespace blob {
 
         Model(const Model &) = delete;
         Model &operator=(const Model &) = delete;
-
-        void updateVertices(vk::CommandBuffer commandBuffer, const std::vector<VertexData> &vertices);
+        
+        void setVertices(std::vector<VertexData> &&newVertices) noexcept { vertices = std::move(newVertices); }
 
         vk::Buffer getVertexBuffer() const { return vertexBuffer; }
-        uint32_t getVertexCount() const { return vertexCount; }
+        uint32_t getVertexCount() const { return vertices.size(); }
         glm::mat4 getModelMatrix() const { return modelMatrix; }
+
+        void pushVertices(vk::CommandBuffer commandBuffer) const;
 
     private:
         void createVertexStagingBuffer();

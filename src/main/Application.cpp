@@ -156,10 +156,8 @@ void Application::run() {
         float dt = fsec(currentTime - prevTime).count();
         prevTime = currentTime;
         
-        // TEMP
-        // "renderSystem->getCommandBuffer()" THIS IS NOT GOOD!
         blobSdf->advanceTime(dt);
-        blobModel->updateVertices(renderSystem->getCommandBuffer(), mcMesher->marchingCubes(*blobSdf));
+        blobModel->setVertices(mcMesher->marchingCubes(*blobSdf));
 
         renderSystem->draw(
                 {.gltfScene = scene->gpu(),

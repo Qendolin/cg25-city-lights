@@ -11,8 +11,11 @@ namespace blob {
         assert(stepSize > 0 && "Invalid MC resolution");
     }
 
-    std::vector<VertexData> Mesher::marchingCubes(const Sdf &sdf) const {
+    std::vector<VertexData> Mesher::marchingCubes(const Sdf &sdf, std::size_t estimatedVertexCount) const {
         std::vector<VertexData> meshVertices;
+
+        if (estimatedVertexCount)
+            meshVertices.reserve(estimatedVertexCount);
 
         float x0 = intervalStart;
 

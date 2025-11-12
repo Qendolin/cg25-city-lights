@@ -313,7 +313,7 @@ namespace blob {
 
     public:
         Mesher(float intervalStart, float intervalEnd, int resolution, float isoValue);
-        std::vector<VertexData> marchingCubes(const Sdf &sdf) const;
+        std::vector<VertexData> marchingCubes(const Sdf &sdf, std::size_t estimatedVertexCount = 0) const;
 
     private:
         std::vector<VertexData> getCellMeshVertices(

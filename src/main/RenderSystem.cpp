@@ -98,6 +98,7 @@ void RenderSystem::draw(const RenderData &rd) {
     );
 
     // Blob render pass
+    rd.blobModel.pushVertices(cmd_buf);
     mBlobRenderer->execute(cmd_buf, mHdrFramebuffer, rd.camera, rd.blobModel);
 
     // Post-processing pass

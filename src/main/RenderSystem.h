@@ -71,7 +71,4 @@ public:
 
     [[nodiscard]] const ImGuiBackend &imGuiBackend() const { return *mImguiBackend; }
     [[nodiscard]] ImGuiBackend &imGuiBackend() { return *mImguiBackend; }
-
-    // TEMP - NOT GOOD!
-    vk::CommandBuffer &getCommandBuffer() { return mCommandBuffers.get(); }
 };

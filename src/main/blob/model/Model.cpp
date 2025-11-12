@@ -4,6 +4,7 @@
 #include <iostream>
 #include <memory>
 #include <tuple>
+#include <algorithm>
 
 namespace blob {
 
@@ -18,15 +19,11 @@ namespace blob {
         vmaDestroyBuffer(allocator, vertexStagingBuffer, vertexStagingAlloc);
     }
 
-    void Model::updateVertices(vk::CommandBuffer commandBuffer, const std::vector<VertexData> &vertices) {
-        vertexCount = static_cast<uint32_t>(vertices.size());
-
-        // TEMP
-        assert(vertices.size() <= MAX_VERTICES && "Insufficient buffer capacity");
-
+    void Model::pushVertices(vk::CommandBuffer commandBuffer) const {
+        uint32_t vertexCount = static_cast<uint32_t>(std::min(vertices.size(), MAX_VERTICES));
         VkDeviceSize dataSize = sizeof(VertexData) * vertexCount;
 
-        std::memcpy(stagingData, vertices.data(), static_cast<size_t>(dataSize));
+        std::memcpy(stagingData, vertices.data(), static_cast<std::size_t>(dataSize));
 
         vk::BufferCopy copy{};
         copy.srcOffset = 0;

@@ -1,12 +1,11 @@
 #pragma once
 
-#include "../sdf/Sdf.h"
-#include "../model/VertexData.h"
-
-#include <glm/glm.hpp>
-
 #include <array>
+#include <glm/glm.hpp>
 #include <vector>
+
+#include "../model/VertexData.h"
+#include "../sdf/Sdf.h"
 
 // TEMP for writing to an OBJ file for debugging
 #include <fstream>
@@ -17,6 +16,11 @@ namespace blob {
 
     class Mesher {
     private:
+        struct IntersectionPoint {
+            glm::vec3 position;
+            glm::vec3 normal;
+        };
+
         // Marching Cubes lookup tables adopted from:
         // https://gist.github.com/dwilliamson/c041e3454a713e58baf6e4f8e5fffecd
         const int edgeVertexIndices[12][2] = {{0, 1}, {1, 3}, {3, 2}, {2, 0}, {4, 5}, {5, 7},
@@ -42,7 +46,6 @@ namespace blob {
             0xf00, 0xe09, 0xd03, 0xc0a, 0x70c, 0x605, 0x50f, 0x406, 0xb06, 0xa0f, 0x905, 0x80c, 0x30a, 0x203, 0x109,
             0x0,
         };
-
 
         const int triangleTable[256][12] = {
             {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
@@ -316,20 +319,18 @@ namespace blob {
         std::vector<VertexData> marchingCubes(const Sdf &sdf, std::size_t estimatedVertexCount = 0) const;
 
     private:
-        std::vector<VertexData> getCellMeshVertices(
-                const Sdf &sdf, float x0, float y0, float z0, float x1, float y1, float z1
-        ) const;
+        std::vector<VertexData> getCellMeshVertices(const Sdf &sdf, int i, int j, int k) const;
 
         int getLookupIndex(const std::array<float, 8> &samples) const;
 
         glm::vec3 interpolate(const glm::vec3 &p0, const glm::vec3 &p1, float v0, float v1) const;
 
-        std::array<glm::vec3, 8> buildCellVertices(float x0, float y0, float z0, float x1, float y1, float z1) const;
+        std::array<glm::vec3, 8> buildCellVertices(int i, int j, int k) const;
 
         std::array<float, 8> sampleGrid(const Sdf &sdf, const std::array<glm::vec3, 8> &vertices) const;
 
-        std::array<glm::vec3, 12> getIntersections(
-                int cubeLookupIndex, const std::array<glm::vec3, 8> &vertices, const std::array<float, 8> &samples
+        std::array<IntersectionPoint, 12> getIntersections(
+                const Sdf &sdf, int cubeLookupIndex, const std::array<glm::vec3, 8> &vertices, const std::array<float, 8> &samples
         ) const;
 
         glm::vec3 calculateNormal(const Sdf &sdf, const glm::vec3 &p) const;

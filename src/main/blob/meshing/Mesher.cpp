@@ -17,67 +17,48 @@ namespace blob {
         if (estimatedVertexCount)
             meshVertices.reserve(estimatedVertexCount);
 
-        float x0 = intervalStart;
-
-        for (int i{0}; i < resolution; ++i) {
-            float x1 = intervalStart + (i + 1) * stepSize;
-            float y0 = intervalStart;
-
-            for (int j{0}; j < resolution; ++j) {
-                float y1 = intervalStart + (j + 1) * stepSize;
-                float z0 = intervalStart;
-
-                for (int k{0}; k < resolution; ++k) {
-                    float z1 = intervalStart + (k + 1) * stepSize;
-
-                    for (const VertexData &vertex: getCellMeshVertices(sdf, x0, y0, z0, x1, y1, z1))
+        for (int i{0}; i < resolution - 1; ++i)
+            for (int j{0}; j < resolution - 1; ++j)
+                for (int k{0}; k < resolution - 1; ++k)
+                    for (const VertexData &vertex: getCellMeshVertices(sdf, i, j, k))
                         meshVertices.push_back(vertex);
-
-                    z0 = z1; // Set new starting points to end points without recalculation
-                }
-
-                y0 = y1;
-            }
-
-            x0 = x1;
-        }
 
         return meshVertices;
     }
 
-    std::vector<VertexData> Mesher::getCellMeshVertices(
-            const Sdf &sdf, float x0, float y0, float z0, float x1, float y1, float z1
-    ) const {
-        const std::array<glm::vec3, 8> vertices = buildCellVertices(x0, y0, z0, x1, y1, z1);
+    std::vector<VertexData> Mesher::getCellMeshVertices(const Sdf &sdf, int i, int j, int k) const {
+        const std::array<glm::vec3, 8> vertices = buildCellVertices(i, j, k);
         const std::array<float, 8> samples = sampleGrid(sdf, vertices);
         int cubeLookupIndex = getLookupIndex(samples);
-        std::array<glm::vec3, 12> intersections = getIntersections(cubeLookupIndex, vertices, samples);
+        std::array<IntersectionPoint, 12> intersections = getIntersections(sdf, cubeLookupIndex, vertices, samples);
 
         std::vector<VertexData> cellMeshVertices;
-
         cellMeshVertices.reserve(12);
 
         const int *row = triangleTable[cubeLookupIndex];
 
         for (int i = 0; i < 12 && row[i] != -1; i += 3) {
-            const glm::vec3 p0 = intersections[row[i + 0]];
-            const glm::vec3 p1 = intersections[row[i + 1]];
-            const glm::vec3 p2 = intersections[row[i + 2]];
+            const IntersectionPoint p0 = intersections[row[i + 0]];
+            const IntersectionPoint p1 = intersections[row[i + 1]];
+            const IntersectionPoint p2 = intersections[row[i + 2]];
 
-            const glm::vec3 n0 = calculateNormal(sdf, p0);
-            const glm::vec3 n1 = calculateNormal(sdf, p1);
-            const glm::vec3 n2 = calculateNormal(sdf, p2);
-
-            cellMeshVertices.emplace_back(VertexData{p0, n0});
-            cellMeshVertices.emplace_back(VertexData{p1, n1});
-            cellMeshVertices.emplace_back(VertexData{p2, n2});
+            cellMeshVertices.emplace_back(VertexData{p0.position, p0.normal});
+            cellMeshVertices.emplace_back(VertexData{p1.position, p1.normal});
+            cellMeshVertices.emplace_back(VertexData{p2.position, p2.normal});
         }
 
         return cellMeshVertices;
     }
 
-    std::array<glm::vec3, 8> Mesher::buildCellVertices(float x0, float y0, float z0, float x1, float y1, float z1) const {
+    std::array<glm::vec3, 8> Mesher::buildCellVertices(int i, int j, int k) const {
         std::array<glm::vec3, 8> cellVertices;
+
+        float x0 = intervalStart + i * stepSize;
+        float x1 = intervalStart + (i + 1) * stepSize;
+        float y0 = intervalStart + j * stepSize;
+        float y1 = intervalStart + (j + 1) * stepSize;
+        float z0 = intervalStart + k * stepSize;
+        float z1 = intervalStart + (k + 1) * stepSize;
 
         cellVertices[0] = glm::vec3(x0, y0, z0);
         cellVertices[1] = glm::vec3(x1, y0, z0);
@@ -116,10 +97,10 @@ namespace blob {
         return p0 + t * (p1 - p0);
     }
 
-    std::array<glm::vec3, 12> Mesher::getIntersections(
-            int cubeLookupIndex, const std::array<glm::vec3, 8> &vertices, const std::array<float, 8> &samples
+    std::array<Mesher::IntersectionPoint, 12> Mesher::getIntersections(
+            const Sdf &sdf, int cubeLookupIndex, const std::array<glm::vec3, 8> &vertices, const std::array<float, 8> &samples
     ) const {
-        std::array<glm::vec3, 12> intersections{};
+        std::array<IntersectionPoint, 12> intersections{};
 
         int intersectionKey = edgeTable[cubeLookupIndex];
         int intersectionIndex = 0;
@@ -129,10 +110,11 @@ namespace blob {
                 int vertexIndex0 = edgeVertexIndices[intersectionIndex][0];
                 int vertexIndex1 = edgeVertexIndices[intersectionIndex][1];
 
-                glm::vec3 intersection = interpolate(
+                glm::vec3 position = interpolate(
                         vertices[vertexIndex0], vertices[vertexIndex1], samples[vertexIndex0], samples[vertexIndex1]
                 );
-                intersections[intersectionIndex] = intersection;
+
+                intersections[intersectionIndex] = {position, calculateNormal(sdf, position)};
             }
 
             intersectionIndex++;

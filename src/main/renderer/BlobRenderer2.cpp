@@ -29,7 +29,7 @@ void BlobRenderer2::execute(
 }
 
 void BlobRenderer2::createComputePipeline_(const vk::Device &device, const ShaderLoader &shaderLoader) {
-    UniqueCompiledShaderStage compShader = shaderLoader.loadFromSource(device, "resources/shaders/placeholder.comp");
+    UniqueCompiledShaderStage compShader = shaderLoader.loadFromSource(device, "resources/shaders/blob.comp");
 
     ComputePipelineConfig pipelineConfig = {
         .descriptorSetLayouts = {mComputeDescriptorLayout},
@@ -66,14 +66,6 @@ void BlobRenderer2::computeVertices(const vk::Device &device, const vk::CommandB
     mComputeDescriptors.next();
     DescriptorSet &set = mComputeDescriptors.get();
 
-    /*
-    vk::DescriptorBufferInfo sdfBufferInfo{
-        .buffer = blobModel.getSdfSampleBuffer(),
-        .offset = 0,
-        .range = VK_WHOLE_SIZE,
-    };
-    */
-
     vk::DescriptorBufferInfo vertexBufferInfo{
         .buffer = blobModel.getVertexBuffer(),
         .offset = 0,
@@ -81,7 +73,6 @@ void BlobRenderer2::computeVertices(const vk::Device &device, const vk::CommandB
     };
 
     auto writes = std::array{
-        // set.write(ComputeDescriptorLayout::SDF_SAMPLES_BINDING, sdfBufferInfo),
         set.write(ComputeDescriptorLayout::VERTICES_BINDING, vertexBufferInfo),
     };
 
@@ -132,6 +123,6 @@ void BlobRenderer2::renderVertices(
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *mGraphicsPipeline.pipeline);
     commandBuffer.bindVertexBuffers(0, {blobModel.getVertexBuffer()}, {0});
-    commandBuffer.draw(/*blobModel.getVertexCount()*/ 3, 1, 0, 0); // TODO
+    commandBuffer.draw(3, 1, 0, 0); // TODO
     commandBuffer.endRendering();
 }

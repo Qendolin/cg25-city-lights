@@ -14,13 +14,12 @@
 class BlobRenderer2 {
 public:
     struct ComputeDescriptorLayout : DescriptorSetLayout {
-        // static constexpr StorageBufferBinding SDF_SAMPLES_BINDING{0, vk::ShaderStageFlagBits::eCompute};
         static constexpr StorageBufferBinding VERTICES_BINDING{0, vk::ShaderStageFlagBits::eCompute};
 
         ComputeDescriptorLayout() = default;
 
         explicit ComputeDescriptorLayout(const vk::Device &device) {
-            create(device, {}, /*SDF_SAMPLES_BINDING,*/ VERTICES_BINDING);
+            create(device, {}, VERTICES_BINDING);
         }
     };
 

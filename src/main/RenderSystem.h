@@ -4,9 +4,9 @@
 #include "backend/Framebuffer.h"
 #include "backend/ShaderCompiler.h"
 #include "backend/VulkanContext.h"
-#include "blob/model/Model.h"
+#include "blob/model/Model2.h"
 #include "imgui/ImGui.h"
-#include "renderer/BlobRenderer.h"
+#include "renderer/BlobRenderer2.h"
 #include "renderer/FinalizeRenderer.h"
 #include "renderer/PbrSceneRenderer.h"
 #include "renderer/ShadowRenderer.h"
@@ -18,7 +18,7 @@ struct RenderData {
     const ShadowCaster &sunShadowCaster;
     const DirectionalLight &sunLight;
     const Settings &settings;
-    const blob::Model &blobModel;
+    const blob::Model2 &blobModel;
 };
 
 class RenderSystem {
@@ -50,7 +50,7 @@ class RenderSystem {
     std::unique_ptr<PbrSceneRenderer> mPbrSceneRenderer;
     std::unique_ptr<ShadowRenderer> mShadowRenderer;
     std::unique_ptr<FinalizeRenderer> mFinalizeRenderer;
-    std::unique_ptr<BlobRenderer> mBlobRenderer;
+    std::unique_ptr<BlobRenderer2> mBlobRenderer;
 
 public:
     explicit RenderSystem(VulkanContext *context);

@@ -15,16 +15,18 @@ class BlobRenderer2 {
 public:
     struct ComputeDescriptorLayout : DescriptorSetLayout {
         static constexpr StorageBufferBinding VERTICES_BINDING{0, vk::ShaderStageFlagBits::eCompute};
+        static constexpr StorageBufferBinding INDIRECT_DRAW_BINDING{1, vk::ShaderStageFlagBits::eCompute};
 
         ComputeDescriptorLayout() = default;
 
         explicit ComputeDescriptorLayout(const vk::Device &device) {
-            create(device, {}, VERTICES_BINDING);
+            create(device, {}, VERTICES_BINDING, INDIRECT_DRAW_BINDING);
         }
     };
 
     struct ComputePushConstant {
         int resolution;
+        float time;
     };
 
     struct VertexFragmentPushConstant {

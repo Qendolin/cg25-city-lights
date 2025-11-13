@@ -10,7 +10,7 @@
 #include "RenderSystem.h"
 #include "backend/Swapchain.h"
 #include "backend/VulkanContext.h"
-#include "blob/meshing/Mesher.h"
+// #include "blob/meshing/Mesher.h"
 #include "blob/sdf/BlobSdf.h"
 #include "debug/Performance.h"
 #include "debug/SettingsGui.h"
@@ -119,19 +119,13 @@ void Application::init() {
 
     renderSystem->recreate();
 
-    blobSdf = std::make_unique<blob::BlobSdf>();
-    mcMesher = std::make_unique<blob::Mesher>(
-            BLOB_MESHER_CONFIG.intervalStart, BLOB_MESHER_CONFIG.intervalEnd, BLOB_MESHER_CONFIG.resolution,
-            BLOB_MESHER_CONFIG.isoValue
-    );
-
-    blobModel = std::make_unique<blob::Model>(context->allocator());
+    blobModel = std::make_unique<blob::Model2>(context->allocator(), BLOB_RESOLUTION);
 }
 
 void Application::run() {
     using clock = std::chrono::steady_clock;
     using fsec = std::chrono::duration<float>;
-    
+
     clock::time_point currentTime = clock::now();
     clock::time_point prevTime = currentTime;
     float dt{0};
@@ -152,12 +146,11 @@ void Application::run() {
         sunShadowCaster->lookAt(camera->position, -settings.sun.direction());
         settings.shadow.applyTo(*sunShadowCaster);
 
-        clock::time_point currentTime = clock::now();
+        currentTime = clock::now();
         float dt = fsec(currentTime - prevTime).count();
         prevTime = currentTime;
-        
-        blobSdf->advanceTime(dt);
-        blobModel->setVertices(mcMesher->marchingCubes(*blobSdf));
+
+        blobModel->advanceTime(dt);
 
         renderSystem->draw(
                 {.gltfScene = scene->gpu(),

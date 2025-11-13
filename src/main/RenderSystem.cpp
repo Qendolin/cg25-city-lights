@@ -21,7 +21,7 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mPbrSceneRenderer = std::make_unique<PbrSceneRenderer>(context->device(), mDescriptorAllocator);
     mShadowRenderer = std::make_unique<ShadowRenderer>();
     mFinalizeRenderer = std::make_unique<FinalizeRenderer>(context->device(), mDescriptorAllocator);
-    mBlobRenderer = std::make_unique<BlobRenderer>();
+    mBlobRenderer = std::make_unique<BlobRenderer2>(context->device(), mDescriptorAllocator);
 }
 
 void RenderSystem::recreate() {
@@ -98,8 +98,8 @@ void RenderSystem::draw(const RenderData &rd) {
     );
 
     // Blob render pass
-    rd.blobModel.pushVertices(cmd_buf);
-    mBlobRenderer->execute(cmd_buf, mHdrFramebuffer, rd.camera, rd.blobModel);
+    // rd.blobModel.pushVertices(cmd_buf);
+    mBlobRenderer->execute(mContext->device(), cmd_buf, mHdrFramebuffer, rd.camera, rd.blobModel);
 
     // Post-processing pass
     mFinalizeRenderer->execute(

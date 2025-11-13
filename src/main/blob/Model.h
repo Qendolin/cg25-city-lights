@@ -5,12 +5,11 @@
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 #include <vulkan/vulkan.hpp>
 
-#include "../sdf/Sdf.h"
 #include "VertexData.h"
 
 namespace blob {
 
-    class Model2 {
+    class Model {
     private:
         static constexpr int MAX_VERTICES_PER_CELL = 12;
 
@@ -28,11 +27,11 @@ namespace blob {
         float time;
 
     public:
-        Model2(const vma::Allocator &allocator, int resolution);
-        ~Model2();
+        Model(const vma::Allocator &allocator, int resolution);
+        ~Model();
 
-        Model2(const Model2 &) = delete;
-        Model2 &operator=(const Model2 &) = delete;
+        Model(const Model &) = delete;
+        Model &operator=(const Model &) = delete;
 
         void advanceTime(float dt);
 

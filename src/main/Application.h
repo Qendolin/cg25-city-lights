@@ -29,9 +29,7 @@ class ShaderLoader;
 // TODO:
 // Why do we not forward declare by including the header files here instead of in the cpp file?
 namespace blob {
-    // class BlobSdf;
-    // class Mesher;
-    class Model2;
+    class Model;
 };
 
 struct BlobMesherConfig {
@@ -58,7 +56,7 @@ class Application {
 
     std::unique_ptr<FrameTimes> debugFrameTimes;
 
-    std::unique_ptr<blob::Model2> blobModel;
+    std::unique_ptr<blob::Model> blobModel;
 
     void processInput();
     void drawGui();

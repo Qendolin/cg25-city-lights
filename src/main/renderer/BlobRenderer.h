@@ -2,33 +2,65 @@
 
 #include <glm/glm.hpp>
 
+#include "../backend/Descriptors.h"
 #include "../backend/Framebuffer.h"
 #include "../backend/Image.h"
 #include "../backend/Pipeline.h"
 #include "../backend/ShaderCompiler.h"
-#include "../blob/model/Model.h"
+#include "../blob/Model.h"
 #include "../entity/Camera.h"
+#include "../util/PerFrame.h"
 
 class BlobRenderer {
 public:
-    struct BlobShaderPushConstant {
-        glm::mat4 projectionViewModel{1.f};
-        glm::mat4 modelMatrix{1.f};
+    struct ComputeDescriptorLayout : DescriptorSetLayout {
+        static constexpr StorageBufferBinding VERTICES_BINDING{0, vk::ShaderStageFlagBits::eCompute};
+        static constexpr StorageBufferBinding INDIRECT_DRAW_BINDING{1, vk::ShaderStageFlagBits::eCompute};
+
+        ComputeDescriptorLayout() = default;
+
+        explicit ComputeDescriptorLayout(const vk::Device &device) {
+            create(device, {}, VERTICES_BINDING, INDIRECT_DRAW_BINDING);
+        }
     };
 
-    BlobRenderer() = default;
+    struct ComputePushConstant {
+        int resolution;
+        float time;
+    };
+
+    struct VertexFragmentPushConstant {
+        glm::mat4 projectionViewModel{1.f};
+        glm::mat4 ModelMatrix{1.f};
+    };
+
+private:
+    ConfiguredComputePipeline mComputePipeline;
+    ConfiguredGraphicsPipeline mGraphicsPipeline;
+
+    ComputeDescriptorLayout mComputeDescriptorLayout;
+    util::PerFrame<DescriptorSet> mComputeDescriptors;
+
+public:
+    BlobRenderer(const vk::Device &device, const DescriptorAllocator &allocator);
     ~BlobRenderer() = default;
 
-    void recreate(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer) {
-        createPipeline(device, shaderLoader, framebuffer);
-    }
+    void recreate(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer);
 
     void execute(
-            const vk::CommandBuffer &cmd_buf, const Framebuffer &framebuffer, const Camera &camera, const blob::Model &blobModel
+            const vk::Device &device,
+            const vk::CommandBuffer &commandBuffer,
+            const Framebuffer &framebuffer,
+            const Camera &camera,
+            const blob::Model &blobModel
     );
 
 private:
-    void createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &framebuffer);
+    void createComputePipeline_(const vk::Device &device, const ShaderLoader &shaderLoader);
+    void createGraphicsPipeline_(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer);
 
-    ConfiguredGraphicsPipeline mPipeline;
+    void computeVertices(const vk::Device &device, const vk::CommandBuffer &commandBuffer, const blob::Model &blobModel);
+    void renderVertices(
+            const vk::CommandBuffer &commandBuffer, const Framebuffer &framebuffer, const Camera &camera, const blob::Model &blobModel
+    );
 };

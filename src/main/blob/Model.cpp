@@ -1,21 +1,21 @@
-#include "Model2.h"
+#include "Model.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 
 namespace blob {
 
-    Model2::Model2(const vma::Allocator &allocator, int resolution) : allocator{allocator}, resolution{resolution} {
+    Model::Model(const vma::Allocator &allocator, int resolution) : allocator{allocator}, resolution{resolution} {
         createVertexBuffer();
         createIndirectDrawBuffer();
         modelMatrix = glm::translate(modelMatrix, {0.f, 1.f, 1.5f});
     }
 
-    Model2::~Model2() {
+    Model::~Model() {
         vmaDestroyBuffer(allocator, indirectDrawBuffer, indirectDrawAlloc);
         vmaDestroyBuffer(allocator, vertexBuffer, vertexAlloc);
     }
 
-    void Model2::createVertexBuffer() {
+    void Model::createVertexBuffer() {
         vk::BufferCreateInfo bufferCreateInfo{};
         bufferCreateInfo.size = resolution * resolution * resolution * MAX_VERTICES_PER_CELL * sizeof(VertexData);
         bufferCreateInfo.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst |
@@ -27,7 +27,7 @@ namespace blob {
         std::tie(vertexBuffer, vertexAlloc) = allocator.createBuffer(bufferCreateInfo, allocCreateInfo);
     }
 
-    void Model2::createIndirectDrawBuffer() {
+    void Model::createIndirectDrawBuffer() {
         vk::BufferCreateInfo bufferCreateInfo{};
         bufferCreateInfo.size = sizeof(vk::DrawIndirectCommand);
         bufferCreateInfo.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
@@ -39,7 +39,7 @@ namespace blob {
         std::tie(indirectDrawBuffer, indirectDrawAlloc) = allocator.createBuffer(bufferCreateInfo, allocCreateInfo);
     }
 
-    void Model2::advanceTime(float dt) {
+    void Model::advanceTime(float dt) {
         time += dt;
         time -= std::floor(time);
     }

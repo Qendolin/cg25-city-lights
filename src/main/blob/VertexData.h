@@ -3,7 +3,7 @@
 #include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
 
-#include "../../util/static_vector.h"
+#include "../util/static_vector.h"
 
 namespace blob {
 

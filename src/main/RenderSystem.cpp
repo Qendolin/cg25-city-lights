@@ -21,7 +21,7 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mPbrSceneRenderer = std::make_unique<PbrSceneRenderer>(context->device(), mDescriptorAllocator);
     mShadowRenderer = std::make_unique<ShadowRenderer>();
     mFinalizeRenderer = std::make_unique<FinalizeRenderer>(context->device(), mDescriptorAllocator);
-    mBlobRenderer = std::make_unique<BlobRenderer2>(context->device(), mDescriptorAllocator);
+    mBlobRenderer = std::make_unique<BlobRenderer>(context->device(), mDescriptorAllocator);
 }
 
 void RenderSystem::recreate() {

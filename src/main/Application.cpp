@@ -10,8 +10,6 @@
 #include "RenderSystem.h"
 #include "backend/Swapchain.h"
 #include "backend/VulkanContext.h"
-// #include "blob/meshing/Mesher.h"
-#include "blob/sdf/BlobSdf.h"
 #include "debug/Performance.h"
 #include "debug/SettingsGui.h"
 #include "entity/Camera.h"
@@ -119,7 +117,7 @@ void Application::init() {
 
     renderSystem->recreate();
 
-    blobModel = std::make_unique<blob::Model2>(context->allocator(), BLOB_RESOLUTION);
+    blobModel = std::make_unique<blob::Model>(context->allocator(), BLOB_RESOLUTION);
 }
 
 void Application::run() {
@@ -147,7 +145,7 @@ void Application::run() {
         settings.shadow.applyTo(*sunShadowCaster);
 
         currentTime = clock::now();
-        float dt = fsec(currentTime - prevTime).count();
+        dt = fsec(currentTime - prevTime).count();
         prevTime = currentTime;
 
         blobModel->advanceTime(dt);

@@ -42,9 +42,9 @@ namespace blob {
             const IntersectionPoint p1 = intersections[row[i + 1]];
             const IntersectionPoint p2 = intersections[row[i + 2]];
 
-            cellMeshVertices.emplace_back(VertexData{p0.position, p0.normal});
-            cellMeshVertices.emplace_back(VertexData{p1.position, p1.normal});
-            cellMeshVertices.emplace_back(VertexData{p2.position, p2.normal});
+            cellMeshVertices.emplace_back(VertexData{glm::vec4(p0.position, 1.f), glm::vec4(p0.normal, 0.f)});
+            cellMeshVertices.emplace_back(VertexData{glm::vec4(p1.position, 1.f), glm::vec4(p1.normal, 0.f)});
+            cellMeshVertices.emplace_back(VertexData{glm::vec4(p2.position, 1.f), glm::vec4(p2.normal, 0.f)});
         }
 
         return cellMeshVertices;

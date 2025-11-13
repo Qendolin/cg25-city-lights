@@ -21,7 +21,7 @@ namespace blob {
 
     void Model::pushVertices(vk::CommandBuffer commandBuffer) const {
         uint32_t vertexCount = static_cast<uint32_t>(std::min(vertices.size(), MAX_VERTICES));
-        VkDeviceSize dataSize = sizeof(VertexData) * vertexCount;
+        vk::DeviceSize dataSize = sizeof(VertexData) * vertexCount;
 
         std::memcpy(stagingData, vertices.data(), static_cast<std::size_t>(dataSize));
 

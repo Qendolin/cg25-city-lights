@@ -28,7 +28,7 @@ namespace blob {
         glm::mat4 modelMatrix{1.f};
 
     public:
-        Model(const vma::Allocator &device);
+        Model(const vma::Allocator &allocator);
         ~Model();
 
         Model(const Model &) = delete;

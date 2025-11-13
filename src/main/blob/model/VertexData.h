@@ -8,8 +8,8 @@
 namespace blob {
 
     struct VertexData {
-        glm::vec3 position{};
-        glm::vec3 normal{};
+        glm::vec4 position{};
+        glm::vec4 normal{};
 
         static util::static_vector<vk::VertexInputBindingDescription, 16> getBindingDescriptions() {
             util::static_vector<vk::VertexInputBindingDescription, 16> bindingDescriptions;

@@ -35,6 +35,8 @@ public:
     };
 
 private:
+    static constexpr uint32_t WORK_GROUP_SIZE = 4;
+
     ConfiguredComputePipeline mComputePipeline;
     ConfiguredGraphicsPipeline mGraphicsPipeline;
 

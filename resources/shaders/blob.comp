@@ -1,6 +1,6 @@
 #version 460
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(push_constant) uniform PushConsts {
     int resolution;
@@ -426,6 +426,11 @@ void main() {
     int i = int(gid.x);
     int j = int(gid.y);
     int k = int(gid.z);
+
+    if ((i >= pc.resolution) || (j >= pc.resolution) || (k >= pc.resolution)) {
+        return;
+    }
+
     stepSize = (INTERVAL_END - INTERVAL_START) / float(pc.resolution);
 
     setCellVertices(i, j, k);

@@ -118,9 +118,13 @@ void BlobRenderer::computeVertices(const vk::Device &device, const vk::CommandBu
             *mComputePipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(ComputePushConstant), &pc
     );
 
-    commandBuffer.dispatch(
+    uint32_t groups = (resolution + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE;
+
+    commandBuffer.dispatch(groups, groups, groups);
+
+    /*commandBuffer.dispatch(
             static_cast<uint32_t>(resolution), static_cast<uint32_t>(resolution), static_cast<uint32_t>(resolution)
-    );
+    );*/
 
     vk::BufferMemoryBarrier barriers[2]{};
 

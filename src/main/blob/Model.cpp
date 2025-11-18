@@ -2,6 +2,8 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <iostream>
+
 namespace blob {
 
     Model::Model(const vma::Allocator &allocator, int resolution) : allocator{allocator}, resolution{resolution} {
@@ -41,7 +43,8 @@ namespace blob {
 
     void Model::advanceTime(float dt) {
         time += dt;
-        time -= std::floor(time);
+        if (time >= MAX_ANIMATION_TIME)
+            time -= MAX_ANIMATION_TIME;
     }
 
 } // namespace blob

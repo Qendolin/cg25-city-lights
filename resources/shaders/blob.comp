@@ -316,6 +316,8 @@ const float INTERVAL_START = -1.;
 const float INTERVAL_END = 1.;
 const float ISO_VALUE = 0;
 const float EPS = 1e-3f;
+const float TWO_PI = 6.2831855;
+const float PI = 3.1415926;
 
 float stepSize;
 
@@ -329,8 +331,8 @@ float cellSamples[8];
 int cubeLookupIndex;
 IntersectionPoint intersectionPoints[12];
 
-float sphereSdf(vec3 point, float size) {
-    return length(point) - size;
+float sphereSdf(vec3 point, vec3 center, float size) {
+    return length(point - center) - size;
 }
 
 float smoothMin(float a, float b, float smoothing) {
@@ -339,18 +341,41 @@ float smoothMin(float a, float b, float smoothing) {
 }
 
 float sdf(vec3 point) {
-    float s0 = sphereSdf(point, 0.5);
+    float centerY = 0.3;
+    float timeLooped = min(pc.time, TWO_PI - pc.time);
 
-    // TODO: Multiple Spheres rotating around core sphere to simulate blobbiness
+    vec3 center0 = vec3(0 , centerY, 0);
+    float size0 = 0.2 + timeLooped / 24.;
+    float s0 = sphereSdf(point, center0, size0);
 
-    // Moving sphere - simulates dripping effect
-    vec3 offset = vec3(0.0, 0.2 + 1.3 * pc.time, 0.0);
-    float s1 = sphereSdf(point + offset, 0.2);
+    float time2 = pc.time * 2.;
+    float time4 = pc.time * 4.;
+    
+    // Spheres rotating around core sphere to simulate blobbiness
+    float radius1 = 0.25;
+    vec3 center1 = vec3(radius1 *  cos(time2), centerY, radius1 * sin(time2));
+    float s1 = sphereSdf(point, center1, 0.2);
 
-    float val = smoothMin(s0, s1, 0.4);
+    float radius2 = 0.25;
+    vec3 center2 = vec3(radius2 *  cos(time2), radius2 * sin(time2) + centerY - 0.05, 0);
+    float s2 = sphereSdf(point, center2, 0.2);
+    
+    float radius3 = 0.30;
+    vec3 center3 = vec3(0., radius3 *  cos(-time4) + centerY - 0.05, radius3 * sin(-time4));
+    float s3 = sphereSdf(point, center3, 0.2);
+
+    // Simulates dripping effect
+    vec3 center4 = vec3(0., centerY - timeLooped, 0.0);
+    float s4 = sphereSdf(point, center4, 0.1);
+
+    // Smooth Min
+    float val0 = smoothMin(s0, s1, 0.4);
+    float val1 = smoothMin(val0, s2, 0.4);
+    float val2 = smoothMin(val1, s3, 0.4);
+    float val3 = smoothMin(val2, s4, 0.4);
 
     // Simulate ground - assuming the sdf sampling volume ends at y = 1
-    return smoothMin(val, point.y + 1.02, 0.2);
+    return smoothMin(val3, point.y + 1.05, 0.4);
 }
 
 void setCellVertices(int i, int j, int k) {
@@ -392,9 +417,10 @@ vec3 interpolate(vec3 p0, vec3 p1, float v0, float v1) {
 }
 
 vec3 calculateNormal(vec3 p) {
-    float dx = sdf(vec3(p.x + EPS, p.y, p.z)) - sdf(vec3(p.x - EPS, p.y, p.z));
-    float dy = sdf(vec3(p.x, p.y + EPS, p.z)) - sdf(vec3(p.x, p.y - EPS, p.z));
-    float dz = sdf(vec3(p.x, p.y, p.z + EPS)) - sdf(vec3(p.x, p.y, p.z - EPS));
+    float dist = sdf(p);
+    float dx = dist - sdf(vec3(p.x - EPS, p.y, p.z));
+    float dy = dist - sdf(vec3(p.x, p.y - EPS, p.z));
+    float dz = dist - sdf(vec3(p.x, p.y, p.z - EPS));
     return normalize(vec3(dx, dy, dz));
 }
 
@@ -426,6 +452,13 @@ void main() {
     int i = int(gid.x);
     int j = int(gid.y);
     int k = int(gid.z);
+
+    if (gl_GlobalInvocationID == uvec3(0)) {
+        drawArgs.vertexCount   = 0;
+        drawArgs.instanceCount = 1;
+        drawArgs.firstVertex   = 0;
+        drawArgs.firstInstance = 0;
+    }
 
     if ((i >= pc.resolution) || (j >= pc.resolution) || (k >= pc.resolution)) {
         return;

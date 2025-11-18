@@ -60,30 +60,6 @@ void BlobRenderer::createGraphicsPipeline_(
 }
 
 void BlobRenderer::computeVertices(const vk::Device &device, const vk::CommandBuffer &commandBuffer, const blob::Model &blobModel) {
-    vk::DrawIndirectCommand drawIndirectCommand{};
-    drawIndirectCommand.vertexCount = 0;
-    drawIndirectCommand.instanceCount = 1;
-    drawIndirectCommand.firstVertex = 0;
-    drawIndirectCommand.firstInstance = 0;
-
-    vk::Buffer indirectDrawBuffer = blobModel.getIndirectDrawBuffer();
-
-    commandBuffer.updateBuffer(indirectDrawBuffer, 0, sizeof(vk::DrawIndirectCommand), &drawIndirectCommand);
-
-    vk::BufferMemoryBarrier barrier{};
-    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-    barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
-    barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
-    barrier.buffer = indirectDrawBuffer;
-    barrier.offset = 0;
-    barrier.size = vk::WholeSize;
-
-    commandBuffer.pipelineBarrier(
-            vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader, {}, 0, nullptr, 1,
-            &barrier, 0, nullptr
-    );
-
     mComputeDescriptors.next();
     DescriptorSet &set = mComputeDescriptors.get();
 
@@ -121,10 +97,6 @@ void BlobRenderer::computeVertices(const vk::Device &device, const vk::CommandBu
     uint32_t groups = (resolution + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE;
 
     commandBuffer.dispatch(groups, groups, groups);
-
-    /*commandBuffer.dispatch(
-            static_cast<uint32_t>(resolution), static_cast<uint32_t>(resolution), static_cast<uint32_t>(resolution)
-    );*/
 
     vk::BufferMemoryBarrier barriers[2]{};
 

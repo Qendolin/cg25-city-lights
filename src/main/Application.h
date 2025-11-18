@@ -40,7 +40,7 @@ struct BlobMesherConfig {
 };
 
 class Application {
-    static constexpr int BLOB_RESOLUTION = 20;
+    static constexpr int BLOB_RESOLUTION = 50;
 
     // Order is important here
     std::unique_ptr<VulkanContext> context;

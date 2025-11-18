@@ -2,10 +2,7 @@
 
 #include <vulkan/vulkan.hpp>
 
-#include "backend/Descriptors.h"
-#include "backend/Framebuffer.h"
 #include "debug/Settings.h"
-#include "util/PerFrame.h"
 
 class RenderSystem;
 class FinalizeRenderer;
@@ -26,8 +23,6 @@ namespace scene {
 class ImGuiBackend;
 class ShaderLoader;
 
-// TODO:
-// Why do we not forward declare by including the header files here instead of in the cpp file?
 namespace blob {
     class Model;
 };

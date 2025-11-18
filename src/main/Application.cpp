@@ -1,7 +1,6 @@
 #include "Application.h"
 
 #include <GLFW/glfw3.h>
-#include <chrono>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.inl>
@@ -121,13 +120,6 @@ void Application::init() {
 }
 
 void Application::run() {
-    using clock = std::chrono::steady_clock;
-    using fsec = std::chrono::duration<float>;
-
-    clock::time_point currentTime = clock::now();
-    clock::time_point prevTime = currentTime;
-    float dt{0};
-
     while (!context->window().shouldClose()) {
         renderSystem->begin();
 
@@ -144,11 +136,7 @@ void Application::run() {
         sunShadowCaster->lookAt(camera->position, -settings.sun.direction());
         settings.shadow.applyTo(*sunShadowCaster);
 
-        currentTime = clock::now();
-        dt = fsec(currentTime - prevTime).count();
-        prevTime = currentTime;
-
-        blobModel->advanceTime(dt);
+        blobModel->advanceTime(input->timeDelta());
 
         renderSystem->draw(
                 {.gltfScene = scene->gpu(),

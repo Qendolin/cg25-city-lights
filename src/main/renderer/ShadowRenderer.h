@@ -2,7 +2,6 @@
 #include <glm/glm.hpp>
 
 #include "../backend/Framebuffer.h"
-#include "../backend/Image.h"
 #include "../backend/Pipeline.h"
 
 

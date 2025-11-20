@@ -44,7 +44,7 @@ class Application {
     std::unique_ptr<glfw::Input> input;
     std::unique_ptr<Camera> camera;
     std::unique_ptr<scene::Scene> scene;
-    std::unique_ptr<ShadowCaster> sunShadowCaster;
+    std::vector<ShadowCaster> sunShadowCasterCascades;
 
     Settings settings = {};
     std::unique_ptr<SettingsGui> settingsGui;

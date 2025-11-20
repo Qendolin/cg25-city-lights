@@ -15,7 +15,7 @@
 struct RenderData {
     const scene::GpuData &gltfScene;
     const Camera &camera;
-    const ShadowCaster &sunShadowCaster;
+    std::span<ShadowCaster> sunShadowCasterCascades;
     const DirectionalLight &sunLight;
     const Settings &settings;
     const blob::Model &blobModel;
@@ -59,6 +59,9 @@ public:
 
     void draw(const RenderData &render_data);
 
+    /// <summary>Advance to the next frame</summary>
+    void advance();
+    /// <summary>Begin recording commands</summary>
     void begin();
 
     void submit();

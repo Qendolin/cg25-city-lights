@@ -156,7 +156,7 @@ namespace gltf {
                 mat.normalFactor = gltf_mat.normalTexture->scale;
 
             if (gltf_mat.pbrData.baseColorTexture.has_value()) {
-                mat.albedoTexture = static_cast<int32_t>(gltf_mat.pbrData.baseColorTexture.value().textureIndex);
+                mat.albedoTexture = static_cast<int32_t>(asset.textures[gltf_mat.pbrData.baseColorTexture.value().textureIndex].imageIndex.value());
                 auto &image = scene_data.images[mat.albedoTexture];
                 if (image.format == vk::Format::eUndefined) // claim image in this format
                     image.format = vk::Format::eR8G8B8A8Srgb;
@@ -167,20 +167,20 @@ namespace gltf {
             PlainImageData *o_image = nullptr;
             PlainImageData *rm_image = nullptr;
             if (gltf_mat.occlusionTexture.has_value()) {
-                auto index = static_cast<int32_t>(gltf_mat.occlusionTexture.value().textureIndex);
+                auto index = static_cast<int32_t>(asset.textures[gltf_mat.occlusionTexture.value().textureIndex].imageIndex.value());
                 o_image = &scene_data.images[index];
                 orm_cache_key.first = index;
             }
 
             if (gltf_mat.pbrData.metallicRoughnessTexture.has_value()) {
-                auto index = static_cast<int32_t>(gltf_mat.pbrData.metallicRoughnessTexture.value().textureIndex);
+                auto index = static_cast<int32_t>(asset.textures[gltf_mat.pbrData.metallicRoughnessTexture.value().textureIndex].imageIndex.value());
                 rm_image = &scene_data.images[index];
                 orm_cache_key.second = index;
             }
 
             // ORM texture merging logic
             if (o_image != nullptr && rm_image != nullptr && o_image == rm_image) {
-                mat.ormTexture = static_cast<int32_t>(gltf_mat.occlusionTexture.value().textureIndex);
+                mat.ormTexture = static_cast<int32_t>(asset.textures[gltf_mat.occlusionTexture.value().textureIndex].imageIndex.value());
                 auto &image = scene_data.images[mat.ormTexture];
                 if (image.format == vk::Format::eUndefined) // claim image in this format
                     image.format = vk::Format::eR8G8B8A8Unorm;
@@ -215,7 +215,7 @@ namespace gltf {
             }
 
             if (gltf_mat.normalTexture.has_value()) {
-                auto index = static_cast<int32_t>(gltf_mat.normalTexture.value().textureIndex);
+                auto index = static_cast<int32_t>(asset.textures[gltf_mat.normalTexture.value().textureIndex].imageIndex.value());
                 if (normal_cache_map.contains(index)) {
                     mat.normalTexture = normal_cache_map.at(index);
                 } else {

@@ -105,12 +105,12 @@ void Application::init() {
         renderSystem->descriptorAllocator()
     };
 
-    scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/ComplexTest.glb")));
-    sunShadowCaster = std::make_unique<ShadowCaster>(
-            context->device(), context->allocator(), settings.shadow.resolution, settings.shadow.dimension,
-            settings.shadow.start, settings.shadow.end
-    );
-
+    scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/CityTest.glb")));
+    for (const auto &config: settings.shadowCascades) {
+        sunShadowCasterCascades.emplace_back(
+                context->device(), context->allocator(), config.resolution, config.dimension, config.start, config.end
+        );
+    }
     camera = std::make_unique<Camera>(glm::radians(90.0f), 0.001f, glm::vec3{0, 1, 5}, glm::vec3{});
     debugFrameTimes = std::make_unique<FrameTimes>();
 
@@ -121,11 +121,12 @@ void Application::init() {
 
 void Application::run() {
     while (!context->window().shouldClose()) {
-        renderSystem->begin();
+        renderSystem->advance();
 
         input->update();
         processInput();
 
+        renderSystem->begin();
         renderSystem->imGuiBackend().beginFrame();
 
         drawGui();
@@ -133,19 +134,23 @@ void Application::run() {
         camera->setViewport(context->swapchain().width(), context->swapchain().height());
 
         // Should probably move this somewhere else
-        sunShadowCaster->lookAt(camera->position, -settings.sun.direction());
-        settings.shadow.applyTo(*sunShadowCaster);
+        for (size_t i = 0; i < sunShadowCasterCascades.size(); i++) {
+            auto &caster = sunShadowCasterCascades[i];
+            const auto &config = settings.shadowCascades[i];
+            caster.lookAt(camera->position, -settings.sun.direction());
+            config.applyTo(caster);
+        }
 
         blobModel->advanceTime(input->timeDelta());
 
-        renderSystem->draw(
-                {.gltfScene = scene->gpu(),
-                 .camera = *camera,
-                 .sunShadowCaster = *sunShadowCaster,
-                 .sunLight = settings.sun,
-                 .settings = settings,
-                 .blobModel = *blobModel}
-        );
+        renderSystem->draw({
+            .gltfScene = scene->gpu(),
+            .camera = *camera,
+            .sunShadowCasterCascades = sunShadowCasterCascades,
+            .sunLight = settings.sun,
+            .settings = settings,
+            .blobModel = *blobModel,
+        });
 
         renderSystem->submit();
     }

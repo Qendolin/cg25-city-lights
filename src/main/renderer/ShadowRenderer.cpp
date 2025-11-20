@@ -71,7 +71,7 @@ void ShadowRenderer::createPipeline(const vk::Device &device, const ShaderLoader
         .pushConstants = {vk::PushConstantRange{vk::ShaderStageFlagBits::eVertex, 0, sizeof(ShaderParamsPushConstants)}},
         .attachments = {.depthFormat = ShadowCaster::DepthFormat},
         .depth = {.biasEnabled = true, .clampEnabled = false},
-        .cull = {.front = vk::FrontFace::eClockwise},
+        .cull = {.mode = vk::CullModeFlagBits::eNone},
         .dynamic = {.depthBias = true}
     };
 

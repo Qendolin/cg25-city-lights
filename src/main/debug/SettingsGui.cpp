@@ -1,5 +1,6 @@
 #include "SettingsGui.h"
 
+#include <format>
 #include <glm/gtc/type_ptr.hpp>
 
 #include "../imgui/ImGui.h"
@@ -22,20 +23,24 @@ void SettingsGui::draw(Settings &settings) {
         SliderFloat("Power", &settings.sun.power, 0, 50);
         PopID();
     }
-    if (CollapsingHeader("Shadow")) {
-        PushID("shadow");
-        DragFloat("Dimension", &settings.shadow.dimension);
-        DragFloat("Start", &settings.shadow.start);
-        DragFloat("End", &settings.shadow.end);
-        SliderFloat("Extrusion Bias", &settings.shadow.extrusionBias, -10, 10);
-        DragFloat("Normal Bias", &settings.shadow.normalBias);
-        SliderFloat("Sample Bias", &settings.shadow.sampleBias, 0.0f, 10.0f);
-        SliderFloat("Sample Bias Clamp", &settings.shadow.sampleBiasClamp, 0.0f, 1.0f, "%.5f");
-        DragFloat("Depth Bias Const", &settings.shadow.depthBiasConstant);
-        SliderFloat("Depth Bias Slope", &settings.shadow.depthBiasSlope, -2.5f, 2.5f, "%.5f");
-        SliderFloat("Depth Bias Clamp", &settings.shadow.depthBiasClamp, 0.0f, 0.1f, "%.5f");
-        PopID();
+    for (size_t i = 0; i < settings.shadowCascades.size(); i++) {
+        if (CollapsingHeader(std::format("Shadow Cascade {}", i).c_str())) {
+            PushID(std::format("shadow_{}", i).c_str());
+            auto& cascade = settings.shadowCascades[i];
+            DragFloat("Dimension", &cascade.dimension);
+            DragFloat("Start", &cascade.start);
+            DragFloat("End", &cascade.end);
+            SliderFloat("Extrusion Bias", &cascade.extrusionBias, -10, 10);
+            DragFloat("Normal Bias", &cascade.normalBias);
+            SliderFloat("Sample Bias", &cascade.sampleBias, 0.0f, 10.0f);
+            SliderFloat("Sample Bias Clamp", &cascade.sampleBiasClamp, 0.0f, 1.0f, "%.5f");
+            DragFloat("Depth Bias Const", &cascade.depthBiasConstant);
+            SliderFloat("Depth Bias Slope", &cascade.depthBiasSlope, -2.5f, 2.5f, "%.5f");
+            SliderFloat("Depth Bias Clamp", &cascade.depthBiasClamp, 0.0f, 0.1f, "%.5f");
+            PopID();
+        }
     }
+
     if (CollapsingHeader("Tonemap")) {
         PushID("tonemap");
         DragFloat("EV Min", &settings.agx.ev_min);
@@ -45,6 +50,13 @@ void SettingsGui::draw(Settings &settings) {
         SliderFloat("Slope", &settings.agx.slope, 0.0, 5.0);
         SliderFloat("Power", &settings.agx.power, 0.0, 5.0);
         SliderFloat("Saturation", &settings.agx.saturation, 0.0, 5.0);
+        PopID();
+    }
+
+
+    if (CollapsingHeader("Rendering")) {
+        PushID("rendering");
+        ColorEdit3("Ambient", glm::value_ptr(settings.rendering.ambient), ImGuiColorEditFlags_Float);
         PopID();
     }
 

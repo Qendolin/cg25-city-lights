@@ -3,6 +3,7 @@
 
 #include "../backend/Descriptors.h"
 #include "../backend/Pipeline.h"
+#include "../debug/Settings.h"
 #include "../util/PerFrame.h"
 
 
@@ -19,25 +20,29 @@ class PbrSceneRenderer {
 public:
     struct alignas(16) ShaderParamsInlineUniformBlock {
         struct alignas(16) SunLight {
-            glm::mat4 projectionView;
             glm::vec4 radiance;
             glm::vec4 direction;
+        };
+        struct alignas(16) ShadowCascade {
+            glm::mat4 projectionView;
             float sampleBias;
             float sampleBiasClamp;
             float normalBias;
-            float pad0;
+            float dimension;
         };
         glm::mat4 view;
         glm::mat4 projection;
         glm::vec4 camera; // Padded to 16 bytes
         SunLight sun;
+        std::array<ShadowCascade, Settings::SHADOW_CASCADE_COUNT> cascades;
+        glm::vec4 ambient;
     };
 
     struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
         static constexpr InlineUniformBlockBinding SceneUniforms{
             0, vk::ShaderStageFlagBits::eAllGraphics, sizeof(ShaderParamsInlineUniformBlock)
         };
-        static constexpr CombinedImageSamplerBinding SunShadowMap{1, vk::ShaderStageFlagBits::eFragment};
+        static constexpr CombinedImageSamplerBinding SunShadowMap{1, vk::ShaderStageFlagBits::eFragment, Settings::SHADOW_CASCADE_COUNT};
 
         ShaderParamsDescriptorLayout() = default;
 
@@ -60,7 +65,8 @@ public:
             const Camera &camera,
             const scene::GpuData &gpu_data,
             const DirectionalLight &sun_light,
-            const ShadowCaster &sun_shadow
+            std::span<ShadowCaster> sun_shadow_cascades,
+            const glm::vec3& ambient_light
     );
 
 private:

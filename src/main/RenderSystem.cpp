@@ -1,6 +1,7 @@
 #include "RenderSystem.h"
 
 #include "backend/Swapchain.h"
+#include "entity/ShadowCaster.h"
 
 RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mImguiBackend = std::make_unique<ImGuiBackend>(
@@ -90,11 +91,14 @@ void RenderSystem::draw(const RenderData &rd) {
     Framebuffer &swapchain_fb = mSwapchainFramebuffers.get(swapchain.activeImageIndex());
 
     // Shadow pass
-    mShadowRenderer->execute(cmd_buf, rd.gltfScene, rd.sunShadowCaster);
+    for (auto &caster: rd.sunShadowCasterCascades) {
+        mShadowRenderer->execute(cmd_buf, rd.gltfScene, caster);
+    }
 
     // Main render pass
     mPbrSceneRenderer->execute(
-            mContext->device(), cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene, rd.sunLight, rd.sunShadowCaster
+            mContext->device(), cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene, rd.sunLight,
+            rd.sunShadowCasterCascades, rd.settings.rendering.ambient
     );
 
     // Blob render pass
@@ -119,7 +123,7 @@ void RenderSystem::draw(const RenderData &rd) {
     swapchain_fb.colorAttachments[0].barrier(cmd_buf, ImageResourceAccess::PresentSrc);
 }
 
-void RenderSystem::begin() {
+void RenderSystem::advance() {
     auto &swapchain = mContext->swapchain();
     auto &sync_objects = mSyncObjects.next();
 
@@ -132,7 +136,11 @@ void RenderSystem::begin() {
         return;
     }
 
-    vk::CommandBuffer &cmd_buf = mCommandBuffers.next();
+    mCommandBuffers.next();
+}
+
+void RenderSystem::begin() {
+    vk::CommandBuffer &cmd_buf = mCommandBuffers.get();
     cmd_buf.reset();
     cmd_buf.begin(vk::CommandBufferBeginInfo{});
 }

@@ -1,10 +1,13 @@
 #pragma once
+#include <array>
+
 #include "../entity/Light.h"
 
 class ShadowCaster;
 
 struct Settings {
-    DirectionalLight sun = {.elevation = 20.0f, .azimuth = 0.0f, .color = glm::vec3{1.0f, 1.0f, 1.0f}, .power = 15.0f};
+    static constexpr int SHADOW_CASCADE_COUNT = 5;
+    DirectionalLight sun = {.elevation = 40.0f, .azimuth = 10.0f, .color = glm::vec3{1.0f, 1.0f, 1.0f}, .power = 15.0f};
     struct Shadow {
         int resolution = 2048;
         float dimension = 20.0f;
@@ -19,7 +22,8 @@ struct Settings {
         float depthBiasSlope = -2.5f;
 
         void applyTo(ShadowCaster &caster) const;
-    } shadow;
+    };
+    std::array<Shadow, SHADOW_CASCADE_COUNT> shadowCascades;
     struct AgXParams {
         float ev_min = -12.47393f;
         float ev_max = 4.026069f;
@@ -29,5 +33,22 @@ struct Settings {
         float power = 1.2f;
         float saturation = 1.0f;
     } agx;
+    struct Rendering {
+        glm::vec3 ambient = glm::vec3(5.0f);
+    } rendering;
+
+    Settings() {
+        shadowCascades[0] = {
+            .dimension = 12,
+            .extrusionBias = 0.0f,
+            .normalBias = 0.0f,
+            .sampleBiasClamp = 0.05f,
+            .depthBiasSlope = 0.0f,
+        };
+        shadowCascades[1].dimension = 24;
+        shadowCascades[2].dimension = 48;
+        shadowCascades[3].dimension = 128;
+        shadowCascades[4].dimension = 256;
+    }
 };
 

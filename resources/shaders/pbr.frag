@@ -2,17 +2,17 @@
 
 #extension GL_EXT_nonuniform_qualifier : require
 
+#include "pbr_common.glsl"
+
 layout (location = 0) in vec3 in_position_ws;
 layout (location = 1) in mat3 in_tbn;
 layout (location = 4) in vec2 in_tex_coord;
 layout (location = 5) flat in uint in_material;
-layout (location = 6) in vec3 in_shadow_position_ndc;
+layout (location = 6) in vec3 in_shadow_position_ndc[SHADOW_CASCADE_COUNT];
 
 layout (location = 0) out vec4 out_color;
 
-#include "pbr_common.glsl"
-
-layout (set = 1, binding = 1) uniform sampler2DShadow uSunShadowMap;
+layout (set = 1, binding = 1) uniform sampler2DShadow uSunShadowMaps[SHADOW_CASCADE_COUNT];
 
 const float PI = 3.14159265359;
 const uint NO_TEXTURE = 0xffff;
@@ -93,13 +93,14 @@ float microShadowNaughtyDog(float ao, float n_dot_l) {
     return clamp(n_dot_l + aperture - 1.0, 0.0, 1.0);
 }
 
-float sampleShadow(vec3 P_shadow_ndc, float n_dot_l) {
-    vec2 texel_size = vec2(1.0) / textureSize(uSunShadowMap, 0).xy;
+float sampleShadow(vec3 P_shadow_ndc, float n_dot_l, int index) {
+    ShadowCascade cascade = uParams.cascades[index];
+    vec2 texel_size = vec2(1.0) / textureSize(uSunShadowMaps[index], 0).xy;
     // z is seperate because we are using 0..1 depth
     vec3 shadow_uvz = vec3(P_shadow_ndc.xy * 0.5 + 0.5, P_shadow_ndc.z);
 
-    float bias = uParams.sun.sampleBias * texel_size.x * tan(acos(n_dot_l));
-    bias = clamp(bias, 0.0, uParams.sun.sampleBiasClamp * texel_size.x);
+    float bias = cascade.sampleBias * texel_size.x * tan(acos(n_dot_l));
+    bias = clamp(bias, 0.0, cascade.sampleBiasClamp * texel_size.x);
 
     // GPU Gems 1 / Chapter 11.4
     vec2 offset = vec2(fract(gl_FragCoord.x * 0.5) > 0.25, fract(gl_FragCoord.y * 0.5) > 0.25); // mod
@@ -107,10 +108,10 @@ float sampleShadow(vec3 P_shadow_ndc, float n_dot_l) {
     if (offset.y > 1.1) offset.y = 0;
     float shadow = 0.0;
     // + bias instead of - bias becase we are using reversed depth and the GL_GEQUAL compare mode.
-    shadow += texture(uSunShadowMap, vec3(shadow_uvz.xy + (offset + vec2(-1.5, 0.5)) * texel_size, shadow_uvz.z + bias));
-    shadow += texture(uSunShadowMap, vec3(shadow_uvz.xy + (offset + vec2(0.5, 0.5)) * texel_size, shadow_uvz.z + bias));
-    shadow += texture(uSunShadowMap, vec3(shadow_uvz.xy + (offset + vec2(-1.5, -1.5)) * texel_size, shadow_uvz.z + bias));
-    shadow += texture(uSunShadowMap, vec3(shadow_uvz.xy + (offset + vec2(0.5, -1.5)) * texel_size, shadow_uvz.z + bias));
+    shadow += texture(uSunShadowMaps[index], vec3(shadow_uvz.xy + (offset + vec2(-1.5, 0.5)) * texel_size, shadow_uvz.z + bias));
+    shadow += texture(uSunShadowMaps[index], vec3(shadow_uvz.xy + (offset + vec2(0.5, 0.5)) * texel_size, shadow_uvz.z + bias));
+    shadow += texture(uSunShadowMaps[index], vec3(shadow_uvz.xy + (offset + vec2(-1.5, -1.5)) * texel_size, shadow_uvz.z + bias));
+    shadow += texture(uSunShadowMaps[index], vec3(shadow_uvz.xy + (offset + vec2(0.5, -1.5)) * texel_size, shadow_uvz.z + bias));
     shadow *= 0.25;
 
     return shadow;
@@ -151,11 +152,18 @@ void main() {
     vec3 V = normalize(uParams.camera.xyz - P);
     vec3 R = reflect(-V, N);
     float n_dot_v = max(dot(N, V), 0.0);
+    float distance_vs = distance(uParams.camera.xyz, P);
 
     vec3 F0 = vec3(0.04);
     F0 = mix(F0, albedo.rgb, metallic);
 
-    float shadow = sampleShadow(in_shadow_position_ndc, dot(tbn[2].xyz, uParams.sun.direction.xyz));
+    int shadow_index = 0;
+    for (int i = SHADOW_CASCADE_COUNT - 1; i >= 0; i--) {
+        if (distance_vs < uParams.cascades[i].dimension * 0.5f) {
+            shadow_index = i;
+        }
+    }
+    float shadow = sampleShadow(in_shadow_position_ndc[shadow_index], dot(tbn[2].xyz, uParams.sun.direction.xyz), shadow_index);
 
     vec3 Lo = vec3(0.0);
     for (int i = 0; i < LIGHT_COUNT; ++i)
@@ -199,7 +207,7 @@ void main() {
         Lo += (kD * albedo.rgb / PI + specular) * radiance * n_dot_l;
     }
 
-    vec3 ambient = vec3(1.0) * occlusion;
+    vec3 ambient = uParams.ambient.rgb * occlusion;
     ambient *= fresnelSchlickRoughness(n_dot_v, F0, roughness);
     ambient *= albedo.rgb;
     ambient *= 1.0 - metallic;

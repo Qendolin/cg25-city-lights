@@ -8,6 +8,9 @@ class ShadowCaster;
 struct Settings {
     static constexpr int SHADOW_CASCADE_COUNT = 5;
     DirectionalLight sun = {.elevation = 40.0f, .azimuth = 10.0f, .color = glm::vec3{1.0f, 1.0f, 1.0f}, .power = 15.0f};
+    struct Sky {
+        float exposure = 1.49f;
+    } sky;
     struct Shadow {
         int resolution = 2048;
         float dimension = 20.0f;

@@ -22,10 +22,10 @@ namespace scene {
 }
 class ImGuiBackend;
 class ShaderLoader;
-
 namespace blob {
     class Model;
 };
+class Cubemap;
 
 struct BlobMesherConfig {
     float intervalStart;
@@ -52,6 +52,7 @@ class Application {
     std::unique_ptr<FrameTimes> debugFrameTimes;
 
     std::unique_ptr<blob::Model> blobModel;
+    std::unique_ptr<Cubemap> skybox;
 
     void processInput();
     void drawGui();

@@ -52,6 +52,11 @@ void SettingsGui::draw(Settings &settings) {
         SliderFloat("Saturation", &settings.agx.saturation, 0.0, 5.0);
         PopID();
     }
+    if (CollapsingHeader("Sky")) {
+        PushID("sky");
+        SliderFloat("EV", &settings.sky.exposure, -8.0f, 8.0f);
+        PopID();
+    }
 
 
     if (CollapsingHeader("Rendering")) {

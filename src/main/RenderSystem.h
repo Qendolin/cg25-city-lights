@@ -5,11 +5,13 @@
 #include "backend/ShaderCompiler.h"
 #include "backend/VulkanContext.h"
 #include "blob/Model.h"
+#include "entity/Cubemap.h"
 #include "imgui/ImGui.h"
 #include "renderer/BlobRenderer.h"
 #include "renderer/FinalizeRenderer.h"
 #include "renderer/PbrSceneRenderer.h"
 #include "renderer/ShadowRenderer.h"
+#include "renderer/SkyboxRenderer.h"
 #include "util/PerFrame.h"
 
 struct RenderData {
@@ -19,6 +21,7 @@ struct RenderData {
     const DirectionalLight &sunLight;
     const Settings &settings;
     const blob::Model &blobModel;
+    const Cubemap &skybox;
 };
 
 class RenderSystem {
@@ -51,6 +54,8 @@ class RenderSystem {
     std::unique_ptr<ShadowRenderer> mShadowRenderer;
     std::unique_ptr<FinalizeRenderer> mFinalizeRenderer;
     std::unique_ptr<BlobRenderer> mBlobRenderer;
+    std::unique_ptr<SkyboxRenderer> mSkyboxRenderer;
+
 
 public:
     explicit RenderSystem(VulkanContext *context);

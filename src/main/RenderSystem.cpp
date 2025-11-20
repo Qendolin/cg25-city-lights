@@ -22,6 +22,7 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mShadowRenderer = std::make_unique<ShadowRenderer>();
     mFinalizeRenderer = std::make_unique<FinalizeRenderer>(context->device(), mDescriptorAllocator);
     mBlobRenderer = std::make_unique<BlobRenderer>(context->device(), mDescriptorAllocator);
+    mSkyboxRenderer = std::make_unique<SkyboxRenderer>(context->device(), mDescriptorAllocator);
 }
 
 void RenderSystem::recreate() {
@@ -46,6 +47,7 @@ void RenderSystem::recreate() {
     mShadowRenderer->recreate(device, mShaderLoader);
     mFinalizeRenderer->recreate(device, mShaderLoader);
     mBlobRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
+    mSkyboxRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
 
     // These "need" to match the swapchain image count exactly
     mSyncObjects.create(swapchain.imageCount(), [&] {
@@ -91,6 +93,9 @@ void RenderSystem::draw(const RenderData &rd) {
 
     // Shadow pass
     mShadowRenderer->execute(cmd_buf, rd.gltfScene, rd.sunShadowCaster);
+
+    // Skybox render pass
+    mSkyboxRenderer->execute(mContext->device(), cmd_buf, mHdrFramebuffer, rd.camera, rd.skybox);
 
     // Main render pass
     mPbrSceneRenderer->execute(

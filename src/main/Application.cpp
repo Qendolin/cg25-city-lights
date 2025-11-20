@@ -1,6 +1,7 @@
 #include "Application.h"
 
 #include <GLFW/glfw3.h>
+#include <array>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.inl>
@@ -12,6 +13,7 @@
 #include "debug/Performance.h"
 #include "debug/SettingsGui.h"
 #include "entity/Camera.h"
+#include "entity/Cubemap.h"
 #include "entity/ShadowCaster.h"
 #include "glfw/Input.h"
 #include "imgui/ImGui.h"
@@ -117,6 +119,11 @@ void Application::init() {
     renderSystem->recreate();
 
     blobModel = std::make_unique<blob::Model>(context->allocator(), BLOB_RESOLUTION);
+
+    const std::array<std::string, 6> skyboxImageFilenames{"resources/skybox/px.png", "resources/skybox/nx.png",
+                                                          "resources/skybox/py.png", "resources/skybox/ny.png",
+                                                          "resources/skybox/pz.png", "resources/skybox/nz.png"};
+    skybox = std::make_unique<Cubemap>(context->allocator(), context->device(), context->mainQueue, skyboxImageFilenames);
 }
 
 void Application::run() {
@@ -144,7 +151,8 @@ void Application::run() {
                  .sunShadowCaster = *sunShadowCaster,
                  .sunLight = settings.sun,
                  .settings = settings,
-                 .blobModel = *blobModel}
+                 .blobModel = *blobModel,
+                 .skybox = *skybox}
         );
 
         renderSystem->submit();

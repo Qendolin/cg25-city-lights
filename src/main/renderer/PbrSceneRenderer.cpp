@@ -77,7 +77,7 @@ void PbrSceneRenderer::execute(
         .enabledColorAttachments = {true},
         .enableDepthAttachment = true,
         .enableStencilAttachment = false,
-        .colorLoadOps = {vk::AttachmentLoadOp::eClear},
+        .colorLoadOps = {vk::AttachmentLoadOp::eLoad},
         .colorStoreOps = {vk::AttachmentStoreOp::eStore},
         .depthLoadOp = vk::AttachmentLoadOp::eClear,
     }));

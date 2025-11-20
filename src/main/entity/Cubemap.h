@@ -31,6 +31,8 @@ public:
            const std::array<std::string, 6> &skyboxImageFilenames);
     ~Cubemap();
 
+    vk::ImageView getImageView() const { return *view; }
+
 private:
     void transitionImageLayout(const vk::CommandBuffer &commandBuffer, vk::ImageLayout oldLayout, vk::ImageLayout newLayout) const;
 };

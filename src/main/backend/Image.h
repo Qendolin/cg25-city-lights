@@ -134,6 +134,8 @@ struct ImageCreateInfo {
     uint32_t mip_levels = UINT32_MAX;
     /// <summary>The number of layers in the image array.</summary>
     uint32_t array_layers = 1;
+    /// <summary>Specifies the flags of the image.</summary>
+    vk::ImageCreateFlags flags = {};
 
     /// <summary>
     /// Creates an ImageCreateInfo struct from a PlainImageData object.

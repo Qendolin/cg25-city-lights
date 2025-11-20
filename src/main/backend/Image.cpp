@@ -223,6 +223,7 @@ Image Image::create(const vma::Allocator &allocator, ImageCreateInfo create_info
 
     auto [image, allocation] = allocator.createImageUnique(
             vk::ImageCreateInfo{
+                .flags = create_info.flags,
                 .imageType = create_info.type,
                 .format = create_info.format,
                 .extent = {.width = create_info.width, .height = create_info.height, .depth = create_info.depth},
@@ -250,7 +251,7 @@ void Image::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D 
     barrier(cmd_buf, ImageResourceAccess::TransferWrite);
 
     vk::BufferImageCopy image_copy = {
-        .imageSubresource = {.aspectMask = imageAspectFlags(), .mipLevel = level, .layerCount = 1},
+        .imageSubresource = {.aspectMask = imageAspectFlags(), .mipLevel = level, .layerCount = info.array_layers},
         .imageExtent = region,
     };
     cmd_buf.copyBufferToImage(data, *mImage, vk::ImageLayout::eTransferDstOptimal, image_copy);

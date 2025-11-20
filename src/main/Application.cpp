@@ -123,7 +123,9 @@ void Application::init() {
     const std::array<std::string, 6> skyboxImageFilenames{"resources/skybox/px.png", "resources/skybox/nx.png",
                                                           "resources/skybox/py.png", "resources/skybox/ny.png",
                                                           "resources/skybox/pz.png", "resources/skybox/nz.png"};
-    skybox = std::make_unique<Cubemap>(context->allocator(), context->device(), context->mainQueue, skyboxImageFilenames);
+    skybox = std::make_unique<Cubemap>(
+            context->allocator(), context->device(), context->transferQueue, context->mainQueue, skyboxImageFilenames
+    );
 }
 
 void Application::run() {

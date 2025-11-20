@@ -19,7 +19,7 @@ class ShaderLoader;
 class PbrSceneRenderer {
 public:
     struct alignas(16) ShaderParamsInlineUniformBlock {
-        struct alignas(16) SunLight {
+        struct alignas(16) DirectionalLight {
             glm::vec4 radiance;
             glm::vec4 direction;
         };
@@ -33,7 +33,7 @@ public:
         glm::mat4 view;
         glm::mat4 projection;
         glm::vec4 camera; // Padded to 16 bytes
-        SunLight sun;
+        DirectionalLight sun;
         std::array<ShadowCascade, Settings::SHADOW_CASCADE_COUNT> cascades;
         glm::vec4 ambient;
     };

@@ -6,6 +6,10 @@
 
 #include "../util/math.h"
 
+
+struct DirectionalLight;
+struct SpotLight;
+struct PointLight;
 template<typename T>
 class PlainImageData;
 
@@ -36,6 +40,18 @@ namespace gltf {
         /// The index of the mesh for this node or UINT32_MAX if none.
         /// </summary>
         uint32_t mesh = UINT32_MAX;
+        /// <summary>
+        /// The index of the point light for this node or UINT32_MAX if none.
+        /// </summary>
+        uint32_t pointLight = UINT32_MAX;
+        /// <summary>
+        /// The index of the spot light for this node or UINT32_MAX if none.
+        /// </summary>
+        uint32_t spotLight = UINT32_MAX;
+        /// <summary>
+        /// The index of the directional light for this node or UINT32_MAX if none.
+        /// </summary>
+        uint32_t directionalLight = UINT32_MAX;
     };
 
     /// <summary>
@@ -165,5 +181,17 @@ namespace gltf {
         /// A list of all images in the scene.
         /// </summary>
         std::vector<PlainImageData<uint8_t>> images;
+        /// <summary>
+        /// A list of all point lights in the scene.
+        /// </summary>
+        std::vector<PointLight> pointLights;
+        /// <summary>
+        /// A list of all spot lights in the scene.
+        /// </summary>
+        std::vector<SpotLight> spotLights;
+        /// <summary>
+        /// A list of all directional lights in the scene.
+        /// </summary>
+        std::vector<DirectionalLight> directionalLights;
     };
 } // namespace gltf

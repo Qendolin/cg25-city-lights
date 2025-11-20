@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "../backend/Image.h"
+#include "../entity/Light.h"
 #include "../util/Logger.h"
 
 template<typename T>
@@ -156,7 +157,9 @@ namespace gltf {
                 mat.normalFactor = gltf_mat.normalTexture->scale;
 
             if (gltf_mat.pbrData.baseColorTexture.has_value()) {
-                mat.albedoTexture = static_cast<int32_t>(asset.textures[gltf_mat.pbrData.baseColorTexture.value().textureIndex].imageIndex.value());
+                mat.albedoTexture = static_cast<int32_t>(
+                        asset.textures[gltf_mat.pbrData.baseColorTexture.value().textureIndex].imageIndex.value()
+                );
                 auto &image = scene_data.images[mat.albedoTexture];
                 if (image.format == vk::Format::eUndefined) // claim image in this format
                     image.format = vk::Format::eR8G8B8A8Srgb;
@@ -167,20 +170,26 @@ namespace gltf {
             PlainImageDataU8 *o_image = nullptr;
             PlainImageDataU8 *rm_image = nullptr;
             if (gltf_mat.occlusionTexture.has_value()) {
-                auto index = static_cast<int32_t>(asset.textures[gltf_mat.occlusionTexture.value().textureIndex].imageIndex.value());
+                auto index = static_cast<int32_t>(
+                        asset.textures[gltf_mat.occlusionTexture.value().textureIndex].imageIndex.value()
+                );
                 o_image = &scene_data.images[index];
                 orm_cache_key.first = index;
             }
 
             if (gltf_mat.pbrData.metallicRoughnessTexture.has_value()) {
-                auto index = static_cast<int32_t>(asset.textures[gltf_mat.pbrData.metallicRoughnessTexture.value().textureIndex].imageIndex.value());
+                auto index = static_cast<int32_t>(
+                        asset.textures[gltf_mat.pbrData.metallicRoughnessTexture.value().textureIndex].imageIndex.value()
+                );
                 rm_image = &scene_data.images[index];
                 orm_cache_key.second = index;
             }
 
             // ORM texture merging logic
             if (o_image != nullptr && rm_image != nullptr && o_image == rm_image) {
-                mat.ormTexture = static_cast<int32_t>(asset.textures[gltf_mat.occlusionTexture.value().textureIndex].imageIndex.value());
+                mat.ormTexture = static_cast<int32_t>(
+                        asset.textures[gltf_mat.occlusionTexture.value().textureIndex].imageIndex.value()
+                );
                 auto &image = scene_data.images[mat.ormTexture];
                 if (image.format == vk::Format::eUndefined) // claim image in this format
                     image.format = vk::Format::eR8G8B8A8Unorm;
@@ -198,7 +207,9 @@ namespace gltf {
                 } else {
                     PlainImageDataU8 *o_or_rm_image = o_image ? o_image : rm_image;
                     mat.ormTexture = static_cast<int32_t>(scene_data.images.size());
-                    auto orm_image = PlainImageDataU8::create(vk::Format::eR8G8B8A8Unorm, o_or_rm_image->width, o_or_rm_image->height);
+                    auto orm_image = PlainImageDataU8::create(
+                            vk::Format::eR8G8B8A8Unorm, o_or_rm_image->width, o_or_rm_image->height
+                    );
 
                     if (o_image) {
                         o_image->copyChannels(orm_image, {0});
@@ -215,17 +226,61 @@ namespace gltf {
             }
 
             if (gltf_mat.normalTexture.has_value()) {
-                auto index = static_cast<int32_t>(asset.textures[gltf_mat.normalTexture.value().textureIndex].imageIndex.value());
+                auto index = static_cast<int32_t>(
+                        asset.textures[gltf_mat.normalTexture.value().textureIndex].imageIndex.value()
+                );
                 if (normal_cache_map.contains(index)) {
                     mat.normalTexture = normal_cache_map.at(index);
                 } else {
-                    const auto& src_image =  scene_data.images[index];
+                    const auto &src_image = scene_data.images[index];
                     auto normal = PlainImageDataU8::create(vk::Format::eR8G8Unorm, src_image.width, src_image.height);
                     src_image.copyChannels(normal, {0, 1});
                     mat.normalTexture = static_cast<int32_t>(scene_data.images.size());
                     scene_data.images.emplace_back(std::move(normal));
                     normal_cache_map[index] = mat.normalTexture;
                 }
+            }
+        }
+    }
+
+    void Loader::loadLight(
+            const fastgltf::Asset &asset, Scene &scene_data, const fastgltf::Node &node, const glm::mat4 &transform, Node &scene_node
+    ) {
+        const auto &light = asset.lights[node.lightIndex.value()];
+        glm::vec3 position = glm::vec3(transform[3]);
+        glm::vec3 forward = glm::normalize(-glm::vec3(transform[2]));
+        switch (light.type) {
+            case fastgltf::LightType::Directional: {
+                scene_node.directionalLight = static_cast<uint32_t>(scene_data.directionalLights.size());
+                scene_data.directionalLights.emplace_back() = {
+                    .elevation = glm::atan(forward.y, glm::sqrt(forward.x * forward.x + forward.z * forward.z)),
+                    .azimuth = glm::atan(forward.x, forward.z),
+                    .color = {light.color.x(), light.color.y(), light.color.z()},
+                    .power = light.intensity / 683.0f,
+                };
+                break;
+            }
+            case fastgltf::LightType::Point: {
+                scene_node.pointLight = static_cast<uint32_t>(scene_data.pointLights.size());
+                scene_data.pointLights.emplace_back() = {
+                    .position = position,
+                    .color = {light.color.x(), light.color.y(), light.color.z()},
+                    .power = light.intensity / 683.0f,
+                };
+                break;
+            }
+            case fastgltf::LightType::Spot: {
+                scene_node.spotLight = static_cast<uint32_t>(scene_data.spotLights.size());
+                auto &scene_light = scene_data.spotLights.emplace_back() = {
+                    .position = position,
+                    .theta = glm::degrees(glm::atan(forward.y, glm::sqrt(forward.x * forward.x + forward.z * forward.z))),
+                    .phi = glm::degrees(glm::atan(forward.x, forward.z)),
+                    .color = {light.color.x(), light.color.y(), light.color.z()},
+                    .power = light.intensity / 683.0f,
+                };
+                scene_light.outerConeAngle = glm::degrees(light.outerConeAngle.value_or(glm::radians(scene_light.outerConeAngle)));
+                scene_light.innerConeAngle = glm::degrees(light.innerConeAngle.value_or(glm::radians(scene_light.innerConeAngle)));
+                break;
             }
         }
     }
@@ -240,14 +295,19 @@ namespace gltf {
     ) {
 
         size_t node_index = scene_data.nodes.size();
-        const auto &scene_node = scene_data.nodes.emplace_back() = {
+        auto &scene_node = scene_data.nodes.emplace_back() = {
             .name = std::string(node.name),
             .transform = transform,
             .mesh = static_cast<uint32_t>(node.meshIndex.value_or(UINT32_MAX)),
         };
 
-        if (scene_node.mesh == UINT32_MAX)
+        if (scene_node.mesh == UINT32_MAX) {
+            // Non mesh node
+            if (node.lightIndex.has_value()) {
+                loadLight(asset, scene_data, node, transform, scene_node);
+            }
             return;
+        }
 
         const fastgltf::Mesh &mesh = asset.meshes[scene_node.mesh];
 
@@ -265,7 +325,7 @@ namespace gltf {
         }
     }
 
-    Loader::Loader() { mParser = std::make_unique<fastgltf::Parser>(); }
+    Loader::Loader() { mParser = std::make_unique<fastgltf::Parser>(fastgltf::Extensions::KHR_lights_punctual); }
     Loader::~Loader() = default;
 
     Scene Loader::load(const std::filesystem::path &path) const {

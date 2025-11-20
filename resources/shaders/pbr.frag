@@ -15,6 +15,7 @@ layout (location = 0) out vec4 out_color;
 layout (set = 1, binding = 1) uniform sampler2DShadow uSunShadowMaps[SHADOW_CASCADE_COUNT];
 
 const float PI = 3.14159265359;
+const float INV_PI = 1.0 / 3.14159265359;
 const uint NO_TEXTURE = 0xffff;
 
 const int LIGHT_COUNT = 1;
@@ -117,25 +118,81 @@ float sampleShadow(vec3 P_shadow_ndc, float n_dot_l, int index) {
     return shadow;
 }
 
+vec3 backsideNormal(vec3 texture_normal, vec3 geometry_normal, vec3 light_dir) {
+    // Use geo normal for surface facing away from light
+    return mix(texture_normal, geometry_normal, clamp(-10 * dot(geometry_normal, light_dir), -0.5, 0.5) + 0.5);
+}
+
+struct BSDFParams {
+    vec4 albedo;
+    vec3 f0;
+    float roughness;
+    float metalness;
+    float occlusion;
+};
+
+vec3 bsdf(vec3 light_dir, vec3 view_dir, vec3 texture_normal, vec3 geometry_normal, in BSDFParams p, vec3 radiance) {
+    // The half way vector
+    vec3 halfway_dir = normalize(view_dir + light_dir);
+    vec3 normal = backsideNormal(texture_normal, geometry_normal, light_dir);
+
+    // Cook-Torrance BRDF
+    float NDF = distributionGGX(normal, halfway_dir, p.roughness);
+    float G = geometrySmith(normal, view_dir, light_dir, p.roughness);
+    vec3 F = fresnelSchlick(max(dot(halfway_dir, view_dir), 0.0), p.f0);
+
+    float n_dot_l = max(dot(normal, light_dir), 0.0);
+    float n_dot_v = max(dot(normal, view_dir), 0.0);
+
+    float micro_shadow = microShadowNaughtyDog(p.occlusion, n_dot_l);
+    radiance *= micro_shadow;
+
+    vec3 numerator = NDF * G * F;
+    float denominator = 4.0 * n_dot_v * n_dot_l + 1e-5; // + 1e-5 to prevent divide by zero
+    vec3 specular = numerator / denominator;
+
+    // kS is equal to Fresnel
+    vec3 kS = F;
+    // for energy conservation, the diffuse and specular light can't
+    // be above 1.0 (unless the surface emits light); to preserve this
+    // relationship the diffuse component (kD) should equal 1.0 - kS.
+    vec3 kD = vec3(1.0) - kS;
+    // multiply kD by the inverse metalness such that only non-metals
+    // have diffuse lighting, or a linear blend if partly metal (pure metals
+    // have no diffuse light).
+    kD *= 1.0 - p.metalness;
+
+    // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
+    return (kD * p.albedo.rgb * INV_PI + specular) * radiance * n_dot_l;
+}
+
+// https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_lights_punctual#:~:text=Reference%20code
+float spotFalloff(in SpotLight light, vec3 normalized_light_vector) {
+    float cd = dot(light.direction.xyz, normalized_light_vector);
+    float angularAttenuation = clamp(cd * light.coneAngleScale + light.coneAngleOffset, 0.0, 1.0);
+    return angularAttenuation * angularAttenuation;
+}
+
 void main() {
     Material material = uMaterialBuffer.materials[in_material];
+    BSDFParams bsdf_params;
     uint albedoTextureIndex, normalTextureIndex;
     unpackUint16(material.packedImageIndices0, albedoTextureIndex, normalTextureIndex);
     uint ormTextureIndex, unusedTextureIndex;
     unpackUint16(material.packedImageIndices1, ormTextureIndex, unusedTextureIndex);
 
-    vec4 albedo = material.albedoFactors;
+    bsdf_params.albedo = material.albedoFactors;
     if (albedoTextureIndex != NO_TEXTURE) {
-        albedo *= texture(uTextures[nonuniformEXT(albedoTextureIndex)], in_tex_coord);
+        bsdf_params.albedo *= texture(uTextures[nonuniformEXT(albedoTextureIndex)], in_tex_coord);
     }
 
     vec3 orm = vec3(1.0, material.rmnFactors.xy);
     if (ormTextureIndex != NO_TEXTURE) {
         orm *= texture(uTextures[nonuniformEXT(ormTextureIndex)], in_tex_coord).xyz;
     }
-    float occlusion = orm.x;
-    float roughness = orm.y;
-    float metallic = orm.z;
+    bsdf_params.occlusion = orm.x;
+    bsdf_params.roughness = orm.y;
+    bsdf_params.metalness = orm.z;
     mat3 tbn = in_tbn;
 
     // tangent-space normal
@@ -144,18 +201,18 @@ void main() {
         normal_ts.xy = texture(uTextures[nonuniformEXT(normalTextureIndex)], in_tex_coord).xy * 2.0 - 1.0;
         normal_ts.z = sqrt(1 - normal_ts.x * normal_ts.x - normal_ts.y * normal_ts.y);
         normal_ts = normalize(normal_ts * vec3(material.rmnFactors.z, material.rmnFactors.z, 1.0)); // increase intensity
-        roughness = adjustRoughness(normal_ts, roughness);
+        bsdf_params.roughness = adjustRoughness(normal_ts, bsdf_params.roughness);
     }
 
-    vec3 N = transformNormal(tbn, normal_ts);
-    vec3 P = in_position_ws;
-    vec3 V = normalize(uParams.camera.xyz - P);
-    vec3 R = reflect(-V, N);
-    float n_dot_v = max(dot(N, V), 0.0);
-    float distance_vs = distance(uParams.camera.xyz, P);
+    vec3 geometry_normal = tbn[2].xyz;
+    vec3 texture_normal = transformNormal(tbn, normal_ts);
+    vec3 position = in_position_ws;
+    vec3 view_dir = normalize(uParams.camera.xyz - position);
+    float n_dot_v = max(dot(texture_normal, view_dir), 0.0);
+    float distance_vs = distance(uParams.camera.xyz, position);
 
-    vec3 F0 = vec3(0.04);
-    F0 = mix(F0, albedo.rgb, metallic);
+    bsdf_params.f0 = vec3(0.04);
+    bsdf_params.f0 = mix(bsdf_params.f0, bsdf_params.albedo.rgb, bsdf_params.metalness);
 
     int shadow_index = 0;
     for (int i = SHADOW_CASCADE_COUNT - 1; i >= 0; i--) {
@@ -163,54 +220,41 @@ void main() {
             shadow_index = i;
         }
     }
-    float shadow = sampleShadow(in_shadow_position_ndc[shadow_index], dot(tbn[2].xyz, uParams.sun.direction.xyz), shadow_index);
 
     vec3 Lo = vec3(0.0);
-    for (int i = 0; i < LIGHT_COUNT; ++i)
+
+    // directional light
     {
-        vec3 L = uParams.sun.direction.xyz;
+        float shadow = sampleShadow(in_shadow_position_ndc[shadow_index], dot(geometry_normal, uParams.sun.direction.xyz), shadow_index);
         vec3 radiance = uParams.sun.radiance.xyz * shadow;
-
-        // The half way vector
-        vec3 H = normalize(V + L);
-
-        // Use geo normal for surface facing away from light
-        vec3 n = mix(N, tbn[2].xyz, clamp(-10 * dot(tbn[2].xyz, L), -0.5, 0.5) + 0.5);
-
-        // Cook-Torrance BRDF
-        float NDF = distributionGGX(n, H, roughness);
-        float G = geometrySmith(n, V, L, roughness);
-        vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-
-        float n_dot_l = max(dot(n, L), 0.0);
-
-        float micro_shadow = microShadowNaughtyDog(occlusion, n_dot_l);
-        radiance *= micro_shadow;
-
-        vec3 numerator = NDF * G * F;
-        float denominator = 4.0 * n_dot_v * n_dot_l + 1e-5; // + 1e-5 to prevent divide by zero
-        vec3 specular = numerator / denominator;
-
-        // kS is equal to Fresnel
-        vec3 kS = F;
-        // for energy conservation, the diffuse and specular light can't
-        // be above 1.0 (unless the surface emits light); to preserve this
-        // relationship the diffuse component (kD) should equal 1.0 - kS.
-        vec3 kD = vec3(1.0) - kS;
-        // multiply kD by the inverse metalness such that only non-metals
-        // have diffuse lighting, or a linear blend if partly metal (pure metals
-        // have no diffuse light).
-        kD *= 1.0 - metallic;
-
-        // add to outgoing radiance Lo
-        // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
-        Lo += (kD * albedo.rgb / PI + specular) * radiance * n_dot_l;
+        Lo += bsdf(uParams.sun.direction.xyz, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
     }
 
-    vec3 ambient = uParams.ambient.rgb * occlusion;
-    ambient *= fresnelSchlickRoughness(n_dot_v, F0, roughness);
-    ambient *= albedo.rgb;
-    ambient *= 1.0 - metallic;
+    // spot light
+    for (int i = 0; i < uSpotLightBuffer.lights.length(); i++) {
+        SpotLight light = uSpotLightBuffer.lights[i];
+        vec3 light_vec = light.position.xyz - position;
+        float d = length(light_vec);
+        vec3 light_dir = light_vec / d;
+        vec3 radiance = light.radiance.xyz / (d * d);
+        radiance *= spotFalloff(light, -light_dir);
+        Lo += bsdf(light_dir, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
+    }
+
+    // point light
+    for (int i = 0; i < uPointLightBuffer.lights.length(); i++) {
+        PointLight light = uPointLightBuffer.lights[i];
+        vec3 light_vec = light.position.xyz - position;
+        float d = length(light_vec);
+        vec3 light_dir = light_vec / d;
+        vec3 radiance = light.radiance.xyz / (d * d);
+        Lo += bsdf(light_dir, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
+    }
+
+    vec3 ambient = uParams.ambient.rgb * bsdf_params.occlusion;
+    ambient *= fresnelSchlickRoughness(n_dot_v, bsdf_params.f0, bsdf_params.roughness);
+    ambient *= bsdf_params.albedo.rgb;
+    ambient *= 1.0 - bsdf_params.metalness;
 
     vec3 color = ambient + Lo;
     out_color = vec4(color, 1.0);

@@ -1,4 +1,5 @@
 #pragma once
+#include <fastgltf/core.hpp>
 #include <filesystem>
 #include <glm/glm.hpp>
 
@@ -90,7 +91,7 @@ namespace gltf {
         static void loadMaterials(const fastgltf::Asset &asset, Scene &scene_data);
 
         /// <summary>
-        /// Recursively loads a node and its children from the glTF asset.
+        /// Loads a single node.
         /// </summary>
         /// <param name="asset">The glTF asset.</param>
         /// <param name="scene_data">The scene data to populate.</param>
@@ -105,6 +106,18 @@ namespace gltf {
                 const std::vector<size_t> &mesh_primitive_table,
                 const fastgltf::Node &node,
                 const glm::mat4 &transform
+        );
+
+        /// <summary>
+        /// Loads a single light.
+        /// </summary>
+        /// <param name="asset">The glTF asset.</param>
+        /// <param name="scene_data">The scene data to populate.</param>
+        /// <param name="node">The node containing the light.</param>
+        /// <param name="transform">The transformation matrix of the node.</param>
+        /// <param name="scene_node">The scene node to populate.</param>
+        static void loadLight(
+                const fastgltf::Asset &asset, Scene &scene_data, const fastgltf::Node &node, const glm::mat4 &transform, Node &scene_node
         );
 
         std::unique_ptr<fastgltf::Parser> mParser;

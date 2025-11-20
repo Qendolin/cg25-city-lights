@@ -1,12 +1,8 @@
 #include "common/descriptors_geom.glsl"
 #include "common/descriptors_mat.glsl"
+#include "common/descriptors_light.glsl"
 
 const int SHADOW_CASCADE_COUNT = 5;
-
-struct SunLight {
-    vec4 radiance;
-    vec4 direction;
-};
 
 struct ShadowCascade {
     mat4 projectionView;
@@ -16,11 +12,12 @@ struct ShadowCascade {
     float dimension;
 };
 
+// FIXME: Inline uniform block is too large!
 layout (std140, set = 1, binding = 0) uniform SceneUniforms {
     mat4 view;
     mat4 projection;
     vec4 camera;
-    SunLight sun;
+    DirectionalLight sun;
     ShadowCascade[SHADOW_CASCADE_COUNT] cascades;
     vec4 ambient;
 } uParams;

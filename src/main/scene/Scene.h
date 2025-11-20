@@ -7,6 +7,7 @@
 #include "../backend/Descriptors.h"
 #include "../backend/DeviceQueue.h"
 #include "../backend/Image.h"
+#include "../entity/Light.h"
 #include "../util/math.h"
 #include "gpu_types.h"
 
@@ -50,6 +51,11 @@ namespace scene {
         vma::UniqueBuffer materials;
         vma::UniqueAllocation materialsAlloc;
 
+        vma::UniqueBuffer pointLights;
+        vma::UniqueAllocation pointLightsAlloc;
+        vma::UniqueBuffer spotLights;
+        vma::UniqueAllocation spotLightsAlloc;
+
         SceneDescriptorLayout sceneDescriptorLayout = {};
         DescriptorSet sceneDescriptor = {};
 
@@ -78,7 +84,6 @@ namespace scene {
         util::BoundingBox bounds;
     };
 
-    // Not much right now, but can be expanded as needed
     struct CpuData {
         std::vector<Instance> instances;
     };

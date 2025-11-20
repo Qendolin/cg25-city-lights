@@ -5,6 +5,12 @@
 std::pair<vma::UniqueBuffer, vma::UniqueAllocation> StagingBuffer::upload(
         const void *data, size_t size, vk::BufferUsageFlags usage
 ) {
+    if (size == 0) {
+        Logger::warning("Creating staging buffer with zero size, using dummy element instead.");
+        size = 4;
+        uint32_t dummy_element = 0;
+        data = &dummy_element;
+    }
     auto pair = mAllocator.createBufferUnique(
             {.size = size, .usage = usage | vk::BufferUsageFlagBits::eTransferDst},
             {.usage = vma::MemoryUsage::eAuto, .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal}

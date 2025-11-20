@@ -56,7 +56,7 @@ void SkyboxRenderer::execute(
     push.brightness = exp2(exposure);
 
     commandBuffer.pushConstants(
-            *mPipeline.layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(ShaderParamsPushConstants), &push
+            *mPipeline.layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(ShaderParamsPushConstants), &push
     );
 
     vk::DescriptorImageInfo descriptorImageInfo{};
@@ -82,7 +82,7 @@ void SkyboxRenderer::createPipeline(const vk::Device &device, const ShaderLoader
     UniqueCompiledShaderStage vertShader = shaderLoader.loadFromSource(device, "resources/shaders/skybox.vert");
     UniqueCompiledShaderStage fragShader = shaderLoader.loadFromSource(device, "resources/shaders/skybox.frag");
 
-    vk::PushConstantRange pushConstantRange{vk::ShaderStageFlagBits::eVertex, 0, sizeof(ShaderParamsPushConstants)};
+    vk::PushConstantRange pushConstantRange{vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(ShaderParamsPushConstants)};
 
     GraphicsPipelineConfig pipelineConfig{};
     pipelineConfig.descriptorSetLayouts = {mShaderParamsDescriptorLayout};

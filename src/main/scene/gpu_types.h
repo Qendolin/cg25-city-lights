@@ -33,17 +33,35 @@ struct alignas(16) MaterialBlock {
     glm::uint pad1;
 };
 
+
+struct alignas(16) PointLightBlock {
+    glm::vec4 radiance;
+    glm::vec4 position;
+};
+
+struct alignas(16) SpotLightBlock {
+    glm::vec4 radiance;
+    glm::vec4 position;
+    glm::vec4 direction;
+    float coneAngleScale;
+    float coneAngleOffset;
+    float pad0;
+    float pad1;
+};
+
 namespace scene {
     struct SceneDescriptorLayout : DescriptorSetLayout {
         static constexpr StorageBufferBinding SectionBuffer{0, vk::ShaderStageFlagBits::eAllGraphics};
         static constexpr StorageBufferBinding InstanceBuffer{1, vk::ShaderStageFlagBits::eAllGraphics};
         static constexpr StorageBufferBinding MaterialBuffer{2, vk::ShaderStageFlagBits::eAllGraphics};
         static constexpr CombinedImageSamplerBinding ImageSamplers{3, vk::ShaderStageFlagBits::eAllGraphics, 65536, vk::DescriptorBindingFlagBits::ePartiallyBound};
+        static constexpr StorageBufferBinding PointLightBuffer{4, vk::ShaderStageFlagBits::eAllGraphics};
+        static constexpr StorageBufferBinding SpotLightBuffer{5, vk::ShaderStageFlagBits::eAllGraphics};
 
         SceneDescriptorLayout() = default;
 
         explicit SceneDescriptorLayout(const vk::Device& device) {
-            create(device, {}, SectionBuffer, InstanceBuffer, MaterialBuffer, ImageSamplers);
+            create(device, {}, SectionBuffer, InstanceBuffer, MaterialBuffer, ImageSamplers, PointLightBuffer, SpotLightBuffer);
         }
     };
 }

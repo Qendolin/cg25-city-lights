@@ -34,7 +34,7 @@ namespace scene {
         auto cpu_data = createCpuData(gltf_scene);
         auto gpu_data = createGpuData(gltf_scene);
 
-        return Scene(std::move(cpu_data), std::move(gpu_data));
+        return {std::move(cpu_data), std::move(gpu_data)};
     }
 
     CpuData Loader::createCpuData(const gltf::Scene &scene_data) const {
@@ -184,8 +184,7 @@ namespace scene {
 
         std::vector<MaterialBlock> material_blocks;
         material_blocks.reserve(scene_data.materials.size());
-        for (size_t i = 0; i < scene_data.materials.size(); i++) {
-            const auto &material = scene_data.materials[i];
+        for (const auto &material: scene_data.materials) {
             uint32_t albedo_texture_index = material.albedoTexture == -1 ? 0xffff : image_index[material.albedoTexture];
             uint32_t normal_texture_index = material.normalTexture == -1 ? 0xffff : image_index[material.normalTexture];
             uint32_t orm_texture_index = material.ormTexture == -1 ? 0xffff : image_index[material.ormTexture];
@@ -199,6 +198,31 @@ namespace scene {
         std::tie(result.materials, result.materialsAlloc) =
                 staging.upload(material_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
 
+        std::vector<PointLightBlock> point_light_blocks;
+        point_light_blocks.reserve(scene_data.pointLights.size());
+        for (const auto &light: scene_data.pointLights) {
+            point_light_blocks.emplace_back() = {
+                .radiance = glm::vec4(light.radiance(), 0.0f),
+                .position = glm::vec4(light.position, 0.0f),
+            };
+        }
+        std::tie(result.pointLights, result.pointLightsAlloc) =
+                staging.upload(point_light_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
+
+        std::vector<SpotLightBlock> spot_light_blocks;
+        spot_light_blocks.reserve(scene_data.spotLights.size());
+        for (const auto &light: scene_data.spotLights) {
+            float angle_scale = 1.0f / std::max(0.001f, glm::cos(glm::radians(light.innerConeAngle)) - glm::cos(glm::radians(light.outerConeAngle)));
+            spot_light_blocks.emplace_back() = {
+                .radiance = glm::vec4(light.radiance(), 0.0f),
+                .position = glm::vec4(light.position, 0.0f),
+                .direction = glm::vec4(light.direction(), 0.0f),
+                .coneAngleScale = angle_scale,
+                .coneAngleOffset = -glm::cos(glm::radians(light.outerConeAngle)) * angle_scale,
+            };
+        }
+        std::tie(result.spotLights, result.spotLightsAlloc) =
+                staging.upload(spot_light_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
 
         mDevice.updateDescriptorSets(
                 {
@@ -213,6 +237,14 @@ namespace scene {
                     result.sceneDescriptor.write(
                             SceneDescriptorLayout::MaterialBuffer,
                             vk::DescriptorBufferInfo{.buffer = *result.materials, .offset = 0, .range = vk::WholeSize}
+                    ),
+                    result.sceneDescriptor.write(
+                            SceneDescriptorLayout::PointLightBuffer,
+                            vk::DescriptorBufferInfo{.buffer = *result.pointLights, .offset = 0, .range = vk::WholeSize}
+                    ),
+                    result.sceneDescriptor.write(
+                            SceneDescriptorLayout::SpotLightBuffer,
+                            vk::DescriptorBufferInfo{.buffer = *result.spotLights, .offset = 0, .range = vk::WholeSize}
                     ),
                 },
                 {}

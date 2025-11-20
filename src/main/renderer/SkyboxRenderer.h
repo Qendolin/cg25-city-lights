@@ -25,7 +25,8 @@ public:
     };
 
     struct ShaderParamsPushConstants {
-        glm::mat4 projViewNoTranslation{1.f};
+        glm::mat4 projViewNoTranslation = {1.f};
+        float brightness = 1.0f;
     };
 
 private:
@@ -49,7 +50,8 @@ public:
             const vk::CommandBuffer &commandBuffer,
             const Framebuffer &framebuffer,
             const Camera &camera,
-            const Cubemap &skybox
+            const Cubemap &skybox,
+            float exposure
     );
 
 private:

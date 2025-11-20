@@ -94,9 +94,6 @@ void RenderSystem::draw(const RenderData &rd) {
     // Shadow pass
     mShadowRenderer->execute(cmd_buf, rd.gltfScene, rd.sunShadowCaster);
 
-    // Skybox render pass
-    mSkyboxRenderer->execute(mContext->device(), cmd_buf, mHdrFramebuffer, rd.camera, rd.skybox);
-
     // Main render pass
     mPbrSceneRenderer->execute(
             mContext->device(), cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene, rd.sunLight, rd.sunShadowCaster
@@ -104,6 +101,9 @@ void RenderSystem::draw(const RenderData &rd) {
 
     // Blob render pass
     mBlobRenderer->execute(mContext->device(), cmd_buf, mHdrFramebuffer, rd.camera, rd.blobModel);
+
+    // Skybox render pass (render late to reduce overdraw)
+    mSkyboxRenderer->execute(mContext->device(), cmd_buf, mHdrFramebuffer, rd.camera, rd.skybox, rd.settings.sky.exposure);
 
     // Post-processing pass
     mFinalizeRenderer->execute(

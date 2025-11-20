@@ -32,14 +32,17 @@ void SkyboxRenderer::execute(
         const vk::CommandBuffer &commandBuffer,
         const Framebuffer &framebuffer,
         const Camera &camera,
-        const Cubemap &skybox
+        const Cubemap &skybox,
+        float exposure
 ) {
     commandBuffer.beginRendering(framebuffer.renderingInfo({
         .enabledColorAttachments = {true},
-        .enableDepthAttachment = false,
+        .enableDepthAttachment = true,
         .enableStencilAttachment = false,
-        .colorLoadOps = {vk::AttachmentLoadOp::eClear},
-        .colorStoreOps = {vk::AttachmentStoreOp::eStore}
+        .colorLoadOps = {vk::AttachmentLoadOp::eLoad},
+        .colorStoreOps = {vk::AttachmentStoreOp::eStore},
+        .depthLoadOp = vk::AttachmentLoadOp::eLoad,
+        .depthStoreOp = vk::AttachmentStoreOp::eNone,
     }));
 
     mPipeline.config.viewports = {{framebuffer.viewport(true)}};
@@ -50,6 +53,7 @@ void SkyboxRenderer::execute(
 
     ShaderParamsPushConstants push{};
     push.projViewNoTranslation = camera.projectionMatrix() * glm::mat4(glm::mat3(camera.viewMatrix()));
+    push.brightness = exp2(exposure);
 
     commandBuffer.pushConstants(
             *mPipeline.layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(ShaderParamsPushConstants), &push
@@ -86,9 +90,9 @@ void SkyboxRenderer::createPipeline(const vk::Device &device, const ShaderLoader
     pipelineConfig.attachments = {framebuffer.colorFormats(), framebuffer.depthFormat()};
     pipelineConfig.cull.mode = vk::CullModeFlagBits::eNone;
 
-    pipelineConfig.depth.testEnabled = false;
+    pipelineConfig.depth.testEnabled = true;
     pipelineConfig.depth.writeEnabled = false;
-    pipelineConfig.depth.compareOp = vk::CompareOp::eLessOrEqual;
+    pipelineConfig.depth.compareOp = vk::CompareOp::eGreaterOrEqual;
 
     mPipeline = createGraphicsPipeline(device, pipelineConfig, {*vertShader, *fragShader});
 }

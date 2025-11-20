@@ -6,7 +6,7 @@
 
 #include "../util/math.h"
 
-
+template<typename T>
 class PlainImageData;
 
 namespace gltf {
@@ -164,6 +164,6 @@ namespace gltf {
         /// <summary>
         /// A list of all images in the scene.
         /// </summary>
-        std::vector<PlainImageData> images;
+        std::vector<PlainImageData<uint8_t>> images;
     };
 } // namespace gltf

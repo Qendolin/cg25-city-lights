@@ -132,7 +132,7 @@ namespace gltf {
             );
 
             int target_ch = ch == 3 ? 4 : ch; // 3 channel images are extended to 4 channels
-            scene_data.images.emplace_back() = PlainImageData::create(width, height, target_ch, ch, data);
+            scene_data.images.emplace_back() = PlainImageDataU8::create(width, height, target_ch, ch, data);
         }
     }
 
@@ -164,8 +164,8 @@ namespace gltf {
             }
 
             std::pair orm_cache_key = {-1, -1};
-            PlainImageData *o_image = nullptr;
-            PlainImageData *rm_image = nullptr;
+            PlainImageDataU8 *o_image = nullptr;
+            PlainImageDataU8 *rm_image = nullptr;
             if (gltf_mat.occlusionTexture.has_value()) {
                 auto index = static_cast<int32_t>(gltf_mat.occlusionTexture.value().textureIndex);
                 o_image = &scene_data.images[index];
@@ -196,9 +196,9 @@ namespace gltf {
                 if (orm_cache_map.contains(orm_cache_key)) {
                     mat.ormTexture = orm_cache_map.at(orm_cache_key);
                 } else {
-                    PlainImageData *o_or_rm_image = o_image ? o_image : rm_image;
+                    PlainImageDataU8 *o_or_rm_image = o_image ? o_image : rm_image;
                     mat.ormTexture = static_cast<int32_t>(scene_data.images.size());
-                    auto orm_image = PlainImageData::create(vk::Format::eR8G8B8A8Unorm, o_or_rm_image->width, o_or_rm_image->height);
+                    auto orm_image = PlainImageDataU8::create(vk::Format::eR8G8B8A8Unorm, o_or_rm_image->width, o_or_rm_image->height);
 
                     if (o_image) {
                         o_image->copyChannels(orm_image, {0});
@@ -220,7 +220,7 @@ namespace gltf {
                     mat.normalTexture = normal_cache_map.at(index);
                 } else {
                     const auto& src_image =  scene_data.images[index];
-                    auto normal = PlainImageData::create(vk::Format::eR8G8Unorm, src_image.width, src_image.height);
+                    auto normal = PlainImageDataU8::create(vk::Format::eR8G8Unorm, src_image.width, src_image.height);
                     src_image.copyChannels(normal, {0, 1});
                     mat.normalTexture = static_cast<int32_t>(scene_data.images.size());
                     scene_data.images.emplace_back(std::move(normal));

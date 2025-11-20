@@ -11,9 +11,9 @@ namespace blob {
 
     class Model {
     private:
-        static constexpr int MAX_VERTICES_PER_CELL{12};
-        static constexpr float TWO_PI{6.2831855};
-        static constexpr float MAX_ANIMATION_TIME{TWO_PI};
+        static constexpr int MAX_VERTICES_PER_CELL = 12;
+        static constexpr float TWO_PI = 6.2831855f;
+        static constexpr float MAX_ANIMATION_TIME = TWO_PI;
 
         const int resolution;
 

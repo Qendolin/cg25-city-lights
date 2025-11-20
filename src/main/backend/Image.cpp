@@ -3,66 +3,30 @@
 #include <cmath>
 #include <filesystem>
 #include <ranges>
-#include <stb_image.h>
 #include <utility>
 #include <vulkan/utility/vk_format_utils.h>
 
 #include "../util/Logger.h"
 
-template<int SrcCh, int DstCh>
-    requires(SrcCh >= 1) && (SrcCh <= 4) && (DstCh >= 1) && (DstCh <= 4)
-static void copy_pixels(const unsigned char *src, unsigned char *dst, size_t elements) {
-    // clang-format off
-    for (size_t i = 0; i < elements; i++) {
-        // always copy first
-        dst[i * DstCh] = src[i * SrcCh];
-        if constexpr (DstCh < SrcCh) {
-            if constexpr (DstCh > 1) dst[i * DstCh + 1] = src[i * SrcCh + 1];
-            if constexpr (DstCh > 2) dst[i * DstCh + 2] = src[i * SrcCh + 2];
-            if constexpr (DstCh > 3) dst[i * DstCh + 3] = src[i * SrcCh + 3];
-        } else {
-            if constexpr (SrcCh > 1) dst[i * DstCh + 1] = src[i * SrcCh + 1];
-            if constexpr (SrcCh > 2) dst[i * DstCh + 2] = src[i * SrcCh + 2];
-            if constexpr (SrcCh > 3) dst[i * DstCh + 3] = src[i * SrcCh + 3];
+template<typename T>
+PlainImageData<T>::PlainImageData() noexcept = default;
 
-            // extend
-            if constexpr (DstCh > SrcCh) {
-                if constexpr (DstCh - SrcCh >= 1) dst[i * DstCh + SrcCh] = 0;
-                if constexpr (DstCh - SrcCh >= 2) dst[i * DstCh + SrcCh + 1] = 0;
-                if constexpr (DstCh - SrcCh >= 3) dst[i * DstCh + SrcCh + 2] = 0;
-                if constexpr (DstCh == 4) dst[i * DstCh + 3] = 255;
-            }
-        }
-    }
-    // clang-format on
-}
-
-static void copy_pixels(const unsigned char *src, uint32_t src_channels, unsigned char *dst, uint32_t dst_channels, size_t elements) {
-    constexpr std::array jmp = {
-        &copy_pixels<1, 1>, &copy_pixels<2, 1>, &copy_pixels<3, 1>, &copy_pixels<4, 1>,
-        &copy_pixels<1, 2>, &copy_pixels<2, 2>, &copy_pixels<3, 2>, &copy_pixels<4, 2>,
-        &copy_pixels<1, 3>, &copy_pixels<2, 3>, &copy_pixels<3, 3>, &copy_pixels<4, 3>,
-        &copy_pixels<1, 4>, &copy_pixels<2, 4>, &copy_pixels<3, 4>, &copy_pixels<4, 4>,
-    };
-    const uint32_t index = (src_channels - 1) + 4 * (dst_channels - 1);
-    jmp[index](src, dst, elements);
-}
-
-PlainImageData::PlainImageData() noexcept = default;
-
-PlainImageData::~PlainImageData() noexcept {
+template<typename T>
+PlainImageData<T>::~PlainImageData() noexcept {
     if (!mOwning)
         return;
     std::free(std::exchange(mData, nullptr));
 }
 
-PlainImageData::PlainImageData(std::span<unsigned char> pixels, uint32_t width, uint32_t height, uint32_t channels, vk::Format format)
+template<typename T>
+PlainImageData<T>::PlainImageData(std::span<T> pixels, uint32_t width, uint32_t height, uint32_t channels, vk::Format format)
     : mData(pixels.data()), width(width), height(height), channels(channels), pixels(pixels), format(format) {
     Logger::check(channels > 0, "Channel count must be greater than zero");
 }
 
-PlainImageData::PlainImageData(
-        std::unique_ptr<unsigned char> data, size_t size, uint32_t width, uint32_t height, uint32_t channels, vk::Format format
+template<typename T>
+PlainImageData<T>::PlainImageData(
+        std::unique_ptr<T> data, size_t size, uint32_t width, uint32_t height, uint32_t channels, vk::Format format
 )
     : mData(data.release()),
       mOwning(true),
@@ -74,8 +38,8 @@ PlainImageData::PlainImageData(
     Logger::check(channels > 0, "Channel count must be greater than zero");
 }
 
-
-PlainImageData::PlainImageData(PlainImageData &&other) noexcept
+template<typename T>
+PlainImageData<T>::PlainImageData(PlainImageData &&other) noexcept
     : mData(std::exchange(other.mData, nullptr)),
       mOwning(std::exchange(other.mOwning, false)),
       width(std::exchange(other.width, 0)),
@@ -84,7 +48,8 @@ PlainImageData::PlainImageData(PlainImageData &&other) noexcept
       pixels(std::exchange(other.pixels, {})),
       format(std::exchange(other.format, vk::Format::eUndefined)) {}
 
-PlainImageData &PlainImageData::operator=(PlainImageData &&other) noexcept {
+template<typename T>
+PlainImageData<T> &PlainImageData<T>::operator=(PlainImageData &&other) noexcept {
     if (this == &other)
         return *this;
 
@@ -100,7 +65,8 @@ PlainImageData &PlainImageData::operator=(PlainImageData &&other) noexcept {
     return *this;
 }
 
-PlainImageData::PlainImageData(const PlainImageData &other) noexcept
+template<typename T>
+PlainImageData<T>::PlainImageData(const PlainImageData &other) noexcept
     : mData(other.mData),
       mOwning(false),
       width(other.width),
@@ -109,7 +75,8 @@ PlainImageData::PlainImageData(const PlainImageData &other) noexcept
       pixels(other.pixels),
       format(other.format) {}
 
-PlainImageData &PlainImageData::operator=(const PlainImageData &other) noexcept {
+template<typename T>
+PlainImageData<T> &PlainImageData<T>::operator=(const PlainImageData &other) noexcept {
     if (this == &other)
         return *this;
     mData = other.mData;
@@ -122,37 +89,8 @@ PlainImageData &PlainImageData::operator=(const PlainImageData &other) noexcept 
     return *this;
 }
 
-PlainImageData PlainImageData::create(
-        vk::Format format, uint32_t width, uint32_t height, uint32_t src_channels, const unsigned char *src_data
-) {
-    uint32_t dst_channels = src_channels;
-    if (format != vk::Format::eUndefined)
-        dst_channels = vkuFormatComponentCount(static_cast<VkFormat>(format));
-
-    size_t elements = width * height;
-    size_t size = elements * dst_channels;
-    auto dst_data = static_cast<unsigned char *>(std::malloc(size));
-    if (src_data) {
-        copy_pixels(src_data, src_channels, dst_data, dst_channels, elements);
-    }
-
-    return {std::unique_ptr<unsigned char>(dst_data), size, width, height, dst_channels, format};
-}
-
-PlainImageData PlainImageData::create(
-        uint32_t width, uint32_t height, uint32_t channels, uint32_t src_channels, const unsigned char *src_data
-) {
-    size_t elements = width * height;
-    size_t size = elements * channels;
-    auto dst_data = static_cast<unsigned char *>(std::malloc(size));
-    if (src_data) {
-        copy_pixels(src_data, src_channels, dst_data, channels, elements);
-    }
-
-    return {std::unique_ptr<unsigned char>(dst_data), size, width, height, channels, vk::Format::eUndefined};
-}
-
-void PlainImageData::copyChannels(PlainImageData &dst, std::initializer_list<int> mapping) const {
+template<typename T>
+void PlainImageData<T>::copyChannels(PlainImageData &dst, std::initializer_list<int> mapping) const {
     if (dst.width != width || dst.height != height) {
         Logger::fatal("Texture dimensions do not match");
     }
@@ -178,8 +116,8 @@ void PlainImageData::copyChannels(PlainImageData &dst, std::initializer_list<int
         }
     }
 }
-
-void PlainImageData::fill(std::initializer_list<int> channel_list, std::initializer_list<unsigned char> values) {
+template<typename T>
+void PlainImageData<T>::fill(std::initializer_list<int> channel_list, std::initializer_list<T> values) {
     auto channels_span = std::span(channel_list);
     auto values_span = std::span(values);
     for (uint32_t y = 0; y < height; ++y) {
@@ -188,21 +126,30 @@ void PlainImageData::fill(std::initializer_list<int> channel_list, std::initiali
                 int sc = channels_span[c];
                 size_t i = x + width * y;
                 size_t si = i * channels + sc;
-                unsigned char value = values_span[c];
-                pixels[si] = value;
+                pixels[si] = values_span[c];
             }
         }
     }
 }
-
-PlainImageData PlainImageData::create(vk::Format format, const std::filesystem::path &path) {
-    int result_channels = static_cast<int>(vkuFormatComponentCount(static_cast<VkFormat>(format)));
-    int width, height, channels;
-    stbi_uc *pixels = stbi_load(path.string().c_str(), &width, &height, &channels, result_channels);
+template<typename T>
+PlainImageData<T> PlainImageData<T>::create(vk::Format format, const std::filesystem::path &path) {
+    int result_channels = getFormatComponentCount(format);
+    int width = 0, height = 0, channels = 0;
+    T *pixels;
+    if constexpr (std::is_same_v<T, float>) {
+        pixels = stbi_loadf(path.string().c_str(), &width, &height, &channels, result_channels);
+    } else if constexpr (std::is_same_v<T, uint16_t>) {
+        pixels = stbi_load_16(path.string().c_str(), &width, &height, &channels, result_channels);
+    } else if constexpr (std::is_same_v<T, uint8_t>) {
+        pixels = stbi_load(path.string().c_str(), &width, &height, &channels, result_channels);
+    } else {
+        // TODO: should be a compile time assert
+        assert(false && "cannot create image of this type from path");
+    }
 
     // clang-format off
     return {
-        std::unique_ptr<unsigned char>(pixels),
+        std::unique_ptr<T>(pixels),
         static_cast<size_t>(width * height * result_channels),
         static_cast<uint32_t>(width),
         static_cast<uint32_t>(height),
@@ -210,6 +157,82 @@ PlainImageData PlainImageData::create(vk::Format format, const std::filesystem::
         format,
     };
     // clang-format on
+}
+template<typename T>
+PlainImageData<T> PlainImageData<T>::create(
+        vk::Format format, uint32_t width, uint32_t height, uint32_t src_channels, const T *src_data
+) {
+    uint32_t dst_channels = src_channels;
+    if (format != vk::Format::eUndefined)
+        dst_channels = getFormatComponentCount(format);
+
+    size_t elements = width * height;
+    size_t count = elements * dst_channels;
+    auto dst_data = static_cast<T *>(std::malloc(count * sizeof(T)));
+    if (src_data) {
+        copyPixels(src_data, src_channels, dst_data, dst_channels, elements);
+    }
+
+    return {std::unique_ptr<T>(dst_data), count, width, height, dst_channels, format};
+}
+template<typename T>
+PlainImageData<T> PlainImageData<T>::create(
+        uint32_t width, uint32_t height, uint32_t channels, uint32_t src_channels, const T *src_data
+) {
+    size_t elements = width * height;
+    size_t count = elements * channels;
+    auto dst_data = static_cast<T *>(std::malloc(count * sizeof(T)));
+    if (src_data) {
+        copyPixels(src_data, src_channels, dst_data, channels, elements);
+    }
+
+    return {std::unique_ptr<T>(dst_data), count, width, height, channels, vk::Format::eUndefined};
+}
+
+template<typename T>
+int PlainImageData<T>::getFormatComponentCount(vk::Format format) {
+    return vkuFormatComponentCount(static_cast<VkFormat>(format));
+}
+
+template<typename T>
+template<int SrcCh, int DstCh>
+    requires(SrcCh >= 1) && (SrcCh <= 4) && (DstCh >= 1) && (DstCh <= 4)
+void PlainImageData<T>::copyPixels(const T *src, T *dst, size_t elements) {
+    // clang-format off
+        for (size_t i = 0; i < elements; i++) {
+            // always copy first
+            dst[i * DstCh] = src[i * SrcCh];
+            if constexpr (DstCh < SrcCh) {
+                if constexpr (DstCh > 1) dst[i * DstCh + 1] = src[i * SrcCh + 1];
+                if constexpr (DstCh > 2) dst[i * DstCh + 2] = src[i * SrcCh + 2];
+                if constexpr (DstCh > 3) dst[i * DstCh + 3] = src[i * SrcCh + 3];
+            } else {
+                if constexpr (SrcCh > 1) dst[i * DstCh + 1] = src[i * SrcCh + 1];
+                if constexpr (SrcCh > 2) dst[i * DstCh + 2] = src[i * SrcCh + 2];
+                if constexpr (SrcCh > 3) dst[i * DstCh + 3] = src[i * SrcCh + 3];
+
+                // extend
+                if constexpr (DstCh > SrcCh) {
+                    if constexpr (DstCh - SrcCh >= 1) dst[i * DstCh + SrcCh] = 0;
+                    if constexpr (DstCh - SrcCh >= 2) dst[i * DstCh + SrcCh + 1] = 0;
+                    if constexpr (DstCh - SrcCh >= 3) dst[i * DstCh + SrcCh + 2] = 0;
+                    if constexpr (DstCh == 4) dst[i * DstCh + 3] = 255;
+                }
+            }
+        }
+    // clang-format on
+}
+
+template<typename T>
+void PlainImageData<T>::copyPixels(const T *src, uint32_t src_channels, T *dst, uint32_t dst_channels, size_t elements) {
+    constexpr std::array jmp = {
+        &copyPixels<1, 1>, &copyPixels<2, 1>, &copyPixels<3, 1>, &copyPixels<4, 1>,
+        &copyPixels<1, 2>, &copyPixels<2, 2>, &copyPixels<3, 2>, &copyPixels<4, 2>,
+        &copyPixels<1, 3>, &copyPixels<2, 3>, &copyPixels<3, 3>, &copyPixels<4, 3>,
+        &copyPixels<1, 4>, &copyPixels<2, 4>, &copyPixels<3, 4>, &copyPixels<4, 4>,
+    };
+    const uint32_t index = (src_channels - 1) + 4 * (dst_channels - 1);
+    jmp[index](src, dst, elements);
 }
 
 Image::Image(vma::UniqueImage &&image, vma::UniqueAllocation &&allocation, const ImageCreateInfo &create_info)
@@ -424,3 +447,8 @@ vk::ImageAspectFlags Image::imageAspectFlags() const {
             return vk::ImageAspectFlagBits::eColor;
     }
 }
+
+template class PlainImageData<uint8_t>;
+template class PlainImageData<uint16_t>;
+template class PlainImageData<uint32_t>;
+template class PlainImageData<float>;

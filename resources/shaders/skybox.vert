@@ -2,6 +2,7 @@
 
 layout(push_constant) uniform Push {
 	mat4 projViewNoTranslation;
+    float brightness;
 } push;
 
 layout(location = 0) out vec3 uvw;
@@ -54,5 +55,6 @@ void main()
 {
     vec3 pos = CUBE_VERTICES[gl_VertexIndex];
     gl_Position = push.projViewNoTranslation * vec4(pos, 1.0);
+    gl_Position.z = -gl_Position.w; // Force furthest z
     uvw = pos;
 }

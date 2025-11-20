@@ -5,6 +5,9 @@ class ShadowCaster;
 
 struct Settings {
     DirectionalLight sun = {.elevation = 20.0f, .azimuth = 0.0f, .color = glm::vec3{1.0f, 1.0f, 1.0f}, .power = 15.0f};
+    struct Sky {
+        float exposure = 1.49f;
+    } sky;
     struct Shadow {
         int resolution = 2048;
         float dimension = 20.0f;

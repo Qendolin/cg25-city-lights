@@ -1,7 +1,6 @@
 
 #include "Cubemap.h"
 
-#include <cstring>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
 #include "../backend/DeviceQueue.h"
@@ -29,12 +28,17 @@ Cubemap::Cubemap(
 
     graphicsCommandBuffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
-    std::array<PlainImageData, FACES_COUNT> plainImages{};
+    std::array<PlainImageDataU32, FACES_COUNT> plainImages{};
 
-    for (int i{0}; i < FACES_COUNT; ++i)
-        plainImages[i] = PlainImageData::create(FORMAT, skyboxImageFilenames[i]);
+    for (int i = 0; i < FACES_COUNT; ++i) {
+        auto f32_image = PlainImageDataF::create(vk::Format::eR32G32B32Sfloat, skyboxImageFilenames[i]);
+        size_t count = f32_image.width * f32_image.height;
+        uint32_t* packed_data = static_cast<::uint32_t *>(malloc(count * sizeof(uint32_t)));
+        convertImageToRGB9E5(f32_image.pixels.data(), packed_data, f32_image.width, f32_image.height);
+        plainImages[i] = PlainImageDataU32(std::unique_ptr<uint32_t>(packed_data), count, f32_image.width, f32_image.height, 4, FORMAT);
+    }
 
-    std::vector<unsigned char> pixelData = getPixelData(plainImages);
+    std::vector<uint32_t> pixelData = getPixelData(plainImages);
 
     StagingBuffer stagingBuffer = {allocator, device, *transferCommandPool};
     vk::Buffer stagedBuffer = stagingBuffer.stage(pixelData);
@@ -68,7 +72,8 @@ Cubemap::Cubemap(
             *graphicsQueueFence
     );
 
-    device.waitForFences(*graphicsQueueFence, true, UINT64_MAX);
+    while (device.waitForFences(*graphicsQueueFence, true, UINT64_MAX) == vk::Result::eTimeout) {
+    }
 
     vk::ImageViewCreateInfo viewInfo{};
     viewInfo.image = image.image;
@@ -83,14 +88,12 @@ Cubemap::Cubemap(
     view = device.createImageViewUnique(viewInfo);
 }
 
-std::vector<unsigned char> Cubemap::getPixelData(std::array<PlainImageData, FACES_COUNT> plainImages) {
-    vk::Format format = plainImages[0].format;
-    
+std::vector<uint32_t> Cubemap::getPixelData(const std::array<PlainImageDataU32, FACES_COUNT> &plainImages) {
     const vk::DeviceSize faceSize = plainImages[0].pixels.size();
     for (int i{1}; i < FACES_COUNT; ++i)
         assert(plainImages[i].pixels.size() == faceSize && "All faces of the skybox must have the same size");
 
-    std::vector<unsigned char> pixelData(static_cast<std::size_t>(faceSize) * FACES_COUNT);
+    std::vector<uint32_t> pixelData(static_cast<std::size_t>(faceSize) * FACES_COUNT);
 
     std::size_t offset = 0;
     for (const auto &image: plainImages) {

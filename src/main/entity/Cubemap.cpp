@@ -45,8 +45,8 @@ Cubemap::Cubemap(
 
     ImageCreateInfo imageCreateInfo = ImageCreateInfo::from(plainImages[0]);
     imageCreateInfo.usage = vk::ImageUsageFlagBits::eSampled;
-    imageCreateInfo.mip_levels = 1;
-    imageCreateInfo.array_layers = FACES_COUNT;
+    imageCreateInfo.mipLevels = 1;
+    imageCreateInfo.arrayLayers = FACES_COUNT;
     imageCreateInfo.flags = vk::ImageCreateFlagBits::eCubeCompatible;
 
 
@@ -76,7 +76,7 @@ Cubemap::Cubemap(
     }
 
     vk::ImageViewCreateInfo viewInfo{};
-    viewInfo.image = image.image;
+    viewInfo.image = *image;
     viewInfo.viewType = vk::ImageViewType::eCube;
     viewInfo.format = FORMAT;
     viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;

@@ -1,6 +1,5 @@
 #pragma once
 #include <filesystem>
-#include <stb_image.h>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
 #include "ImageResource.h"
@@ -87,7 +86,8 @@ public:
     /// <param name="format">The desired Vulkan format.</param>
     /// <param name="path">The path to the image file.</param>
     /// <returns>A new PlainImageData object.</returns>
-    static PlainImageData create(vk::Format format, const std::filesystem::path &path);
+    static PlainImageData create(vk::Format format, const std::filesystem::path &path)
+        requires std::is_same_v<T, float> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint8_t>;
 
     /// <summary>
     /// Creates a PlainImageData object from raw data.
@@ -148,9 +148,9 @@ struct ImageCreateInfo {
     /// <summary>The depth of the image (for 3D images).</summary>
     uint32_t depth = 1;
     /// <summary>The number of mipmap levels. UINT32_MAX means all possible levels.</summary>
-    uint32_t mip_levels = UINT32_MAX;
+    uint32_t mipLevels = UINT32_MAX;
     /// <summary>The number of layers in the image array.</summary>
-    uint32_t array_layers = 1;
+    uint32_t arrayLayers = 1;
     /// <summary>Specifies the flags of the image.</summary>
     vk::ImageCreateFlags flags = {};
 
@@ -174,18 +174,16 @@ struct ImageCreateInfo {
 /// This class is a move-only type.
 /// </summary>
 class Image : ImageResource {
-    [[nodiscard]] vk::Image getImage() const { return *mImage; }
-
     [[nodiscard]] vk::ImageSubresourceRange getResourceRange() const {
         return {
             .aspectMask = imageAspectFlags(),
-            .levelCount = info.mip_levels,
-            .layerCount = info.array_layers,
+            .levelCount = info.mipLevels,
+            .layerCount = info.arrayLayers,
         };
     }
 
 public:
-    ImageCreateInfo info;
+    ImageCreateInfo info = {};
     /// <summary>The raw Vulkan image handle. Use with caution.</summary>
     vk::Image image;
 
@@ -214,7 +212,7 @@ public:
     /// <param name="allocator">The VMA allocator.</param>
     /// <param name="create_info">The creation info for the image.</param>
     /// <returns>A new Image object.</returns>
-    static Image create(const vma::Allocator &allocator, ImageCreateInfo create_info);
+    static Image create(const vma::Allocator &allocator, const ImageCreateInfo &create_info);
 
     /// <summary>
     /// Loads data into a specific mipmap level of the image from a buffer.
@@ -264,6 +262,8 @@ public:
     /// <param name="src_queue">The index of the source queue family.</param>
     /// <param name="dst_queue">The index of the destination queue family.</param>
     void transfer(vk::CommandBuffer src_cmd_buf, vk::CommandBuffer dst_cmd_buf, uint32_t src_queue, uint32_t dst_queue);
+
+    vk::Image operator*() const { return image; }
 
 private:
     vma::UniqueImage mImage;

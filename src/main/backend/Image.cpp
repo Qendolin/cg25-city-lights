@@ -3,6 +3,7 @@
 #include <cmath>
 #include <filesystem>
 #include <ranges>
+#include <stb_image.h>
 #include <utility>
 #include <vulkan/utility/vk_format_utils.h>
 
@@ -131,8 +132,11 @@ void PlainImageData<T>::fill(std::initializer_list<int> channel_list, std::initi
         }
     }
 }
+
 template<typename T>
-PlainImageData<T> PlainImageData<T>::create(vk::Format format, const std::filesystem::path &path) {
+PlainImageData<T> PlainImageData<T>::create(vk::Format format, const std::filesystem::path &path)
+    requires std::is_same_v<T, float> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint8_t>
+{
     int result_channels = getFormatComponentCount(format);
     int width = 0, height = 0, channels = 0;
     T *pixels;
@@ -238,9 +242,10 @@ void PlainImageData<T>::copyPixels(const T *src, uint32_t src_channels, T *dst, 
 Image::Image(vma::UniqueImage &&image, vma::UniqueAllocation &&allocation, const ImageCreateInfo &create_info)
     : info(create_info), image(*image), mImage(std::move(image)), mAllocation(std::move(allocation)) {}
 
-Image Image::create(const vma::Allocator &allocator, ImageCreateInfo create_info) {
-    if (create_info.mip_levels == UINT32_MAX) {
-        create_info.mip_levels =
+Image Image::create(const vma::Allocator &allocator, const ImageCreateInfo &create_info_) {
+    ImageCreateInfo create_info = create_info_;
+    if (create_info.mipLevels == UINT32_MAX) {
+        create_info.mipLevels =
                 static_cast<uint32_t>(std::floor(std::log2(std::max(create_info.width, create_info.height)))) + 1;
     }
 
@@ -250,8 +255,8 @@ Image Image::create(const vma::Allocator &allocator, ImageCreateInfo create_info
                 .imageType = create_info.type,
                 .format = create_info.format,
                 .extent = {.width = create_info.width, .height = create_info.height, .depth = create_info.depth},
-                .mipLevels = create_info.mip_levels,
-                .arrayLayers = create_info.array_layers,
+                .mipLevels = create_info.mipLevels,
+                .arrayLayers = create_info.arrayLayers,
                 .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | create_info.usage,
             },
             {
@@ -274,7 +279,7 @@ void Image::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D 
     barrier(cmd_buf, ImageResourceAccess::TransferWrite);
 
     vk::BufferImageCopy image_copy = {
-        .imageSubresource = {.aspectMask = imageAspectFlags(), .mipLevel = level, .layerCount = info.array_layers},
+        .imageSubresource = {.aspectMask = imageAspectFlags(), .mipLevel = level, .layerCount = info.arrayLayers},
         .imageExtent = region,
     };
     cmd_buf.copyBufferToImage(data, *mImage, vk::ImageLayout::eTransferDstOptimal, image_copy);
@@ -293,7 +298,7 @@ void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
                     .baseMipLevel = 0,
                     .levelCount = 1,
                     .baseArrayLayer = 0,
-                    .layerCount = info.array_layers,
+                    .layerCount = info.arrayLayers,
                 },
     };
 
@@ -301,7 +306,7 @@ void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
     auto level_height = static_cast<int32_t>(info.height);
 
     // run for images 1..n, the 0th is expected to be loaded
-    for (uint32_t lvl = 1; lvl < info.mip_levels; lvl++) {
+    for (uint32_t lvl = 1; lvl < info.mipLevels; lvl++) {
         int32_t next_level_width = std::max(level_width / 2, 1);
         int32_t next_level_height = std::max(level_height / 2, 1);
 
@@ -324,7 +329,7 @@ void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
                         .aspectMask = vk::ImageAspectFlagBits::eColor,
                         .mipLevel = lvl - 1,
                         .baseArrayLayer = 0,
-                        .layerCount = info.array_layers,
+                        .layerCount = info.arrayLayers,
                     },
             .srcOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{level_width, level_height, 1}},
             .dstSubresource =
@@ -332,7 +337,7 @@ void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
                         .aspectMask = vk::ImageAspectFlagBits::eColor,
                         .mipLevel = lvl,
                         .baseArrayLayer = 0,
-                        .layerCount = info.array_layers,
+                        .layerCount = info.arrayLayers,
                     },
             .dstOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{next_level_width, next_level_height, 1}}
         };
@@ -348,7 +353,7 @@ void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
 
     // final transition, kinda useless, but brings all levels to the same layout
     if (mPrevAccess.layout != vk::ImageLayout::eTransferSrcOptimal) {
-        barrier.subresourceRange.baseMipLevel = info.mip_levels - 1;
+        barrier.subresourceRange.baseMipLevel = info.mipLevels - 1;
         barrier.oldLayout = mPrevAccess.layout;
         barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
         barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
@@ -371,13 +376,13 @@ vk::UniqueImageView Image::createDefaultView(const vk::Device &device) {
         .image = *mImage,
         .viewType = static_cast<vk::ImageViewType>(info.type),
         .format = info.format,
-        .subresourceRange = {.aspectMask = imageAspectFlags(), .levelCount = info.mip_levels, .layerCount = info.array_layers},
+        .subresourceRange = {.aspectMask = imageAspectFlags(), .levelCount = info.mipLevels, .layerCount = info.arrayLayers},
     });
 }
 
 void Image::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) {
     ImageResource::barrier(
-            *mImage, {.aspectMask = imageAspectFlags(), .levelCount = info.mip_levels, .layerCount = info.array_layers},
+            *mImage, {.aspectMask = imageAspectFlags(), .levelCount = info.mipLevels, .layerCount = info.arrayLayers},
             cmd_buf, begin, end
     );
 }
@@ -388,7 +393,7 @@ void Image::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess 
 
 void Image::transfer(vk::CommandBuffer src_cmd_buf, vk::CommandBuffer dst_cmd_buf, uint32_t src_queue, uint32_t dst_queue) {
     vk::ImageSubresourceRange range = {
-        .aspectMask = imageAspectFlags(), .levelCount = info.mip_levels, .layerCount = info.array_layers
+        .aspectMask = imageAspectFlags(), .levelCount = info.mipLevels, .layerCount = info.arrayLayers
     };
 
     vk::ImageMemoryBarrier2 src_barrier{

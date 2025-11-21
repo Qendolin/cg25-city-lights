@@ -64,7 +64,9 @@ void Application::processInput() {
             input->isKeyDown(GLFW_KEY_S) - input->isKeyDown(GLFW_KEY_W)
         };
         glm::vec3 velocity = move_input * 5.0f;
-        velocity = glm::mat3(glm::rotate(glm::mat4(1.0), camera->angles.y, {0, 1, 0})) * velocity;
+        velocity = glm::mat3(glm::rotate(glm::mat4(1.0f), camera->angles.y, {0, 1, 0})) * velocity;
+        if (input->isKeyDown(GLFW_KEY_LEFT_SHIFT))
+            velocity *= 10.0f;
         camera->position += velocity * input->timeDelta();
     }
     camera->updateViewMatrix();

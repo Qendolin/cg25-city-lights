@@ -62,6 +62,8 @@ void SettingsGui::draw(Settings &settings) {
     if (CollapsingHeader("Rendering")) {
         PushID("rendering");
         ColorEdit3("Ambient", glm::value_ptr(settings.rendering.ambient), ImGuiColorEditFlags_Float);
+        Checkbox("Frustum Culling", &settings.rendering.enableFrustumCulling);
+        Checkbox("Pause", &settings.rendering.pauseFrustumCulling);
         PopID();
     }
 

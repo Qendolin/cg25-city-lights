@@ -1,7 +1,8 @@
 #pragma once
+#include <array>
 #include <glm/common.hpp>
-#include <glm/vec3.hpp>
 #include <glm/mat4x4.hpp>
+#include <glm/vec3.hpp>
 
 namespace util {
 
@@ -35,18 +36,15 @@ namespace util {
         }
     };
 
-    inline int32_t divCeil(int32_t x, int32_t y) {
-        return (x + y - 1) / y;
-    }
+    inline int32_t divCeil(int32_t x, int32_t y) { return (x + y - 1) / y; }
 
-    inline uint32_t divCeil(uint32_t x, uint32_t y) {
-        return (x + y - 1) / y;
-    }
+    inline uint32_t divCeil(uint32_t x, uint32_t y) { return (x + y - 1) / y; }
 
     inline int32_t nextLowestPowerOfTwo(int32_t n) {
-        if (n <= 0) return 0;  // No power of two for zero or negative numbers
+        if (n <= 0)
+            return 0; // No power of two for zero or negative numbers
 
-        uint32_t u = static_cast<uint32_t>(n);
+        auto u = static_cast<uint32_t>(n);
         u |= (u >> 1);
         u |= (u >> 2);
         u |= (u >> 4);
@@ -57,7 +55,8 @@ namespace util {
     }
 
     inline uint32_t nextLowestPowerOfTwo(uint32_t n) {
-        if (n == 0) return 0;
+        if (n == 0)
+            return 0;
 
         // Shift right until only the highest bit remains
         n |= (n >> 1);
@@ -85,4 +84,72 @@ namespace util {
         float a = viewport_size.x / viewport_size.y;
         return createReverseZInfiniteProjectionMatrix(a, fov, near_plane);
     }
+
+    // Returns the six frustum planes from a combined projection-view matrix.
+    // Planes are returned as glm::vec4: (a, b, c, d), where plane equation is ax + by + cz + d = 0
+    // Order of planes: left, right, bottom, top, near, far
+    inline std::array<glm::vec4, 6> extractFrustumPlanes(const glm::mat4 &mat, bool normalize = true) {
+        std::array<glm::vec4, 6> planes = {};
+
+        // clang-format off
+        // Left plane
+        planes[0] = glm::vec4(
+            mat[0][3] + mat[0][0],
+            mat[1][3] + mat[1][0],
+            mat[2][3] + mat[2][0],
+            mat[3][3] + mat[3][0]
+        );
+
+        // Right plane
+        planes[1] = glm::vec4(
+            mat[0][3] - mat[0][0],
+            mat[1][3] - mat[1][0],
+            mat[2][3] - mat[2][0],
+            mat[3][3] - mat[3][0]
+        );
+
+        // Bottom plane
+        planes[2] = glm::vec4(
+            mat[0][3] + mat[0][1],
+            mat[1][3] + mat[1][1],
+            mat[2][3] + mat[2][1],
+            mat[3][3] + mat[3][1]
+        );
+
+        // Top plane
+        planes[3] = glm::vec4(
+            mat[0][3] - mat[0][1],
+            mat[1][3] - mat[1][1],
+            mat[2][3] - mat[2][1],
+            mat[3][3] - mat[3][1]
+        );
+
+        // Near plane
+        planes[4] = glm::vec4(
+            mat[0][3] + mat[0][2],
+            mat[1][3] + mat[1][2],
+            mat[2][3] + mat[2][2],
+            mat[3][3] + mat[3][2]
+        );
+
+        // Far plane
+        planes[5] = glm::vec4(
+            mat[0][3] - mat[0][2],
+            mat[1][3] - mat[1][2],
+            mat[2][3] - mat[2][2],
+            mat[3][3] - mat[3][2]
+        );
+        // clang-format on
+
+        // Optional: normalize planes
+        if (normalize) {
+            for (auto &plane: planes) {
+                float length = glm::length(glm::vec3(plane));
+                plane /= length;
+            }
+        }
+
+        return planes;
+    }
+
 } // namespace util

@@ -33,7 +33,7 @@ vec3 shadowSamplePosition(in mat4 projectionView, vec3 position, vec3 normal, fl
 }
 
 void main() {
-    Section section = uSectionBuffer.sections[gl_DrawID];
+    Section section = uSectionBuffer.sections[gl_InstanceIndex];
     Instance instance = uInstanceBuffer.instances[section.instance];
 
     vec4 position_ws = instance.transform * vec4(in_position, 1.0);

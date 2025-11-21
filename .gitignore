@@ -12,6 +12,7 @@ local/
 *.so
 *.obj
 *.bak
+imgui.ini
 .DS_Store
 Thumbs.db
 

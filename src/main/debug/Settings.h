@@ -38,6 +38,8 @@ struct Settings {
     } agx;
     struct Rendering {
         glm::vec3 ambient = glm::vec3(5.0f);
+        bool enableFrustumCulling = true;
+        bool pauseFrustumCulling = false;
     } rendering;
 
     Settings() {

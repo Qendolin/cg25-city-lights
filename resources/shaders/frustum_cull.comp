@@ -1,0 +1,183 @@
+#version 460 core
+
+#include "common/descriptors_geom.glsl"
+
+// TODO: Properly understand all of it
+
+// ------------------------------------------------------------------
+// CONFIGURATION
+// ------------------------------------------------------------------
+#define LOCAL_SIZE 64
+layout(local_size_x = LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+// ------------------------------------------------------------------
+// STRUCTS & INPUTS
+// ------------------------------------------------------------------
+layout (push_constant) uniform ShaderParamConstants {
+    vec4 planes[6];
+} cParams;
+
+struct BoundingBox {
+    vec4 min;
+    vec4 max;
+};
+
+struct DrawCommand {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int  vertexOffset;
+    uint firstInstance;
+};
+
+layout (std430, set = 0, binding = 6) readonly buffer BoundingBoxBuffer {
+    BoundingBox boxes[];
+} uBoundingBoxBuffer;
+
+layout(std430, set = 1, binding = 0) readonly buffer InputDrawCommandBuffer {
+    DrawCommand drawCommands[];
+} uInputCommands;
+
+// ------------------------------------------------------------------
+// OUTPUTS
+// ------------------------------------------------------------------
+layout(std430, set = 1, binding = 1) writeonly buffer OutputDrawCommandBuffer {
+    DrawCommand drawCommands[];
+} uOutputCommands;
+
+// Atomic counter for vkCmdDrawIndexedIndirectCount
+// IMPORTANT: Reset to 0 before dispatch!
+layout(std430, set = 1, binding = 2) volatile buffer CountBuffer {
+    uint count;
+} uDrawCount;
+
+// ------------------------------------------------------------------
+// SHARED MEMORY
+// ------------------------------------------------------------------
+shared uint sScan[LOCAL_SIZE];
+shared uint sGlobalBaseIndex;
+
+// ------------------------------------------------------------------
+// LOGIC
+// ------------------------------------------------------------------
+
+// Returns true if the OBB is completely BEHIND the plane (Cull it)
+bool isObbOutsidePlane(vec3 center, vec3 extent, vec3 planeNormal, float planeDist, mat4 model)
+{
+    // Extract basis vectors (columns) from the model matrix.
+    // Note: This handles non-uniform scaling correctly because the length
+    // of these vectors effectively scales the local extents.
+    vec3 right = model[0].xyz;
+    vec3 up    = model[1].xyz;
+    vec3 fwd   = model[2].xyz;
+
+    // Projected Radius (Separating Axis Theorem)
+    // r = sum of projected extents onto the plane normal
+    float r = dot(extent, abs(vec3(
+                              dot(planeNormal, right),
+                              dot(planeNormal, up),
+                              dot(planeNormal, fwd)
+                              )));
+
+    // Distance from box center to plane
+    float dist = dot(planeNormal, center) + planeDist;
+
+    // If dist is negative (behind plane) and further away than radius, it is outside.
+    return dist < -r;
+}
+
+bool checkVisibility(uint id) {
+    BoundingBox box = uBoundingBoxBuffer.boxes[id];
+    Section section = uSectionBuffer.sections[id];
+    Instance instance = uInstanceBuffer.instances[section.instance];
+    mat4 model = instance.transform;
+
+    // Calculate Local Center and Extents
+    vec3 center_local = (box.min.xyz + box.max.xyz) * 0.5;
+    vec3 extent_local = (box.max.xyz - box.min.xyz) * 0.5;
+
+    // Transform Center to World Space
+    vec3 center_world = (model * vec4(center_local, 1.0)).xyz;
+
+    // Test against all 6 planes
+    for (int i = 0; i < 6; i++) {
+        vec4 plane = cParams.planes[i];
+        if (isObbOutsidePlane(center_world, extent_local, plane.xyz, plane.w, model)) {
+            return false; // Culled (Invisible)
+        }
+    }
+    return true; // Visible
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    uint local_id = gl_LocalInvocationID.x;
+
+    // --- 1. PERFORM CULLING ---
+    // Default to 0 (invisible) if out of bounds
+    uint visible = 0;
+
+    if (id < uBoundingBoxBuffer.boxes.length()) {
+        if (checkVisibility(id)) {
+            visible = 1;
+        }
+    }
+
+    // Load visibility into shared memory for scanning
+    sScan[local_id] = visible;
+
+    memoryBarrierShared();
+    barrier();
+
+    // --- 2. PARALLEL PREFIX SUM (Inclusive Scan) ---
+    // Standard Hillis-Steele scan
+    for (uint offset = 1; offset < LOCAL_SIZE; offset <<= 1) {
+        uint temp = 0;
+
+        if (local_id >= offset) {
+            temp = sScan[local_id - offset];
+        }
+
+        barrier(); // Wait for all threads to read
+
+        if (local_id >= offset) {
+            sScan[local_id] += temp;
+        }
+
+        barrier(); // Wait for all threads to write
+    }
+
+    // --- 3. GLOBAL ALLOCATION ---
+
+    // The last element of the scan holds the total count for this workgroup
+    uint group_visible_count = sScan[LOCAL_SIZE - 1];
+
+    // Thread 0 reserves space in the global buffer for the entire group
+    if (local_id == 0) {
+        if (group_visible_count > 0) {
+            sGlobalBaseIndex = atomicAdd(uDrawCount.count, group_visible_count);
+        } else {
+            sGlobalBaseIndex = 0;
+        }
+    }
+
+    // Broadcast sGlobalBaseIndex to all threads
+    memoryBarrierShared();
+    barrier();
+
+    // --- 4. WRITE OUTPUT ---
+
+//    if (visible == 1) {
+//        // Convert Inclusive Scan -> Exclusive Scan to get local offset.
+//        // Offset is the count of visible items *before* this one.
+//        uint local_offset = (local_id > 0) ? sScan[local_id - 1] : 0;
+//
+//        uint output_index = sGlobalBaseIndex + local_offset;
+//
+//        // Copy command to the compacted buffer
+//        uOutputCommands.drawCommands[output_index] = uInputCommands.drawCommands[id];
+//    }
+
+    uOutputCommands.drawCommands[id] = uInputCommands.drawCommands[id];
+    uOutputCommands.drawCommands[id].instanceCount = visible;
+}

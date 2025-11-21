@@ -47,6 +47,8 @@ namespace scene {
         vma::UniqueAllocation sectionsAlloc;
         vma::UniqueBuffer instances;
         vma::UniqueAllocation instancesAlloc;
+        vma::UniqueBuffer boundingBoxes;
+        vma::UniqueAllocation boundingBoxesAlloc;
 
         vma::UniqueBuffer materials;
         vma::UniqueAllocation materialsAlloc;

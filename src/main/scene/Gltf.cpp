@@ -319,7 +319,7 @@ namespace gltf {
                 .indexCount = primitive_info.indexCount,
                 .vertexOffset = primitive_info.vertexOffset,
                 .node = static_cast<uint32_t>(node_index),
-                .bounds = static_cast<uint32_t>(scene_data.bounds.size()),
+                .bounds = primitive_info.bounds,
                 .material = primitive_info.material,
             };
         }

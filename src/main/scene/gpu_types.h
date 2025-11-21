@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/mat4x4.hpp>
+
 #include "../backend/Descriptors.h"
 
 // Storage buffers use std430 layout alignment rules:
@@ -19,6 +20,11 @@ struct alignas(16) InstanceBlock {
 struct alignas(4) SectionBlock {
     glm::uint instance;
     glm::uint material;
+};
+
+struct alignas(16) BoundingBoxBlock {
+    glm::vec4 min;
+    glm::vec4 max;
 };
 
 struct alignas(16) MaterialBlock {
@@ -51,17 +57,27 @@ struct alignas(16) SpotLightBlock {
 
 namespace scene {
     struct SceneDescriptorLayout : DescriptorSetLayout {
-        static constexpr StorageBufferBinding SectionBuffer{0, vk::ShaderStageFlagBits::eAllGraphics};
-        static constexpr StorageBufferBinding InstanceBuffer{1, vk::ShaderStageFlagBits::eAllGraphics};
+        static constexpr StorageBufferBinding SectionBuffer{
+            0, vk::ShaderStageFlagBits::eAllGraphics | vk::ShaderStageFlagBits::eCompute
+        };
+        static constexpr StorageBufferBinding InstanceBuffer{
+            1, vk::ShaderStageFlagBits::eAllGraphics | vk::ShaderStageFlagBits::eCompute
+        };
         static constexpr StorageBufferBinding MaterialBuffer{2, vk::ShaderStageFlagBits::eAllGraphics};
-        static constexpr CombinedImageSamplerBinding ImageSamplers{3, vk::ShaderStageFlagBits::eAllGraphics, 65536, vk::DescriptorBindingFlagBits::ePartiallyBound};
+        static constexpr CombinedImageSamplerBinding ImageSamplers{
+            3, vk::ShaderStageFlagBits::eAllGraphics, 65536, vk::DescriptorBindingFlagBits::ePartiallyBound
+        };
         static constexpr StorageBufferBinding PointLightBuffer{4, vk::ShaderStageFlagBits::eAllGraphics};
         static constexpr StorageBufferBinding SpotLightBuffer{5, vk::ShaderStageFlagBits::eAllGraphics};
+        static constexpr StorageBufferBinding BoundingBoxBuffer{
+            6, vk::ShaderStageFlagBits::eAllGraphics | vk::ShaderStageFlagBits::eCompute
+        };
 
         SceneDescriptorLayout() = default;
 
-        explicit SceneDescriptorLayout(const vk::Device& device) {
-            create(device, {}, SectionBuffer, InstanceBuffer, MaterialBuffer, ImageSamplers, PointLightBuffer, SpotLightBuffer);
+        explicit SceneDescriptorLayout(const vk::Device &device) {
+            create(device, {}, SectionBuffer, InstanceBuffer, MaterialBuffer, ImageSamplers, PointLightBuffer,
+                   SpotLightBuffer, BoundingBoxBuffer);
         }
     };
-}
+} // namespace scene

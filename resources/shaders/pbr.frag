@@ -2,6 +2,8 @@
 
 #extension GL_EXT_nonuniform_qualifier : require
 
+layout(early_fragment_tests) in;
+
 #include "pbr_common.glsl"
 
 layout (location = 0) in vec3 in_position_ws;
@@ -16,9 +18,8 @@ layout (set = 1, binding = 1) uniform sampler2DShadow uSunShadowMaps[SHADOW_CASC
 
 const float PI = 3.14159265359;
 const float INV_PI = 1.0 / 3.14159265359;
+const vec3 LIGHT_EPSILON = vec3(1.0 / 255.0);
 const uint NO_TEXTURE = 0xffff;
-
-const int LIGHT_COUNT = 1;
 
 void unpackUint16(in uint packed, out uint lower, out uint upper) {
     lower = packed & 0xffff;
@@ -227,7 +228,9 @@ void main() {
     {
         float shadow = sampleShadow(in_shadow_position_ndc[shadow_index], dot(geometry_normal, uParams.sun.direction.xyz), shadow_index);
         vec3 radiance = uParams.sun.radiance.xyz * shadow;
-        Lo += bsdf(uParams.sun.direction.xyz, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
+        if (any(greaterThan(radiance, LIGHT_EPSILON))) {
+            Lo += bsdf(uParams.sun.direction.xyz, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
+        }
     }
 
     // spot light
@@ -238,7 +241,9 @@ void main() {
         vec3 light_dir = light_vec / d;
         vec3 radiance = light.radiance.xyz / (d * d);
         radiance *= spotFalloff(light, -light_dir);
-        Lo += bsdf(light_dir, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
+        if (any(greaterThan(radiance, LIGHT_EPSILON))) {
+            Lo += bsdf(light_dir, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
+        }
     }
 
     // point light
@@ -248,7 +253,9 @@ void main() {
         float d = length(light_vec);
         vec3 light_dir = light_vec / d;
         vec3 radiance = light.radiance.xyz / (d * d);
-        Lo += bsdf(light_dir, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
+        if (any(greaterThan(radiance, LIGHT_EPSILON))) {
+            Lo += bsdf(light_dir, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
+        }
     }
 
     vec3 ambient = uParams.ambient.rgb * bsdf_params.occlusion;

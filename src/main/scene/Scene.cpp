@@ -153,6 +153,8 @@ namespace scene {
         section_blocks.reserve(scene_data.sections.size());
         std::vector<vk::DrawIndexedIndirectCommand> draw_commands;
         draw_commands.reserve(scene_data.sections.size());
+        std::vector<BoundingBoxBlock> bounding_box_blocks;
+        bounding_box_blocks.reserve(scene_data.bounds.size());
         for (size_t i = 0; i < scene_data.sections.size(); i++) {
             const auto &section = scene_data.sections[i];
             draw_commands.emplace_back() = vk::DrawIndexedIndirectCommand{
@@ -163,9 +165,13 @@ namespace scene {
                 .firstInstance = static_cast<uint32_t>(i),
             };
             section_blocks.emplace_back() = {.instance = section.node, .material = section.material};
+            const auto &bounds = scene_data.bounds[section.bounds];
+            bounding_box_blocks.emplace_back() = {.min = glm::vec4(bounds.min, 0.0f), .max = glm::vec4(bounds.max, 0.0f)};
         }
         std::tie(result.sections, result.sectionsAlloc) =
                 staging.upload(section_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
+        std::tie(result.boundingBoxes, result.boundingBoxesAlloc) =
+                staging.upload(bounding_box_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
 
         std::vector<InstanceBlock> instance_blocks;
         instance_blocks.reserve(std::ranges::count_if(scene_data.nodes, [](const auto &node) {
@@ -178,8 +184,9 @@ namespace scene {
         }
         std::tie(result.instances, result.instancesAlloc) =
                 staging.upload(instance_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
-        std::tie(result.drawCommands, result.drawCommandsAlloc) =
-                staging.upload(draw_commands, vk::BufferUsageFlagBits::eIndirectBuffer);
+        std::tie(result.drawCommands, result.drawCommandsAlloc) = staging.upload(
+                draw_commands, vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eStorageBuffer
+        );
         result.drawCommandCount = static_cast<uint32_t>(draw_commands.size());
 
         std::vector<MaterialBlock> material_blocks;
@@ -212,7 +219,10 @@ namespace scene {
         std::vector<SpotLightBlock> spot_light_blocks;
         spot_light_blocks.reserve(scene_data.spotLights.size());
         for (const auto &light: scene_data.spotLights) {
-            float angle_scale = 1.0f / std::max(0.001f, glm::cos(glm::radians(light.innerConeAngle)) - glm::cos(glm::radians(light.outerConeAngle)));
+            float angle_scale = 1.0f / std::max(
+                                               0.001f, glm::cos(glm::radians(light.innerConeAngle)) -
+                                                               glm::cos(glm::radians(light.outerConeAngle))
+                                       );
             spot_light_blocks.emplace_back() = {
                 .radiance = glm::vec4(light.radiance(), 0.0f),
                 .position = glm::vec4(light.position, 0.0f),
@@ -245,6 +255,10 @@ namespace scene {
                     result.sceneDescriptor.write(
                             SceneDescriptorLayout::SpotLightBuffer,
                             vk::DescriptorBufferInfo{.buffer = *result.spotLights, .offset = 0, .range = vk::WholeSize}
+                    ),
+                    result.sceneDescriptor.write(
+                            SceneDescriptorLayout::BoundingBoxBuffer,
+                            vk::DescriptorBufferInfo{.buffer = *result.boundingBoxes, .offset = 0, .range = vk::WholeSize}
                     ),
                 },
                 {}

@@ -19,7 +19,7 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
 #ifndef NDEBUG
     mShaderLoader.debug = true;
 #endif
-    mPbrSceneRenderer = std::make_unique<PbrSceneRenderer>(context->device(), mDescriptorAllocator);
+    mPbrSceneRenderer = std::make_unique<PbrSceneRenderer>(context->device(), mDescriptorAllocator, context->allocator());
     mShadowRenderer = std::make_unique<ShadowRenderer>();
     mFinalizeRenderer = std::make_unique<FinalizeRenderer>(context->device(), mDescriptorAllocator);
     mBlobRenderer = std::make_unique<BlobRenderer>(context->device(), mDescriptorAllocator);
@@ -98,8 +98,10 @@ void RenderSystem::draw(const RenderData &rd) {
     }
 
     // Main render pass
+    mPbrSceneRenderer->enableCulling = rd.settings.rendering.enableFrustumCulling;
+    mPbrSceneRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
     mPbrSceneRenderer->execute(
-            mContext->device(), cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene, rd.sunLight,
+            mContext->device(), mContext->allocator(), cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene, rd.sunLight,
             rd.sunShadowCasterCascades, rd.settings.rendering.ambient
     );
 

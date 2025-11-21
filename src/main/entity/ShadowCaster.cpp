@@ -16,13 +16,13 @@ ShadowCaster::ShadowCaster(
                 .type = vk::ImageType::e2D,
                 .width = resolution,
                 .height = resolution,
-                .mip_levels = 1,
+                .mipLevels = 1,
             }
     );
     mDepthImageView = mDepthImage.createDefaultView(device);
     mFramebuffer = Framebuffer{vk::Extent2D{resolution, resolution}};
     mFramebuffer.depthAttachment = {
-        .image = mDepthImage.image,
+        .image = *mDepthImage,
         .view = *mDepthImageView,
         .format = mDepthImage.info.format,
         .extents = {mDepthImage.info.width, mDepthImage.info.height},

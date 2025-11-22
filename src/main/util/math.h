@@ -68,6 +68,10 @@ namespace util {
         return n - (n >> 1);
     }
 
+    inline size_t alignOffset(size_t offset, size_t alignment) {
+        return (offset + alignment - 1) & ~(alignment - 1);
+    }
+
     inline glm::mat4 createReverseZInfiniteProjectionMatrix(float aspect_ratio, float fov, float near_plane) {
         float f = 1.0f / std::tan(fov / 2.0f);
         // This is a reversed projection matrix with an infinite far plane.

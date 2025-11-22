@@ -19,11 +19,12 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
 #ifndef NDEBUG
     mShaderLoader.debug = true;
 #endif
-    mPbrSceneRenderer = std::make_unique<PbrSceneRenderer>(context->device(), context->allocator());
+    mPbrSceneRenderer = std::make_unique<PbrSceneRenderer>(context->device());
     mShadowRenderer = std::make_unique<ShadowRenderer>();
     mFinalizeRenderer = std::make_unique<FinalizeRenderer>(context->device());
     mBlobRenderer = std::make_unique<BlobRenderer>(context->device());
     mSkyboxRenderer = std::make_unique<SkyboxRenderer>(context->device());
+    mFrustumCuller = std::make_unique<FrustumCuller>(context->device());
 }
 
 void RenderSystem::recreate() {
@@ -49,6 +50,7 @@ void RenderSystem::recreate() {
     mFinalizeRenderer->recreate(device, mShaderLoader);
     mBlobRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mSkyboxRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
+    mFrustumCuller->recreate(device, mShaderLoader);
 
     // These "need" to match the swapchain image count exactly
     mSyncObjects.create(swapchain.imageCount(), [&] {
@@ -84,11 +86,15 @@ void RenderSystem::recreate() {
         return fb;
     });
     mDescriptorAllocators.create(swapchain.imageCount(), [&] { return UniqueDescriptorAllocator(device); });
+    mTransientBufferAllocators.create(swapchain.imageCount(), [&] {
+        return UniqueTransientBufferAllocator(mContext->allocator());
+    });
 }
 
 void RenderSystem::draw(const RenderData &rd) {
     const auto &cmd_buf = mCommandBuffers.get();
-    const auto &allocator = mDescriptorAllocators.get();
+    const auto &desc_alloc = mDescriptorAllocators.get();
+    const auto &buf_alloc = mTransientBufferAllocators.get();
     const auto &swapchain = mContext->swapchain();
 
     // Framebuffer needs to be synced to swapchain, so get it explicitly
@@ -103,21 +109,21 @@ void RenderSystem::draw(const RenderData &rd) {
     mPbrSceneRenderer->enableCulling = rd.settings.rendering.enableFrustumCulling;
     mPbrSceneRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
     mPbrSceneRenderer->execute(
-            mContext->device(), allocator, mContext->allocator(), cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene,
-            rd.sunLight, rd.sunShadowCasterCascades, rd.settings.rendering.ambient
+            mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene,
+            *mFrustumCuller, rd.sunLight, rd.sunShadowCasterCascades, rd.settings.rendering.ambient
     );
 
     // Blob render pass
-    mBlobRenderer->execute(mContext->device(), allocator, cmd_buf, mHdrFramebuffer, rd.camera, rd.blobModel);
+    mBlobRenderer->execute(mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.blobModel);
 
     // Skybox render pass (render late to reduce overdraw)
     mSkyboxRenderer->execute(
-            mContext->device(), allocator, cmd_buf, mHdrFramebuffer, rd.camera, rd.skybox, rd.settings.sky.exposure
+            mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.skybox, rd.settings.sky.exposure
     );
 
     // Post-processing pass
     mFinalizeRenderer->execute(
-            mContext->device(), allocator, cmd_buf, mHdrFramebuffer.colorAttachments[0],
+            mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer.colorAttachments[0],
             swapchain_fb.colorAttachments[0], rd.settings.agx
     );
 
@@ -149,6 +155,7 @@ void RenderSystem::advance() {
 
     mCommandBuffers.next();
     mDescriptorAllocators.next().reset();
+    mTransientBufferAllocators.next().reset();
 }
 
 void RenderSystem::begin() {

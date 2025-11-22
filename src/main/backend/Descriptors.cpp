@@ -55,6 +55,8 @@ struct DescriptorAllocatorImpl {
 };
 
 DescriptorSet DescriptorAllocator::allocate(const vk::DescriptorSetLayout& layout) const {
+    assert(mImpl);
+
     // Initialize current pool if null
     if (!mImpl->mCurrentPool) {
         mImpl->mCurrentPool = mImpl->getPool();
@@ -83,8 +85,7 @@ DescriptorSet DescriptorAllocator::allocate(const vk::DescriptorSetLayout& layou
 }
 
 void DescriptorAllocator::reset() const {
-    if (!mImpl) return;
-
+    assert(mImpl);
     // Reset all used pools and move them to the free list
     for (auto pool : mImpl->mUsedPools) {
         mImpl->mDevice.resetDescriptorPool(pool);

@@ -44,4 +44,49 @@ protected:
             const BufferResourceAccess &begin,
             const BufferResourceAccess &end
     ) const;
+
+    /// <summary>
+    /// Transfers ownership of the buffer between queue families.
+    /// It does NOT perform any memory barriers. Execution ordering must be handled with a semaphore.
+    /// </summary>
+    /// <param name="buffer">The buffer to which the transfer applies.</param>
+    /// <param name="src_cmd_buf">The command buffer in the source queue to record the barrier into.</param>
+    /// <param name="dst_cmd_buf">The command buffer in the destination queue to record the barrier into.</param>
+    /// <param name="src_queue">The index of the source queue family.</param>
+    /// <param name="dst_queue">The index of the destination queue family.</param>
+    void transfer(vk::Buffer buffer, vk::CommandBuffer src_cmd_buf, vk::CommandBuffer dst_cmd_buf, uint32_t src_queue, uint32_t dst_queue) const {
+        vk::BufferMemoryBarrier2 src_barrier{
+            .srcStageMask = vk::PipelineStageFlagBits2::eNone,
+            .srcAccessMask = {},
+            .dstStageMask = vk::PipelineStageFlagBits2::eNone,
+            .dstAccessMask = {},
+            .srcQueueFamilyIndex = src_queue,
+            .dstQueueFamilyIndex = dst_queue,
+            .buffer = buffer,
+            .offset = 0,
+            .size = vk::WholeSize,
+        };
+
+        src_cmd_buf.pipelineBarrier2({
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &src_barrier,
+        });
+        vk::BufferMemoryBarrier2 dst_barrier{
+            .srcStageMask = vk::PipelineStageFlagBits2::eNone,
+            .srcAccessMask = {},
+            .dstStageMask = vk::PipelineStageFlagBits2::eNone,
+            .dstAccessMask = {},
+            .srcQueueFamilyIndex = src_queue,
+            .dstQueueFamilyIndex = dst_queue,
+            .buffer = buffer,
+            .offset = 0,
+            .size = vk::WholeSize,
+        };
+
+        dst_cmd_buf.pipelineBarrier2({
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &dst_barrier,
+        });
+    }
+
 };

@@ -395,41 +395,7 @@ void Image::transfer(vk::CommandBuffer src_cmd_buf, vk::CommandBuffer dst_cmd_bu
     vk::ImageSubresourceRange range = {
         .aspectMask = imageAspectFlags(), .levelCount = info.mipLevels, .layerCount = info.arrayLayers
     };
-
-    vk::ImageMemoryBarrier2 src_barrier{
-        .srcStageMask = vk::PipelineStageFlagBits2::eNone,
-        .srcAccessMask = {},
-        .dstStageMask = vk::PipelineStageFlagBits2::eNone,
-        .dstAccessMask = {},
-        .oldLayout = mPrevAccess.layout,
-        .newLayout = mPrevAccess.layout,
-        .srcQueueFamilyIndex = src_queue,
-        .dstQueueFamilyIndex = dst_queue,
-        .image = image,
-        .subresourceRange = range,
-    };
-
-    src_cmd_buf.pipelineBarrier2({
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &src_barrier,
-    });
-    vk::ImageMemoryBarrier2 dst_barrier{
-        .srcStageMask = vk::PipelineStageFlagBits2::eNone,
-        .srcAccessMask = {},
-        .dstStageMask = vk::PipelineStageFlagBits2::eNone,
-        .dstAccessMask = {},
-        .oldLayout = mPrevAccess.layout,
-        .newLayout = mPrevAccess.layout,
-        .srcQueueFamilyIndex = src_queue,
-        .dstQueueFamilyIndex = dst_queue,
-        .image = image,
-        .subresourceRange = range,
-    };
-
-    dst_cmd_buf.pipelineBarrier2({
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &dst_barrier,
-    });
+    ImageResource::transfer(*mImage, range, src_cmd_buf, dst_cmd_buf, src_queue, dst_queue);
 }
 
 vk::ImageAspectFlags Image::imageAspectFlags() const {

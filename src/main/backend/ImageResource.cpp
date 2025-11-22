@@ -88,3 +88,48 @@ void ImageResource::barrier(
     });
     mPrevAccess = end;
 }
+
+
+void ImageResource::transfer(
+        vk::Image image,
+        vk::ImageSubresourceRange range,
+        vk::CommandBuffer src_cmd_buf,
+        vk::CommandBuffer dst_cmd_buf,
+        uint32_t src_queue,
+        uint32_t dst_queue
+) const {
+    vk::ImageMemoryBarrier2 src_barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eNone,
+        .srcAccessMask = {},
+        .dstStageMask = vk::PipelineStageFlagBits2::eNone,
+        .dstAccessMask = {},
+        .oldLayout = mPrevAccess.layout,
+        .newLayout = mPrevAccess.layout,
+        .srcQueueFamilyIndex = src_queue,
+        .dstQueueFamilyIndex = dst_queue,
+        .image = image,
+        .subresourceRange = range,
+    };
+
+    src_cmd_buf.pipelineBarrier2({
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers = &src_barrier,
+    });
+    vk::ImageMemoryBarrier2 dst_barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eNone,
+        .srcAccessMask = {},
+        .dstStageMask = vk::PipelineStageFlagBits2::eNone,
+        .dstAccessMask = {},
+        .oldLayout = mPrevAccess.layout,
+        .newLayout = mPrevAccess.layout,
+        .srcQueueFamilyIndex = src_queue,
+        .dstQueueFamilyIndex = dst_queue,
+        .image = image,
+        .subresourceRange = range,
+    };
+
+    dst_cmd_buf.pipelineBarrier2({
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers = &dst_barrier,
+    });
+}

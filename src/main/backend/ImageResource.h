@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 #include <vulkan/vulkan.hpp>
 
 /// <summary>
@@ -47,5 +48,24 @@ protected:
             const vk::CommandBuffer &cmd_buf,
             const ImageResourceAccess &begin,
             const ImageResourceAccess &end
+    ) const;
+
+    /// <summary>
+    /// Transfers ownership of the image between queue families.
+    /// It does NOT perform any memory barriers or layout transitions. Execution ordering must be handled with a semaphore.
+    /// </summary>
+    /// <param name="image">The image to which the transfer applies.</param>
+    /// <param name="range">The subresource range of the image.</param>
+    /// <param name="src_cmd_buf">The command buffer in the source queue to record the barrier into.</param>
+    /// <param name="dst_cmd_buf">The command buffer in the destination queue to record the barrier into.</param>
+    /// <param name="src_queue">The index of the source queue family.</param>
+    /// <param name="dst_queue">The index of the destination queue family.</param>
+    void transfer(
+            vk::Image image,
+            vk::ImageSubresourceRange range,
+            vk::CommandBuffer src_cmd_buf,
+            vk::CommandBuffer dst_cmd_buf,
+            uint32_t src_queue,
+            uint32_t dst_queue
     ) const;
 };

@@ -9,14 +9,11 @@
 #include "../entity/ShadowCaster.h"
 #include "../scene/Scene.h"
 #include "../util/Logger.h"
-#include "../util/globals.h"
 #include "FrustumCuller.h"
 
 PbrSceneRenderer::~PbrSceneRenderer() = default;
 
-PbrSceneRenderer::PbrSceneRenderer(
-        const vk::Device &device, const vma::Allocator &allocator
-) {
+PbrSceneRenderer::PbrSceneRenderer(const vk::Device &device) {
     mShaderParamsDescriptorLayout = ShaderParamsDescriptorLayout(device);
     mShadowSampler = device.createSamplerUnique({
         .magFilter = vk::Filter::eLinear,
@@ -27,31 +24,21 @@ PbrSceneRenderer::PbrSceneRenderer(
         .compareOp = vk::CompareOp::eGreaterOrEqual,
         .borderColor = vk::BorderColor::eFloatTransparentBlack,
     });
-    mCulledDrawCommandCount = Buffer::create(
-            allocator,
-            {
-                .size = util::MaxFramesInFlight * 2 * sizeof(uint32_t) * 16, // 16 for alignment requirements
-                .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
-                         vk::BufferUsageFlagBits::eTransferDst,
-            }
-    );
-    mCulledDrawCommands = Buffer();
-    mFrustumCuller = std::make_unique<FrustumCuller>(device);
 }
 
 void PbrSceneRenderer::recreate(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &fb) {
     createPipeline(device, shader_loader, fb);
-    mFrustumCuller->recreate(device, shader_loader);
 }
 
 void PbrSceneRenderer::execute(
         const vk::Device &device,
-        const DescriptorAllocator &descriptor_allocator,
-        const vma::Allocator &allocator,
+        const DescriptorAllocator &desc_alloc,
+        const TransientBufferAllocator &buf_alloc,
         const vk::CommandBuffer &cmd_buf,
         const Framebuffer &fb,
         const Camera &camera,
         const scene::GpuData &gpu_data,
+        const FrustumCuller& frustum_culler,
         const DirectionalLight &sun_light,
         std::span<ShadowCaster> sun_shadow_cascades,
         const glm::vec3 &ambient_light
@@ -64,30 +51,20 @@ void PbrSceneRenderer::execute(
 
     // Culling
 
-    if (enableCulling && !pauseCulling) {
-        size_t draw_command_buffer_size = gpu_data.drawCommandCount * sizeof(vk::DrawIndexedIndirectCommand);
-        if (mCulledDrawCommands.size < draw_command_buffer_size) {
-            mCulledDrawCommands = Buffer::create(
-                    allocator,
-                    {
-                        .size = draw_command_buffer_size,
-                        .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer,
-                    }
-            );
+    glm::mat4 frustum_matrix = camera.projectionMatrix() * camera.viewMatrix();
+    if (pauseCulling) {
+        if (!mCapturedFrustum.has_value()) {
+            mCapturedFrustum = std::make_optional<glm::mat4>(frustum_matrix);
         }
-        // Always write to a different position to avoid a barrier
-        cmd_buf.fillBuffer(
-                *mCulledDrawCommandCount, mCulledDrawCommandCountIndex * sizeof(uint32_t) * 16, sizeof(uint32_t), 0
-        );
-        mCulledDrawCommandCountIndex = (mCulledDrawCommandCountIndex + 1) % (util::MaxFramesInFlight * 2);
+        frustum_matrix = mCapturedFrustum.value();
+    } else if (mCapturedFrustum.has_value()) {
+        mCapturedFrustum.reset();
+    }
 
-        mFrustumCuller->execute(
-                device, descriptor_allocator, cmd_buf, gpu_data, camera.projectionMatrix() * camera.viewMatrix(), mCulledDrawCommands,
-                mCulledDrawCommandCount, mCulledDrawCommandCountIndex
-        );
-
-        mCulledDrawCommands.barrier(cmd_buf, BufferResourceAccess::IndirectCommandRead);
-        mCulledDrawCommandCount.barrier(cmd_buf, BufferResourceAccess::IndirectCommandRead);
+    BufferRef culled_commands = {};
+    if (enableCulling) {
+        culled_commands = frustum_culler.execute(device, desc_alloc, buf_alloc, cmd_buf, gpu_data, frustum_matrix);
+        culled_commands.barrier(cmd_buf, BufferResourceAccess::IndirectCommandRead);
     }
 
     // Rendering
@@ -116,7 +93,7 @@ void PbrSceneRenderer::execute(
         };
     }
 
-    auto descriptor_set = descriptor_allocator.allocate(mShaderParamsDescriptorLayout);
+    auto descriptor_set = desc_alloc.allocate(mShaderParamsDescriptorLayout);
     device.updateDescriptorSets(
             descriptor_set.write(
                     ShaderParamsDescriptorLayout::SceneUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
@@ -155,8 +132,7 @@ void PbrSceneRenderer::execute(
 
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics, *mPipeline.pipeline);
     cmd_buf.bindDescriptorSets(
-            vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0,
-            {gpu_data.sceneDescriptor, descriptor_set}, {}
+            vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0, {gpu_data.sceneDescriptor, descriptor_set}, {}
     );
     cmd_buf.bindIndexBuffer(*gpu_data.indices, 0, vk::IndexType::eUint32);
     cmd_buf.bindVertexBuffers(
@@ -165,8 +141,8 @@ void PbrSceneRenderer::execute(
 
     if (enableCulling) {
         cmd_buf.drawIndexedIndirectCount(
-                *mCulledDrawCommands, 0, *mCulledDrawCommandCount, mCulledDrawCommandCountIndex * sizeof(uint32_t) * 16,
-                gpu_data.drawCommandCount, sizeof(vk::DrawIndexedIndirectCommand)
+                culled_commands, 0, culled_commands, culled_commands.size - 32, gpu_data.drawCommandCount,
+                sizeof(vk::DrawIndexedIndirectCommand)
         );
     } else {
         cmd_buf.drawIndexedIndirect(

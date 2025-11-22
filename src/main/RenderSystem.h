@@ -40,6 +40,7 @@ class RenderSystem {
     util::PerFrame<vk::CommandBuffer> mCommandBuffers;
     util::PerFrame<Framebuffer> mSwapchainFramebuffers;
     util::PerFrame<UniqueDescriptorAllocator> mDescriptorAllocators;
+    util::PerFrame<UniqueTransientBufferAllocator> mTransientBufferAllocators;
 
     // This descriptor allocator is never reset
     UniqueDescriptorAllocator mStaticDescriptorAllocator;
@@ -56,6 +57,7 @@ class RenderSystem {
     std::unique_ptr<FinalizeRenderer> mFinalizeRenderer;
     std::unique_ptr<BlobRenderer> mBlobRenderer;
     std::unique_ptr<SkyboxRenderer> mSkyboxRenderer;
+    std::unique_ptr<FrustumCuller> mFrustumCuller;
 
 
 public:

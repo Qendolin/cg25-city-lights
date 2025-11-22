@@ -235,7 +235,7 @@ class DescriptorAllocator {
 public:
     DescriptorAllocator() = default;
 
-    DescriptorSet allocate(const vk::DescriptorSetLayout& layout) const;
+    [[nodiscard]] DescriptorSet allocate(const vk::DescriptorSetLayout& layout) const;
     void reset() const;
 
     operator bool() const { return mImpl != nullptr; }

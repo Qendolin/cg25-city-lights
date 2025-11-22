@@ -5,7 +5,6 @@
 #include "../backend/Descriptors.h"
 #include "../backend/Pipeline.h"
 #include "../debug/Settings.h"
-#include "../util/PerFrame.h"
 #include "FrustumCuller.h"
 
 
@@ -60,18 +59,19 @@ public:
     bool enableCulling = true;
 
     ~PbrSceneRenderer();
-    PbrSceneRenderer(const vk::Device &device, const vma::Allocator& allocator);
+    PbrSceneRenderer(const vk::Device &device);
 
     void recreate(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &fb);
 
     void execute(
             const vk::Device &device,
-            const DescriptorAllocator &descriptor_allocator,
-            const vma::Allocator &allocator,
+            const DescriptorAllocator &desc_alloc,
+            const TransientBufferAllocator &buf_alloc,
             const vk::CommandBuffer &cmd_buf,
             const Framebuffer &fb,
             const Camera &camera,
             const scene::GpuData &gpu_data,
+            const FrustumCuller &frustum_culler,
             const DirectionalLight &sun_light,
             std::span<ShadowCaster> sun_shadow_cascades,
             const glm::vec3 &ambient_light
@@ -85,8 +85,5 @@ private:
     ConfiguredGraphicsPipeline mPipeline;
     vk::UniqueSampler mShadowSampler;
 
-    std::unique_ptr<FrustumCuller> mFrustumCuller;
-    Buffer mCulledDrawCommands;
-    Buffer mCulledDrawCommandCount;
-    size_t mCulledDrawCommandCountIndex = 0;
+    std::optional<glm::mat4> mCapturedFrustum;
 };

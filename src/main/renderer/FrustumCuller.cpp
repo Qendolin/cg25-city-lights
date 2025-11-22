@@ -3,9 +3,7 @@
 #include "../backend/Buffer.h"
 #include "../backend/ShaderCompiler.h"
 #include "../scene/Scene.h"
-#include "../util/globals.h"
 #include "../util/math.h"
-
 
 FrustumCuller::~FrustumCuller() = default;
 
@@ -13,19 +11,27 @@ FrustumCuller::FrustumCuller(const vk::Device &device) {
     mShaderParamsDescriptorLayout = ShaderParamsDescriptorLayout(device);
 }
 
-void FrustumCuller::execute(
+BufferRef FrustumCuller::execute(
         const vk::Device &device,
-        const DescriptorAllocator &allocator,
+        const DescriptorAllocator &desc_alloc,
+        const TransientBufferAllocator &buf_alloc,
         const vk::CommandBuffer &cmd_buf,
         const scene::GpuData &gpu_data,
-        const glm::mat4 &view_projection_matrix,
-        Buffer &output_draw_command_buffer,
-        Buffer &output_draw_command_count_buffer,
-        size_t count_write_index
-) {
+        const glm::mat4 &view_projection_matrix
+) const {
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eCompute, *mPipeline.pipeline);
 
-    DescriptorSet descriptor_set = allocator.allocate(mShaderParamsDescriptorLayout);
+    size_t draw_command_buffer_size = gpu_data.drawCommandCount * sizeof(vk::DrawIndexedIndirectCommand);
+    size_t draw_command_buffer_final_size = util::alignOffset(draw_command_buffer_size, 32) + 32;
+    auto output_draw_command_buffer = buf_alloc.allocate(draw_command_buffer_final_size, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndirectBuffer);
+    output_draw_command_buffer.barrier(cmd_buf, BufferResourceAccess::TransferWrite);
+    // Count is placed at the end of the buffer
+    cmd_buf.fillBuffer(
+            output_draw_command_buffer, draw_command_buffer_final_size - 32, sizeof(uint32_t), 0
+    );
+    output_draw_command_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderWrite);
+
+    DescriptorSet descriptor_set = desc_alloc.allocate(mShaderParamsDescriptorLayout);
     device.updateDescriptorSets(
             {descriptor_set.write(
                      ShaderParamsDescriptorLayout::InputDrawCommandBuffer,
@@ -33,11 +39,11 @@ void FrustumCuller::execute(
              ),
              descriptor_set.write(
                      ShaderParamsDescriptorLayout::OutputDrawCommandBuffer,
-                     vk::DescriptorBufferInfo{.buffer = *output_draw_command_buffer, .offset = 0, .range = vk::WholeSize}
+                     vk::DescriptorBufferInfo{.buffer = output_draw_command_buffer, .offset = 0, .range = draw_command_buffer_size}
              ),
              descriptor_set.write(
                      ShaderParamsDescriptorLayout::DrawCommandCountBuffer,
-                     vk::DescriptorBufferInfo{.buffer = *output_draw_command_count_buffer, .offset = count_write_index * sizeof(uint32_t) * 16, .range = vk::WholeSize}
+                     vk::DescriptorBufferInfo{.buffer = output_draw_command_buffer, .offset = draw_command_buffer_final_size - 32, .range = sizeof(uint32_t)}
              )},
             {}
     );
@@ -46,7 +52,6 @@ void FrustumCuller::execute(
     );
 
     output_draw_command_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderWrite);
-    output_draw_command_count_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderWrite);
 
     // World space frustum planes
     std::array<glm::vec4, 6> frustum_planes = util::extractFrustumPlanes(view_projection_matrix);
@@ -54,6 +59,8 @@ void FrustumCuller::execute(
     cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(push_constants), &push_constants);
 
     cmd_buf.dispatch(util::divCeil(gpu_data.drawCommandCount, 64u), 1u, 1u);
+
+    return output_draw_command_buffer;
 }
 void FrustumCuller::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader) {
     auto comp_sh = shader_loader.loadFromSource(device, "resources/shaders/frustum_cull.comp");

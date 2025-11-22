@@ -226,52 +226,34 @@ private:
     vk::DescriptorSet mHandle;
 };
 
+struct DescriptorAllocatorImpl;
+
 /// <summary>
-/// A simple allocator for creating descriptor sets from a managed descriptor pool.
+/// A simple allocator for creating descriptor sets from a managed descriptor pool. Cheap to copy.
 /// </summary>
 class DescriptorAllocator {
 public:
     DescriptorAllocator() = default;
-    explicit DescriptorAllocator(const vk::Device &device);
 
-    DescriptorAllocator(const DescriptorAllocator &other) = default;
-    DescriptorAllocator &operator=(const DescriptorAllocator &other) = default;
+    DescriptorSet allocate(const vk::DescriptorSetLayout& layout) const;
+    void reset() const;
 
-    DescriptorAllocator(DescriptorAllocator &&other) noexcept;
-    DescriptorAllocator &operator=(DescriptorAllocator &&other) noexcept;
+    operator bool() const { return mImpl != nullptr; }
 
-    /// <summary>
-    /// Allocates a single descriptor set from the pool.
-    /// </summary>
-    /// <param name="layout">The layout for the descriptor set to allocate.</param>
-    /// <returns>An allocated DescriptorSet.</returns>
-    DescriptorSet allocate(const DescriptorSetLayout &layout) const;
-
-    /// <summary>
-    /// Resets the underlying descriptor pool, invalidating all allocated sets.
-    /// </summary>
-    void reset() const { mDevice.resetDescriptorPool(mPool); }
-
-private:
-    vk::DescriptorPool mPool;
-    vk::Device mDevice = {};
-
+protected:
+    DescriptorAllocatorImpl* mImpl = nullptr;
     friend class UniqueDescriptorAllocator;
 };
 
 class UniqueDescriptorAllocator : public DescriptorAllocator {
-    public:
-
+public:
     UniqueDescriptorAllocator() = default;
-    explicit UniqueDescriptorAllocator(const vk::Device &device) : DescriptorAllocator(device) {}
+    explicit UniqueDescriptorAllocator(vk::Device device);
+    ~UniqueDescriptorAllocator();
 
-    UniqueDescriptorAllocator(const UniqueDescriptorAllocator &other) = delete;
-    UniqueDescriptorAllocator(UniqueDescriptorAllocator &&other) noexcept = default;
-    UniqueDescriptorAllocator &operator=(const UniqueDescriptorAllocator &other) = delete;
-    UniqueDescriptorAllocator &operator=(UniqueDescriptorAllocator &&other) noexcept = default;
+    UniqueDescriptorAllocator(const UniqueDescriptorAllocator&) = delete;
+    UniqueDescriptorAllocator& operator=(const UniqueDescriptorAllocator&) = delete;
 
-    ~UniqueDescriptorAllocator() {
-        if (mPool)
-            mDevice.destroyDescriptorPool(mPool);
-    }
+    UniqueDescriptorAllocator(UniqueDescriptorAllocator&& other) noexcept;
+    UniqueDescriptorAllocator& operator=(UniqueDescriptorAllocator&& other) noexcept;
 };

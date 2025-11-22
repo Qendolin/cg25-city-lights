@@ -7,9 +7,8 @@
 #include "../util/globals.h"
 #include "../util/math.h"
 
-BlobRenderer::BlobRenderer(const vk::Device &device, const DescriptorAllocator &allocator)
+BlobRenderer::BlobRenderer(const vk::Device &device)
     : mComputeDescriptorLayout{device} {
-    mComputeDescriptors.create(util::MaxFramesInFlight, [&]() { return allocator.allocate(mComputeDescriptorLayout); });
 }
 
 void BlobRenderer::recreate(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer) {
@@ -19,12 +18,13 @@ void BlobRenderer::recreate(const vk::Device &device, const ShaderLoader &shader
 
 void BlobRenderer::execute(
         const vk::Device &device,
+        const DescriptorAllocator &allocator,
         const vk::CommandBuffer &commandBuffer,
         const Framebuffer &framebuffer,
         const Camera &camera,
         const blob::Model &blobModel
 ) {
-    computeVertices(device, commandBuffer, blobModel);
+    computeVertices(device, allocator, commandBuffer, blobModel);
     renderVertices(commandBuffer, framebuffer, camera, blobModel);
 }
 
@@ -59,9 +59,8 @@ void BlobRenderer::createGraphicsPipeline_(
     mGraphicsPipeline = createGraphicsPipeline(device, pipelineConfig, {*vertShader, *fragShader});
 }
 
-void BlobRenderer::computeVertices(const vk::Device &device, const vk::CommandBuffer &commandBuffer, const blob::Model &blobModel) {
-    mComputeDescriptors.next();
-    DescriptorSet &set = mComputeDescriptors.get();
+void BlobRenderer::computeVertices(const vk::Device &device, const DescriptorAllocator &allocator, const vk::CommandBuffer &commandBuffer, const blob::Model &blobModel) {
+    DescriptorSet set = allocator.allocate(mComputeDescriptorLayout);
 
     vk::DescriptorBufferInfo vertexBufferInfo{
         .buffer = blobModel.getVertexBuffer(),

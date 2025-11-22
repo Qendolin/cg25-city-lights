@@ -4,12 +4,10 @@
 
 #include "../backend/Descriptors.h"
 #include "../backend/Framebuffer.h"
-#include "../backend/Image.h"
 #include "../backend/Pipeline.h"
 #include "../backend/ShaderCompiler.h"
 #include "../blob/Model.h"
 #include "../entity/Camera.h"
-#include "../util/PerFrame.h"
 
 class BlobRenderer {
 public:
@@ -41,16 +39,16 @@ private:
     ConfiguredGraphicsPipeline mGraphicsPipeline;
 
     ComputeDescriptorLayout mComputeDescriptorLayout;
-    util::PerFrame<DescriptorSet> mComputeDescriptors;
 
 public:
-    BlobRenderer(const vk::Device &device, const DescriptorAllocator &allocator);
+    BlobRenderer(const vk::Device &device);
     ~BlobRenderer() = default;
 
     void recreate(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer);
 
     void execute(
             const vk::Device &device,
+            const DescriptorAllocator &allocator,
             const vk::CommandBuffer &commandBuffer,
             const Framebuffer &framebuffer,
             const Camera &camera,
@@ -61,7 +59,12 @@ private:
     void createComputePipeline_(const vk::Device &device, const ShaderLoader &shaderLoader);
     void createGraphicsPipeline_(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer);
 
-    void computeVertices(const vk::Device &device, const vk::CommandBuffer &commandBuffer, const blob::Model &blobModel);
+    void computeVertices(
+            const vk::Device &device,
+            const DescriptorAllocator &allocator,
+            const vk::CommandBuffer &commandBuffer,
+            const blob::Model &blobModel
+    );
     void renderVertices(
             const vk::CommandBuffer &commandBuffer, const Framebuffer &framebuffer, const Camera &camera, const blob::Model &blobModel
     );

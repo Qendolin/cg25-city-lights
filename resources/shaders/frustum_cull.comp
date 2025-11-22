@@ -167,17 +167,14 @@ void main() {
 
     // --- 4. WRITE OUTPUT ---
 
-//    if (visible == 1) {
-//        // Convert Inclusive Scan -> Exclusive Scan to get local offset.
-//        // Offset is the count of visible items *before* this one.
-//        uint local_offset = (local_id > 0) ? sScan[local_id - 1] : 0;
-//
-//        uint output_index = sGlobalBaseIndex + local_offset;
-//
-//        // Copy command to the compacted buffer
-//        uOutputCommands.drawCommands[output_index] = uInputCommands.drawCommands[id];
-//    }
+    if (visible == 1) {
+        // Convert Inclusive Scan -> Exclusive Scan to get local offset.
+        // Offset is the count of visible items *before* this one.
+        uint local_offset = (local_id > 0) ? sScan[local_id - 1] : 0;
 
-    uOutputCommands.drawCommands[id] = uInputCommands.drawCommands[id];
-    uOutputCommands.drawCommands[id].instanceCount = visible;
+        uint output_index = sGlobalBaseIndex + local_offset;
+
+        // Copy command to the compacted buffer
+        uOutputCommands.drawCommands[output_index] = uInputCommands.drawCommands[id];
+    }
 }

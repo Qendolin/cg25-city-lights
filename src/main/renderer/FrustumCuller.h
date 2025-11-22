@@ -5,8 +5,6 @@
 
 #include "../backend/Descriptors.h"
 #include "../backend/Pipeline.h"
-#include "../util/PerFrame.h"
-
 
 namespace scene {
     struct GpuData;
@@ -34,7 +32,7 @@ public:
     };
 
     ~FrustumCuller();
-    FrustumCuller(const vk::Device &device, const DescriptorAllocator &allocator);
+    FrustumCuller(const vk::Device &device);
 
 
     void recreate(const vk::Device &device, const ShaderLoader &shader_loader) {
@@ -43,6 +41,7 @@ public:
 
     void execute(
             const vk::Device &device,
+            const DescriptorAllocator &allocator,
             const vk::CommandBuffer &cmd_buf,
             const scene::GpuData &gpu_data,
             const glm::mat4 &view_projection_matrix,
@@ -56,5 +55,4 @@ private:
 
     ConfiguredComputePipeline mPipeline;
     ShaderParamsDescriptorLayout mShaderParamsDescriptorLayout;
-    util::PerFrame<DescriptorSet> mShaderParamsDescriptors;
 };

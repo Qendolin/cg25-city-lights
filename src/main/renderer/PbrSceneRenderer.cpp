@@ -15,12 +15,9 @@
 PbrSceneRenderer::~PbrSceneRenderer() = default;
 
 PbrSceneRenderer::PbrSceneRenderer(
-        const vk::Device &device, const DescriptorAllocator &descriptor_allocator, const vma::Allocator &allocator
+        const vk::Device &device, const vma::Allocator &allocator
 ) {
     mShaderParamsDescriptorLayout = ShaderParamsDescriptorLayout(device);
-    mShaderParamsDescriptors.create(util::MaxFramesInFlight, [&]() {
-        return descriptor_allocator.allocate(mShaderParamsDescriptorLayout);
-    });
     mShadowSampler = device.createSamplerUnique({
         .magFilter = vk::Filter::eLinear,
         .minFilter = vk::Filter::eLinear,
@@ -39,7 +36,7 @@ PbrSceneRenderer::PbrSceneRenderer(
             }
     );
     mCulledDrawCommands = Buffer();
-    mFrustumCuller = std::make_unique<FrustumCuller>(device, descriptor_allocator);
+    mFrustumCuller = std::make_unique<FrustumCuller>(device);
 }
 
 void PbrSceneRenderer::recreate(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &fb) {
@@ -49,6 +46,7 @@ void PbrSceneRenderer::recreate(const vk::Device &device, const ShaderLoader &sh
 
 void PbrSceneRenderer::execute(
         const vk::Device &device,
+        const DescriptorAllocator &descriptor_allocator,
         const vma::Allocator &allocator,
         const vk::CommandBuffer &cmd_buf,
         const Framebuffer &fb,
@@ -84,7 +82,7 @@ void PbrSceneRenderer::execute(
         mCulledDrawCommandCountIndex = (mCulledDrawCommandCountIndex + 1) % (util::MaxFramesInFlight * 2);
 
         mFrustumCuller->execute(
-                device, cmd_buf, gpu_data, camera.projectionMatrix() * camera.viewMatrix(), mCulledDrawCommands,
+                device, descriptor_allocator, cmd_buf, gpu_data, camera.projectionMatrix() * camera.viewMatrix(), mCulledDrawCommands,
                 mCulledDrawCommandCount, mCulledDrawCommandCountIndex
         );
 
@@ -118,16 +116,16 @@ void PbrSceneRenderer::execute(
         };
     }
 
-    mShaderParamsDescriptors.next();
+    auto descriptor_set = descriptor_allocator.allocate(mShaderParamsDescriptorLayout);
     device.updateDescriptorSets(
-            mShaderParamsDescriptors.get().write(
+            descriptor_set.write(
                     ShaderParamsDescriptorLayout::SceneUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
             ),
             {}
     );
     for (size_t i = 0; i < sun_shadow_cascades.size(); i++) {
         device.updateDescriptorSets(
-                mShaderParamsDescriptors.get().write(
+                descriptor_set.write(
                         ShaderParamsDescriptorLayout::SunShadowMap,
                         vk::DescriptorImageInfo{
                             .sampler = *mShadowSampler,
@@ -158,7 +156,7 @@ void PbrSceneRenderer::execute(
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics, *mPipeline.pipeline);
     cmd_buf.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0,
-            {gpu_data.sceneDescriptor, mShaderParamsDescriptors.get()}, {}
+            {gpu_data.sceneDescriptor, descriptor_set}, {}
     );
     cmd_buf.bindIndexBuffer(*gpu_data.indices, 0, vk::IndexType::eUint32);
     cmd_buf.bindVertexBuffers(

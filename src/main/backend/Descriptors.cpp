@@ -23,43 +23,103 @@ void DescriptorSetLayout::create(const vk::Device &device, vk::DescriptorSetLayo
     mHandle = device.createDescriptorSetLayoutUnique(chain.get());
 }
 
-DescriptorAllocator::DescriptorAllocator(const vk::Device &device) : mDevice(device) {
-    std::vector<vk::DescriptorPoolSize> sizes = {
-        {vk::DescriptorType::eCombinedImageSampler, 1024},
-        {vk::DescriptorType::eUniformBuffer, 1024},
-        {vk::DescriptorType::eStorageBuffer, 1024},
-        {vk::DescriptorType::eStorageImage, 1024},
-    };
+struct DescriptorAllocatorImpl {
+    vk::Device mDevice;
+    vk::DescriptorPool mCurrentPool;
+    std::vector<vk::DescriptorPool> mUsedPools;
+    std::vector<vk::DescriptorPool> mFreePools;
 
-    vk::DescriptorPoolInlineUniformBlockCreateInfo uniform_blocks = {
-        .maxInlineUniformBlockBindings = 4096,
-    };
+    DescriptorAllocatorImpl(vk::Device device) : mDevice(device) {}
 
-    mPool = mDevice.createDescriptorPool({
-        .pNext = &uniform_blocks,
-        .maxSets = 1024,
-        .poolSizeCount = static_cast<uint32_t>(sizes.size()),
-        .pPoolSizes = sizes.data(),
-    });
+    vk::DescriptorPool getPool() {
+        if (!mFreePools.empty()) {
+            auto pool = mFreePools.back();
+            mFreePools.pop_back();
+            return pool;
+        }
+
+        std::vector<vk::DescriptorPoolSize> sizes = {
+            {vk::DescriptorType::eUniformBuffer, 1024},
+            {vk::DescriptorType::eCombinedImageSampler, 1024},
+            {vk::DescriptorType::eStorageBuffer, 1024},
+            {vk::DescriptorType::eStorageImage, 1024},
+        };
+
+        vk::DescriptorPoolCreateInfo info = {};
+        info.maxSets = 1024;
+        info.poolSizeCount = static_cast<uint32_t>(sizes.size());
+        info.pPoolSizes = sizes.data();
+
+        return mDevice.createDescriptorPool(info);
+    }
+};
+
+DescriptorSet DescriptorAllocator::allocate(const vk::DescriptorSetLayout& layout) const {
+    // Initialize current pool if null
+    if (!mImpl->mCurrentPool) {
+        mImpl->mCurrentPool = mImpl->getPool();
+    }
+
+    vk::DescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.descriptorPool = mImpl->mCurrentPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &layout;
+
+    // Try to allocate. If it fails due to pool limits, grow and retry.
+    try {
+        return DescriptorSet(mImpl->mDevice.allocateDescriptorSets(allocInfo)[0]);
+    }
+    catch (vk::SystemError& err) {
+        if (err.code() == vk::Result::eErrorOutOfPoolMemory || err.code() == vk::Result::eErrorFragmentedPool) {
+            // Pool is full. Move to used list and grab a fresh one.
+            mImpl->mUsedPools.push_back(mImpl->mCurrentPool);
+            mImpl->mCurrentPool = mImpl->getPool();
+
+            allocInfo.descriptorPool = mImpl->mCurrentPool;
+            return DescriptorSet(mImpl->mDevice.allocateDescriptorSets(allocInfo)[0]);
+        }
+        throw;
+    }
 }
 
-DescriptorAllocator::DescriptorAllocator(DescriptorAllocator &&other) noexcept
-    : mPool(std::exchange(other.mPool, VK_NULL_HANDLE)), mDevice(std::exchange(other.mDevice, VK_NULL_HANDLE)) {}
+void DescriptorAllocator::reset() const {
+    if (!mImpl) return;
 
-DescriptorAllocator &DescriptorAllocator::operator=(DescriptorAllocator &&other) noexcept {
-    if (this == &other)
-        return *this;
-    mPool = std::exchange(other.mPool, VK_NULL_HANDLE);
-    mDevice = std::exchange(other.mDevice, VK_NULL_HANDLE);
+    // Reset all used pools and move them to the free list
+    for (auto pool : mImpl->mUsedPools) {
+        mImpl->mDevice.resetDescriptorPool(pool);
+        mImpl->mFreePools.push_back(pool);
+    }
+    mImpl->mUsedPools.clear();
+
+    // Reset the current pool
+    if (mImpl->mCurrentPool) {
+        mImpl->mDevice.resetDescriptorPool(mImpl->mCurrentPool);
+    }
+}
+
+UniqueDescriptorAllocator::UniqueDescriptorAllocator(vk::Device device) {
+    mImpl = new DescriptorAllocatorImpl(device);
+}
+
+UniqueDescriptorAllocator::~UniqueDescriptorAllocator() {
+    if (mImpl) {
+        if (mImpl->mCurrentPool) mImpl->mDevice.destroyDescriptorPool(mImpl->mCurrentPool);
+        for (auto p : mImpl->mUsedPools) mImpl->mDevice.destroyDescriptorPool(p);
+        for (auto p : mImpl->mFreePools) mImpl->mDevice.destroyDescriptorPool(p);
+        delete mImpl;
+        mImpl = nullptr;
+    }
+}
+
+UniqueDescriptorAllocator::UniqueDescriptorAllocator(UniqueDescriptorAllocator&& other) noexcept {
+    mImpl = std::exchange(other.mImpl, nullptr);
+}
+
+UniqueDescriptorAllocator& UniqueDescriptorAllocator::operator=(UniqueDescriptorAllocator&& other) noexcept {
+    if (this != &other) {
+        this->~UniqueDescriptorAllocator();
+        mImpl = std::exchange(other.mImpl, nullptr);
+    }
     return *this;
-}
-
-DescriptorSet DescriptorAllocator::allocate(const DescriptorSetLayout &layout) const {
-    auto vk_layout = static_cast<vk::DescriptorSetLayout>(layout);
-    vk::DescriptorSetAllocateInfo info = {
-        .descriptorPool = mPool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &vk_layout,
-    };
-    return DescriptorSet(mDevice.allocateDescriptorSets(info)[0]);
 }

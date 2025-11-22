@@ -1,14 +1,9 @@
 #include "SkyboxRenderer.h"
 
 #include "../backend/ShaderCompiler.h"
-#include "../util/globals.h"
 
-SkyboxRenderer::SkyboxRenderer(const vk::Device &device, const DescriptorAllocator &allocator) {
+SkyboxRenderer::SkyboxRenderer(const vk::Device &device) {
     mShaderParamsDescriptorLayout = ShaderParamsDescriptorLayout(device);
-
-    mShaderParamsDescriptors.create(util::MaxFramesInFlight, [&]() {
-        return allocator.allocate(mShaderParamsDescriptorLayout);
-    });
 
     vk::SamplerCreateInfo samplerInfo{};
     samplerInfo.magFilter = vk::Filter::eLinear;
@@ -29,6 +24,7 @@ SkyboxRenderer::~SkyboxRenderer() {}
 
 void SkyboxRenderer::execute(
         const vk::Device &device,
+        const DescriptorAllocator &allocator,
         const vk::CommandBuffer &commandBuffer,
         const Framebuffer &framebuffer,
         const Camera &camera,
@@ -64,14 +60,14 @@ void SkyboxRenderer::execute(
     descriptorImageInfo.imageView = skybox.getImageView();
     descriptorImageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
-    mShaderParamsDescriptors.next();
+    auto descriptor_set = allocator.allocate(mShaderParamsDescriptorLayout);
 
     device.updateDescriptorSets(
-            {mShaderParamsDescriptors.get().write(ShaderParamsDescriptorLayout::SamplerCubeMap, descriptorImageInfo)}, {}
+            {descriptor_set.write(ShaderParamsDescriptorLayout::SamplerCubeMap, descriptorImageInfo)}, {}
     );
 
     commandBuffer.bindDescriptorSets(
-            vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0, {mShaderParamsDescriptors.get()}, {}
+            vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0, {descriptor_set}, {}
     );
 
     commandBuffer.draw(SKYBOX_VERTEX_COUNT, 1, 0, 0);

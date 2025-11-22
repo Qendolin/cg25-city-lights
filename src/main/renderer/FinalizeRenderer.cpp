@@ -9,11 +9,8 @@
 
 FinalizeRenderer::~FinalizeRenderer() = default;
 
-FinalizeRenderer::FinalizeRenderer(const vk::Device &device, const DescriptorAllocator &allocator) {
+FinalizeRenderer::FinalizeRenderer(const vk::Device &device) {
     mShaderParamsDescriptorLayout = ShaderParamsDescriptorLayout(device);
-    mShaderParamsDescriptors.create(util::MaxFramesInFlight, [&]() {
-        return allocator.allocate(mShaderParamsDescriptorLayout);
-    });
     mSampler = device.createSamplerUnique({});
 }
 
@@ -32,6 +29,7 @@ void FinalizeRenderer::createPipeline(const vk::Device &device, const ShaderLoad
 
 void FinalizeRenderer::execute(
         const vk::Device &device,
+        const DescriptorAllocator &allocator,
         const vk::CommandBuffer &cmd_buf,
         const Attachment &hdr_attachment,
         const Attachment &sdr_attachment,
@@ -41,23 +39,23 @@ void FinalizeRenderer::execute(
     hdr_attachment.barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
     sdr_attachment.barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
 
-    mShaderParamsDescriptors.next();
+    auto descriptor_set = allocator.allocate(mShaderParamsDescriptorLayout);
     device.updateDescriptorSets(
             {
-                mShaderParamsDescriptors.get().write(
+                descriptor_set.write(
                         ShaderParamsDescriptorLayout::InColor,
                         vk::DescriptorImageInfo{
                             .sampler = *mSampler, .imageView = hdr_attachment.view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
                         }
                 ),
-                mShaderParamsDescriptors.get().write(
+                descriptor_set.write(
                         ShaderParamsDescriptorLayout::OutColor,
                         vk::DescriptorImageInfo{.imageView = sdr_attachment.view, .imageLayout = vk::ImageLayout::eGeneral}
                 ),
             },
             {}
     );
-    cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *mPipeline.layout, 0, {mShaderParamsDescriptors.get()}, {});
+    cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *mPipeline.layout, 0, {descriptor_set}, {});
     cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(agx_params), &agx_params);
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eCompute, *mPipeline.pipeline);
     cmd_buf.dispatch(util::divCeil(sdr_attachment.extents.width, 8u), util::divCeil(sdr_attachment.extents.height, 8u), 1);

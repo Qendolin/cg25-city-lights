@@ -3,8 +3,8 @@
 #include <glm/glm.hpp>
 
 #include "../backend/Descriptors.h"
-#include "../backend/Pipeline.h"
 #include "../backend/Framebuffer.h"
+#include "../backend/Pipeline.h"
 #include "../entity/Camera.h"
 #include "../entity/Cubemap.h"
 #include "../util/PerFrame.h"
@@ -35,10 +35,9 @@ private:
     vk::UniqueSampler mSampler;
     ConfiguredGraphicsPipeline mPipeline;
     ShaderParamsDescriptorLayout mShaderParamsDescriptorLayout;
-    util::PerFrame<DescriptorSet> mShaderParamsDescriptors;
 
 public:
-    SkyboxRenderer(const vk::Device &device, const DescriptorAllocator &allocator);
+    SkyboxRenderer(const vk::Device &device);
     ~SkyboxRenderer();
 
     void recreate(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer) {
@@ -47,6 +46,7 @@ public:
 
     void execute(
             const vk::Device &device,
+            const DescriptorAllocator &allocator,
             const vk::CommandBuffer &commandBuffer,
             const Framebuffer &framebuffer,
             const Camera &camera,

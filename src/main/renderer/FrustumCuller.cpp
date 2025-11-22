@@ -9,15 +9,13 @@
 
 FrustumCuller::~FrustumCuller() = default;
 
-FrustumCuller::FrustumCuller(const vk::Device &device, const DescriptorAllocator &allocator) {
+FrustumCuller::FrustumCuller(const vk::Device &device) {
     mShaderParamsDescriptorLayout = ShaderParamsDescriptorLayout(device);
-    mShaderParamsDescriptors.create(util::MaxFramesInFlight, [&]() {
-        return allocator.allocate(mShaderParamsDescriptorLayout);
-    });
 }
 
 void FrustumCuller::execute(
         const vk::Device &device,
+        const DescriptorAllocator &allocator,
         const vk::CommandBuffer &cmd_buf,
         const scene::GpuData &gpu_data,
         const glm::mat4 &view_projection_matrix,
@@ -27,7 +25,7 @@ void FrustumCuller::execute(
 ) {
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eCompute, *mPipeline.pipeline);
 
-    DescriptorSet descriptor_set = mShaderParamsDescriptors.next();
+    DescriptorSet descriptor_set = allocator.allocate(mShaderParamsDescriptorLayout);
     device.updateDescriptorSets(
             {descriptor_set.write(
                      ShaderParamsDescriptorLayout::InputDrawCommandBuffer,

@@ -60,12 +60,13 @@ public:
     bool enableCulling = true;
 
     ~PbrSceneRenderer();
-    PbrSceneRenderer(const vk::Device &device, const DescriptorAllocator &descriptor_allocator, const vma::Allocator& allocator);
+    PbrSceneRenderer(const vk::Device &device, const vma::Allocator& allocator);
 
     void recreate(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &fb);
 
     void execute(
             const vk::Device &device,
+            const DescriptorAllocator &descriptor_allocator,
             const vma::Allocator &allocator,
             const vk::CommandBuffer &cmd_buf,
             const Framebuffer &fb,
@@ -80,7 +81,6 @@ private:
     void createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &fb);
 
     ShaderParamsDescriptorLayout mShaderParamsDescriptorLayout;
-    util::PerFrame<DescriptorSet> mShaderParamsDescriptors;
 
     ConfiguredGraphicsPipeline mPipeline;
     vk::UniqueSampler mShadowSampler;

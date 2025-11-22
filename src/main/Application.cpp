@@ -106,7 +106,7 @@ void Application::init() {
         context->physicalDevice(),
         context->transferQueue,
         context->mainQueue,
-        renderSystem->descriptorAllocator()
+        renderSystem->staticDescriptorAllocator()
     };
 
     scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/CityTest.glb")));

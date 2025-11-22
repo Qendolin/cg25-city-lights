@@ -39,9 +39,10 @@ class RenderSystem {
     util::PerFrame<SyncObjects> mSyncObjects;
     util::PerFrame<vk::CommandBuffer> mCommandBuffers;
     util::PerFrame<Framebuffer> mSwapchainFramebuffers;
+    util::PerFrame<UniqueDescriptorAllocator> mDescriptorAllocators;
 
-    UniqueDescriptorAllocator mDescriptorAllocator;
-
+    // This descriptor allocator is never reset
+    UniqueDescriptorAllocator mStaticDescriptorAllocator;
     ShaderLoader mShaderLoader;
 
     Framebuffer mHdrFramebuffer;
@@ -71,8 +72,8 @@ public:
 
     void submit();
 
-    [[nodiscard]] const DescriptorAllocator &descriptorAllocator() const { return mDescriptorAllocator; }
-    [[nodiscard]] DescriptorAllocator &descriptorAllocator() { return mDescriptorAllocator; }
+    [[nodiscard]] const DescriptorAllocator &staticDescriptorAllocator() const { return mStaticDescriptorAllocator; }
+    [[nodiscard]] DescriptorAllocator &staticDescriptorAllocator() { return mStaticDescriptorAllocator; }
 
     [[nodiscard]] const ShaderLoader &shaderLoader() const { return mShaderLoader; }
     [[nodiscard]] ShaderLoader &shaderLoader() { return mShaderLoader; }

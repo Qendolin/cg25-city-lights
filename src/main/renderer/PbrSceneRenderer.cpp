@@ -166,12 +166,9 @@ void PbrSceneRenderer::execute(
     );
 
     if (enableCulling) {
-        // cmd_buf.drawIndexedIndirectCount(
-        //         *mCulledDrawCommands, 0, *mCulledDrawCommandCount, mCulledDrawCommandCountIndex * sizeof(uint32_t) * 16,
-        //         gpu_data.drawCommandCount, sizeof(vk::DrawIndexedIndirectCommand)
-        // );
-        cmd_buf.drawIndexedIndirect(
-                *mCulledDrawCommands, 0, gpu_data.drawCommandCount, sizeof(vk::DrawIndexedIndirectCommand)
+        cmd_buf.drawIndexedIndirectCount(
+                *mCulledDrawCommands, 0, *mCulledDrawCommandCount, mCulledDrawCommandCountIndex * sizeof(uint32_t) * 16,
+                gpu_data.drawCommandCount, sizeof(vk::DrawIndexedIndirectCommand)
         );
     } else {
         cmd_buf.drawIndexedIndirect(

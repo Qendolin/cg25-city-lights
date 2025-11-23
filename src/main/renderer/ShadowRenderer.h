@@ -3,6 +3,7 @@
 
 #include "../backend/Framebuffer.h"
 #include "../backend/Pipeline.h"
+#include "FrustumCuller.h"
 
 
 class ShadowCaster;
@@ -30,7 +31,15 @@ public:
         createPipeline(device, shader_loader);
     }
 
-    void execute(const vk::CommandBuffer &cmd_buf, const scene::GpuData &gpu_data, const ShadowCaster &shadow_caster);
+    void execute(
+            const vk::Device &device,
+            const DescriptorAllocator &desc_alloc,
+            const TransientBufferAllocator &buf_alloc,
+            const vk::CommandBuffer &cmd_buf,
+            const scene::GpuData &gpu_data,
+            const FrustumCuller &frustum_culler,
+            const ShadowCaster &shadow_caster
+    );
 
 private:
     void createPipeline(const vk::Device &device, const ShaderLoader &shader_loader);

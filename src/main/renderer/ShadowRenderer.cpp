@@ -11,7 +11,24 @@
 ShadowRenderer::~ShadowRenderer() = default;
 ShadowRenderer::ShadowRenderer() = default;
 
-void ShadowRenderer::execute(const vk::CommandBuffer &cmd_buf, const scene::GpuData &gpu_data, const ShadowCaster &shadow_caster) {
+void ShadowRenderer::execute(
+        const vk::Device &device,
+        const DescriptorAllocator &desc_alloc,
+        const TransientBufferAllocator &buf_alloc,
+        const vk::CommandBuffer &cmd_buf,
+        const scene::GpuData &gpu_data,
+        const FrustumCuller &frustum_culler,
+        const ShadowCaster &shadow_caster
+) {
+
+    // Culling
+
+    glm::mat4 frustum_matrix = shadow_caster.projectionMatrix() * shadow_caster.viewMatrix();
+    BufferRef culled_commands = frustum_culler.execute(device, desc_alloc, buf_alloc, cmd_buf, gpu_data, frustum_matrix);
+    culled_commands.barrier(cmd_buf, BufferResourceAccess::IndirectCommandRead);
+
+    // Rendering
+
     shadow_caster.framebuffer().depthAttachment.barrier(cmd_buf, ImageResourceAccess::DepthAttachmentWrite);
 
     const Framebuffer &fb = shadow_caster.framebuffer();
@@ -39,12 +56,16 @@ void ShadowRenderer::execute(const vk::CommandBuffer &cmd_buf, const scene::GpuD
     );
 
     ShaderParamsPushConstants shader_params = {
-        .projectionViewMatrix = shadow_caster.projectionMatrix() * shadow_caster.viewMatrix(),
+        .projectionViewMatrix = frustum_matrix,
         .sizeBias = shadow_caster.extrusionBias / static_cast<float>(shadow_caster.resolution()),
     };
     cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(shader_params), &shader_params);
 
-    cmd_buf.drawIndexedIndirect(*gpu_data.drawCommands, 0, gpu_data.drawCommandCount, sizeof(vk::DrawIndexedIndirectCommand));
+    // cmd_buf.drawIndexedIndirect(*gpu_data.drawCommands, 0, gpu_data.drawCommandCount, sizeof(vk::DrawIndexedIndirectCommand));
+    cmd_buf.drawIndexedIndirectCount(
+            culled_commands, 0, culled_commands, culled_commands.size - 32, gpu_data.drawCommandCount,
+            sizeof(vk::DrawIndexedIndirectCommand)
+    );
 
     cmd_buf.endRendering();
 }

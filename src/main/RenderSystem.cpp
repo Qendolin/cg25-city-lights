@@ -102,7 +102,7 @@ void RenderSystem::draw(const RenderData &rd) {
 
     // Shadow pass
     for (auto &caster: rd.sunShadowCasterCascades) {
-        mShadowRenderer->execute(cmd_buf, rd.gltfScene, caster);
+        mShadowRenderer->execute(mContext->device(), desc_alloc, buf_alloc, cmd_buf, rd.gltfScene, *mFrustumCuller, caster);
     }
 
     // Main render pass

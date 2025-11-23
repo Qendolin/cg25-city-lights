@@ -89,7 +89,6 @@ void RenderSystem::recreate() {
         return fb;
     });
     mDescriptorAllocators.create(swapchain.imageCount(), [&] { return UniqueDescriptorAllocator(device); });
-    // I have no clue why, but without `* 2` I'm getting WRITE-AFTER-READ errors, that make no sense at all.
     mTransientBufferAllocators.create(swapchain.imageCount(), [&] {
         return UniqueTransientBufferAllocator(mContext->device(), mContext->allocator());
     });
@@ -100,8 +99,6 @@ void RenderSystem::draw(const RenderData &rd) {
     const auto &desc_alloc = mDescriptorAllocators.get();
     const auto &buf_alloc = mTransientBufferAllocators.get();
     const auto &swapchain = mContext->swapchain();
-
-    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
 
     // Framebuffer needs to be synced to swapchain, so get it explicitly
     Framebuffer &swapchain_fb = mSwapchainFramebuffers.get(swapchain.activeImageIndex());

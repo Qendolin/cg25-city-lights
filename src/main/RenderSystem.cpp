@@ -3,6 +3,7 @@
 #include "backend/Swapchain.h"
 #include "debug/Annotation.h"
 #include "entity/ShadowCaster.h"
+#include "util/globals.h"
 
 RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mImguiBackend = std::make_unique<ImGuiBackend>(
@@ -37,9 +38,13 @@ void RenderSystem::recreate() {
             mContext->allocator(), mContext->device(), vk::Format::eR16G16B16A16Sfloat,
             mContext->swapchain().area().extent, vk::ImageUsageFlagBits::eSampled
     );
+    util::setDebugName(device, mHdrColorAttachment.image(), "hdr_color_attachment_image");
+    util::setDebugName(device, mHdrColorAttachment.view(), "hdr_color_attachment_image_view");
     mHdrDepthAttachment = AttachmentImage(
             mContext->allocator(), mContext->device(), vk::Format::eD32Sfloat, mContext->swapchain().area().extent
     );
+    util::setDebugName(device, mHdrDepthAttachment.image(), "hdr_depth_attachment_image");
+    util::setDebugName(device, mHdrDepthAttachment.view(), "hdr_depth_attachment_image_view");
     mHdrFramebuffer = Framebuffer(mContext->swapchain().area());
     mHdrFramebuffer.depthAttachment = mHdrDepthAttachment;
     mHdrFramebuffer.colorAttachments = {mHdrColorAttachment};
@@ -53,20 +58,21 @@ void RenderSystem::recreate() {
     mSkyboxRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mFrustumCuller->recreate(device, mShaderLoader);
 
-    // These "need" to match the swapchain image count exactly
-    mSyncObjects.create(swapchain.imageCount(), [&] {
-        return SyncObjects{
+    // These have to match the max frames in flight count but an be more
+    mFramesInFlightSyncObjects.create(util::MaxFramesInFlight, [&] {
+        return FramesInFlightSyncObjects{
             .availableSemaphore = device.createSemaphoreUnique({}),
-            .finishedSemaphore = device.createSemaphoreUnique({}),
             .inFlightFence = device.createFenceUnique({.flags = vk::FenceCreateFlagBits::eSignaled}),
         };
     });
-    mCommandBuffers.create(swapchain.imageCount(), [&] (int i) {
-        auto buf = device
-                .allocateCommandBuffers(
-                        {.commandPool = cmd_pool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1}
-                )
-                .at(0);
+
+    // These have to match the swapchain image count exactly
+    mRenderFinishedSemaphores.create(swapchain.imageCount(), [&] { return device.createSemaphoreUnique({}); });
+    mCommandBuffers.create(swapchain.imageCount(), [&](int i) {
+        auto buf = device.allocateCommandBuffers({.commandPool = cmd_pool,
+                                                  .level = vk::CommandBufferLevel::ePrimary,
+                                                  .commandBufferCount = 1})
+                           .at(0);
         util::setDebugName(device, buf, std::format("per_frame_command_buffer_{}", i));
         return buf;
     });
@@ -79,6 +85,10 @@ void RenderSystem::recreate() {
             .extents = swapchain.extents(),
             .range = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
         }};
+        // Not a pretty solution :(
+        fb.colorAttachments[0].setBarrierState(
+                {.stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput, .access = vk::AccessFlagBits2::eMemoryRead}
+        );
         fb.depthAttachment = {
             .image = mContext->swapchain().depthImage(),
             .view = mContext->swapchain().depthView(),
@@ -86,6 +96,9 @@ void RenderSystem::recreate() {
             .extents = swapchain.extents(),
             .range = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
         };
+        fb.depthAttachment.setBarrierState(
+                {.stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput, .access = vk::AccessFlagBits2::eMemoryRead}
+        );
         return fb;
     });
     mDescriptorAllocators.create(swapchain.imageCount(), [&] { return UniqueDescriptorAllocator(device); });
@@ -138,6 +151,9 @@ void RenderSystem::draw(const RenderData &rd) {
     // ImGui render pass
     dbg_cmd_label_region.swap("ImGUI Pass");
     {
+        swapchain_fb.colorAttachments[0].barrier(
+                cmd_buf, ImageResourceAccess::ColorAttachmentLoad, ImageResourceAccess::ColorAttachmentWrite
+        );
         // temporarily change view to linear format to fix an ImGui issue.
         Framebuffer imgui_fb = swapchain_fb;
         imgui_fb.colorAttachments[0].view = swapchain.colorViewLinear();
@@ -153,7 +169,7 @@ void RenderSystem::draw(const RenderData &rd) {
 
 void RenderSystem::advance() {
     auto &swapchain = mContext->swapchain();
-    auto &sync_objects = mSyncObjects.next();
+    const auto &sync_objects = mFramesInFlightSyncObjects.next();
 
     while (mContext->device().waitForFences(*sync_objects.inFlightFence, true, UINT64_MAX) == vk::Result::eTimeout) {
     }
@@ -175,8 +191,10 @@ void RenderSystem::begin() {
 }
 
 void RenderSystem::submit() {
-    auto &cmd_buf = mCommandBuffers.get();
-    auto &sync_objects = mSyncObjects.get();
+    const auto &cmd_buf = mCommandBuffers.get();
+    const auto &sync_objects = mFramesInFlightSyncObjects.get();
+    // These must correspond to the active swapchain image index
+    const auto &render_finished_semaphore = mRenderFinishedSemaphores.get(mContext->swapchain().activeImageIndex());
 
     cmd_buf.end();
 
@@ -185,12 +203,12 @@ void RenderSystem::submit() {
                                          .setCommandBuffers(cmd_buf)
                                          .setWaitSemaphores(*sync_objects.availableSemaphore)
                                          .setWaitDstStageMask(pipe_stage_flags)
-                                         .setSignalSemaphores(*sync_objects.finishedSemaphore);
+                                         .setSignalSemaphores(*render_finished_semaphore);
 
     mContext->mainQueue->submit({submit_info}, *sync_objects.inFlightFence);
 
     if (!mContext->swapchain().present(
-                mContext->presentQueue, vk::PresentInfoKHR().setWaitSemaphores(*sync_objects.finishedSemaphore)
+                mContext->presentQueue, vk::PresentInfoKHR().setWaitSemaphores(*render_finished_semaphore)
         )) {
         recreate();
     }

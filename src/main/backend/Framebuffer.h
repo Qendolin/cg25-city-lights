@@ -32,6 +32,11 @@ struct Attachment : ImageResource {
     void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) const;
 
     /// <summary>
+    /// Sets the internal barrier state of the attachment.
+    /// </summary>
+    void setBarrierState(const ImageResourceAccess& last_access) const;
+
+    /// <summary>
     /// Checks if the attachment is valid (i.e., has a valid image and view).
     /// </summary>
     explicit operator bool() const { return image && view; }
@@ -65,14 +70,11 @@ public:
     AttachmentImage(const vma::Allocator &allocator, const vk::Device &device, vk::Format format, const vk::Extent2D& extent, vk::ImageUsageFlags usage_flags = {});
 
     operator Attachment() const { // NOLINT(*-explicit-constructor)
-        return {
-           .image = *mImage,
-           .view = *mView,
-           .format = mFormat,
-           .extents = mExtent,
-           .range = mRange
-        };
+        return {.image = *mImage, .view = *mView, .format = mFormat, .extents = mExtent, .range = mRange};
     }
+
+    [[nodiscard]] vk::Image image() const { return *mImage; }
+    [[nodiscard]] vk::ImageView view() const { return *mView; }
 
     /// <summary>
     /// Checks if the attachment is valid (i.e., has a valid image and view).

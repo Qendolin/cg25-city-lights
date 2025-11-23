@@ -12,12 +12,14 @@ struct ShadowCascade {
     float dimension;
 };
 
-// FIXME: Inline uniform block is too large!
 layout (std140, set = 1, binding = 0) uniform SceneUniforms {
     mat4 view;
     mat4 projection;
     vec4 camera;
     DirectionalLight sun;
-    ShadowCascade[SHADOW_CASCADE_COUNT] cascades;
     vec4 ambient;
 } uParams;
+
+layout (std140, set = 1, binding = 2) uniform ShadowCascadesUniforms {
+    ShadowCascade[SHADOW_CASCADE_COUNT] cascades;
+} uShadowCascades;

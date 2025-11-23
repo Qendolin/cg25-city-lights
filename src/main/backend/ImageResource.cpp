@@ -40,26 +40,37 @@ constexpr ImageResourceAccess ImageResourceAccess::FragmentShaderReadOptimal = {
     .layout = vk::ImageLayout::eReadOnlyOptimal
 };
 
+constexpr ImageResourceAccess ImageResourceAccess::ColorAttachmentLoad = {
+    .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+    .access = vk::AccessFlagBits2::eColorAttachmentRead,
+    .layout = vk::ImageLayout::eAttachmentOptimal
+};
+
 constexpr ImageResourceAccess ImageResourceAccess::ColorAttachmentWrite = {
     .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-    .access = vk::AccessFlagBits2::eColorAttachmentWrite,
+    // The "load" operation happens in the eColorAttachmentOutput stage and requires read access
+    .access = vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
     .layout = vk::ImageLayout::eAttachmentOptimal
 };
 
-constexpr ImageResourceAccess ImageResourceAccess::DepthAttachmentRead = {
-    .stage = vk::PipelineStageFlagBits2::eEarlyFragmentTests,
-    .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+constexpr ImageResourceAccess ImageResourceAccess::DepthAttachmentEarlyOps = {
+    // Visibility for the EFT does not imply visibility for the LFT (for example if the EFT is skipped), so it needs to be included explicitly
+    .stage = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+    // Testing involves read and write access. Also the "clear" op also writes during the EFT stage.
+    .access = vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
     .layout = vk::ImageLayout::eAttachmentOptimal
 };
 
-constexpr ImageResourceAccess ImageResourceAccess::DepthAttachmentWrite = {
-    .stage = vk::PipelineStageFlagBits2::eLateFragmentTests,
+constexpr ImageResourceAccess ImageResourceAccess::DepthAttachmentLateOps = {
+    // Depth writes can happen in both the EFT and LFT stage. So for visibility (tho not for execution) both need to be included
+    .stage = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+    // Don't need to include reads, because reads do not need to be made visible (execution ordering is enough).
     .access = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
     .layout = vk::ImageLayout::eAttachmentOptimal
 };
 
 constexpr ImageResourceAccess ImageResourceAccess::PresentSrc = {
-    .stage = vk::PipelineStageFlagBits2::eBottomOfPipe, .access = vk::AccessFlagBits2::eNone, .layout = vk::ImageLayout::ePresentSrcKHR
+    .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput, .access = vk::AccessFlagBits2::eMemoryRead, .layout = vk::ImageLayout::ePresentSrcKHR
 };
 
 void ImageResource::barrier(

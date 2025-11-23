@@ -33,7 +33,7 @@ BufferRef FrustumCuller::execute(
     util::setDebugName(device, output_draw_command_buffer.buffer, "culled_draw_commands");
     output_draw_command_buffer.barrier(
             cmd_buf,
-            BufferResourceAccess{.stage = vk::PipelineStageFlagBits2::eDrawIndirect, .access = vk::AccessFlagBits2::eIndirectCommandRead},
+            BufferResourceAccess::IndirectCommandRead,
             BufferResourceAccess::TransferWrite
     );
     // Count is placed at the end of the buffer

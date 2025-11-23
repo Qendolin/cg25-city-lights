@@ -12,6 +12,10 @@ void Attachment::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAc
     barrier(cmd_buf, single, single);
 }
 
+void Attachment::setBarrierState(const ImageResourceAccess &last_access) const {
+    mPrevAccess = last_access;
+}
+
 vk::Format Framebuffer::depthFormat() const { return depthAttachment.format; }
 
 vk::Viewport Framebuffer::viewport(bool flip_y) const {

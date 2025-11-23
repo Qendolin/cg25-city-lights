@@ -26,9 +26,8 @@ struct RenderData {
 
 class RenderSystem {
 
-    struct SyncObjects {
+    struct FramesInFlightSyncObjects {
         vk::UniqueSemaphore availableSemaphore;
-        vk::UniqueSemaphore finishedSemaphore;
         vk::UniqueFence inFlightFence;
     };
 
@@ -36,7 +35,9 @@ class RenderSystem {
 
     vk::UniqueCommandPool mCommandPool;
 
-    util::PerFrame<SyncObjects> mSyncObjects;
+
+    util::PerFrame<FramesInFlightSyncObjects> mFramesInFlightSyncObjects;
+    util::PerFrame<vk::UniqueSemaphore> mRenderFinishedSemaphores;
     util::PerFrame<vk::CommandBuffer> mCommandBuffers;
     util::PerFrame<Framebuffer> mSwapchainFramebuffers;
     util::PerFrame<UniqueDescriptorAllocator> mDescriptorAllocators;

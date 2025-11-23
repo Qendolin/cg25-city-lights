@@ -24,7 +24,7 @@ ShadowCaster::ShadowCaster(
     util::setDebugName(device, *mDepthImage, "shadow_depth_image");
     mDepthImageView = mDepthImage.createDefaultView(device);
 
-    util::setDebugName(device, *mDepthImage, "shadow_depth_image_view");
+    util::setDebugName(device, *mDepthImageView, "shadow_depth_image_view");
     mFramebuffer = Framebuffer{vk::Extent2D{resolution, resolution}};
     mFramebuffer.depthAttachment = {
         .image = *mDepthImage,

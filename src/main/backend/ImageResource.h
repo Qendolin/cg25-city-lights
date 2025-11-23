@@ -1,6 +1,5 @@
 #pragma once
 
-#include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 #include <vulkan/vulkan.hpp>
 
 /// <summary>
@@ -21,9 +20,10 @@ struct ImageResourceAccess {
     static const ImageResourceAccess ComputeShaderReadGeneral;
     static const ImageResourceAccess ComputeShaderReadOptimal;
     static const ImageResourceAccess FragmentShaderReadOptimal;
+    static const ImageResourceAccess ColorAttachmentLoad;
     static const ImageResourceAccess ColorAttachmentWrite;
-    static const ImageResourceAccess DepthAttachmentWrite;
-    static const ImageResourceAccess DepthAttachmentRead;
+    static const ImageResourceAccess DepthAttachmentLateOps;
+    static const ImageResourceAccess DepthAttachmentEarlyOps;
     static const ImageResourceAccess PresentSrc;
 };
 

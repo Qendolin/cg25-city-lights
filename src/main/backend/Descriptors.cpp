@@ -38,12 +38,12 @@ struct DescriptorAllocatorImpl {
             return pool;
         }
 
-        std::vector<vk::DescriptorPoolSize> sizes = {
-            {vk::DescriptorType::eUniformBuffer, 1024},
-            {vk::DescriptorType::eCombinedImageSampler, 1024},
-            {vk::DescriptorType::eStorageBuffer, 1024},
-            {vk::DescriptorType::eStorageImage, 1024},
-            {vk::DescriptorType::eInlineUniformBlock, 1024}
+        std::array sizes = {
+            vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 1024},
+            vk::DescriptorPoolSize{vk::DescriptorType::eCombinedImageSampler, 1024},
+            vk::DescriptorPoolSize{vk::DescriptorType::eStorageBuffer, 1024},
+            vk::DescriptorPoolSize{vk::DescriptorType::eStorageImage, 1024},
+            vk::DescriptorPoolSize{vk::DescriptorType::eInlineUniformBlock, 1024}
         };
 
         vk::DescriptorPoolInlineUniformBlockCreateInfo inlineUniformInfo{};

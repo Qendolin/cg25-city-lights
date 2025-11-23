@@ -39,17 +39,14 @@ void PbrSceneRenderer::execute(
         const Framebuffer &fb,
         const Camera &camera,
         const scene::GpuData &gpu_data,
-        const FrustumCuller& frustum_culler,
+        const FrustumCuller &frustum_culler,
         const DirectionalLight &sun_light,
         std::span<ShadowCaster> sun_shadow_cascades,
         const glm::vec3 &ambient_light
 ) {
     util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
 
-    Logger::check(
-            sun_shadow_cascades.size() == ShaderParamsInlineUniformBlock{}.cascades.size(),
-            "Shadow cascade size doesn't match"
-    );
+    Logger::check(sun_shadow_cascades.size() == Settings::SHADOW_CASCADE_COUNT, "Shadow cascade size doesn't match");
 
     // Culling
     util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Culling");
@@ -70,8 +67,8 @@ void PbrSceneRenderer::execute(
         culled_commands.barrier(cmd_buf, BufferResourceAccess::IndirectCommandRead);
     }
 
-    // Rendering
-    dbg_cmd_label_region.swap("Rendering");
+    // Descriptor Update
+    dbg_cmd_label_region.swap("Descriptor Update");
 
     ShaderParamsInlineUniformBlock uniform_block = {
         .view = camera.viewMatrix(),
@@ -84,11 +81,13 @@ void PbrSceneRenderer::execute(
                 },
         .ambient = glm::vec4(ambient_light, 1.0),
     };
-    for (size_t i = 0; i < uniform_block.cascades.size(); i++) {
+
+    std::array<ShadowCascadeUniformBlock, Settings::SHADOW_CASCADE_COUNT> shadow_cascade_uniform_blocks;
+    for (size_t i = 0; i < sun_shadow_cascades.size(); i++) {
         const auto &cascade = sun_shadow_cascades[i];
         // Divide by resolution to help keep the bias resolution independent
         float normal_bias = cascade.normalBias / static_cast<float>(cascade.resolution());
-        uniform_block.cascades[i] = {
+        shadow_cascade_uniform_blocks[i] = {
             .projectionView = cascade.projectionMatrix() * cascade.viewMatrix(),
             .sampleBias = cascade.sampleBias,
             .sampleBiasClamp = cascade.sampleBiasClamp,
@@ -97,11 +96,23 @@ void PbrSceneRenderer::execute(
         };
     }
 
+    BufferRef shadow_cascade_uniform_buffer = buf_alloc.allocate(
+            sun_shadow_cascades.size_bytes(), vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst
+    );
+    util::setDebugName(device, shadow_cascade_uniform_buffer.buffer, "shadow_cascades_uniform_buffer");
+    shadow_cascade_uniform_buffer.barrier(cmd_buf, BufferResourceAccess::TransferWrite);
+    cmd_buf.updateBuffer(shadow_cascade_uniform_buffer.buffer, 0, sizeof(shadow_cascade_uniform_blocks), shadow_cascade_uniform_blocks.data());
+    shadow_cascade_uniform_buffer.barrier(cmd_buf, BufferResourceAccess::GraphicsShaderUniformRead);
+
     auto descriptor_set = desc_alloc.allocate(mShaderParamsDescriptorLayout);
     device.updateDescriptorSets(
-            descriptor_set.write(
-                    ShaderParamsDescriptorLayout::SceneUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
-            ),
+            {descriptor_set.write(
+                     ShaderParamsDescriptorLayout::SceneUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
+             ),
+             descriptor_set.write(
+                     ShaderParamsDescriptorLayout::ShadowCascadeUniforms,
+                     {.buffer = shadow_cascade_uniform_buffer, .offset = 0, .range = vk::WholeSize}
+             )},
             {}
     );
     for (size_t i = 0; i < sun_shadow_cascades.size(); i++) {
@@ -120,6 +131,15 @@ void PbrSceneRenderer::execute(
         sun_shadow_cascades[i].framebuffer().depthAttachment.barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
     }
 
+    // Rendering
+    dbg_cmd_label_region.swap("Rendering");
+
+    fb.colorAttachments[0].barrier(
+            cmd_buf, ImageResourceAccess::ColorAttachmentLoad, ImageResourceAccess::ColorAttachmentWrite
+    );
+    fb.depthAttachment.barrier(
+            cmd_buf, ImageResourceAccess::DepthAttachmentEarlyOps, ImageResourceAccess::DepthAttachmentLateOps
+    );
 
     cmd_buf.beginRendering(fb.renderingInfo({
         .enabledColorAttachments = {true},

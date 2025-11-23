@@ -96,7 +96,7 @@ float microShadowNaughtyDog(float ao, float n_dot_l) {
 }
 
 float sampleShadow(vec3 P_shadow_ndc, float n_dot_l, int index) {
-    ShadowCascade cascade = uParams.cascades[index];
+    ShadowCascade cascade = uShadowCascades.cascades[index];
     vec2 texel_size = vec2(1.0) / textureSize(uSunShadowMaps[index], 0).xy;
     // z is seperate because we are using 0..1 depth
     vec3 shadow_uvz = vec3(P_shadow_ndc.xy * 0.5 + 0.5, P_shadow_ndc.z);
@@ -217,7 +217,7 @@ void main() {
 
     int shadow_index = 0;
     for (int i = SHADOW_CASCADE_COUNT - 1; i >= 0; i--) {
-        if (distance_vs < uParams.cascades[i].dimension * 0.5f) {
+        if (distance_vs < uShadowCascades.cascades[i].dimension * 0.5f) {
             shadow_index = i;
         }
     }

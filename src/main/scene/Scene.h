@@ -59,6 +59,7 @@ namespace scene {
         vma::UniqueAllocation spotLightsAlloc;
 
         SceneDescriptorLayout sceneDescriptorLayout = {};
+        vk::UniqueDescriptorPool sceneDescriptorPool = {};
         DescriptorSet sceneDescriptor = {};
 
         uint32_t drawCommandCount = 0;
@@ -119,8 +120,7 @@ namespace scene {
                 const vk::Device &device,
                 const vk::PhysicalDevice &physical_device,
                 const DeviceQueue &transferQueue,
-                const DeviceQueue &graphicsQueue,
-                const DescriptorAllocator& descriptor_allocator
+                const DeviceQueue &graphicsQueue
         );
 
         /// <summary>
@@ -140,6 +140,5 @@ namespace scene {
         vk::PhysicalDevice mPhysicalDevice;
         DeviceQueue mTransferQueue;
         DeviceQueue mGraphicsQueue;
-        DescriptorAllocator mDescriptorAllocator;
     };
 } // namespace scene

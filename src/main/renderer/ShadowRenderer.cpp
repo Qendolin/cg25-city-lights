@@ -33,7 +33,7 @@ void ShadowRenderer::execute(
     // Rendering
     dbg_cmd_label_region.swap("Rendering");
 
-    shadow_caster.framebuffer().depthAttachment.barrier(cmd_buf, ImageResourceAccess::DepthAttachmentWrite);
+    shadow_caster.framebuffer().depthAttachment.barrier(cmd_buf, ImageResourceAccess::DepthAttachmentEarlyOps, ImageResourceAccess::DepthAttachmentLateOps);
 
     const Framebuffer &fb = shadow_caster.framebuffer();
     cmd_buf.beginRendering(fb.renderingInfo({

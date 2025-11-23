@@ -57,7 +57,8 @@ void Swapchain::create() {
             .getSurfaceCapabilities2KHR(surface_capabilities_query.get<vk::PhysicalDeviceSurfaceInfo2KHR>())
             .surfaceCapabilities;
 
-    uint32_t swapchain_image_count = util::MaxFramesInFlight;
+    // +1 avoids stalls when cpu and gpu are fast and waiting on the monitor
+    uint32_t swapchain_image_count = util::MaxFramesInFlight + 1;
     if (surface_capabilities.maxImageCount > 0)
         swapchain_image_count = std::min(swapchain_image_count, surface_capabilities.maxImageCount);
     swapchain_image_count = std::max(swapchain_image_count, surface_capabilities.minImageCount);
@@ -136,7 +137,7 @@ void Swapchain::create() {
         .format = vk::Format::eD32Sfloat,
         .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
     });
-    util::setDebugName(mDevice, *mDepthImage, "swapchain_depth_image_view");
+    util::setDebugName(mDevice, *mDepthImageView, "swapchain_depth_image_view");
 
     mInvalid = false;
 }

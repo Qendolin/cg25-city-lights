@@ -5,7 +5,6 @@
 #include "../backend/ShaderCompiler.h"
 #include "../debug/Annotation.h"
 #include "../debug/Settings.h"
-#include "../util/globals.h"
 #include "../util/math.h"
 
 FinalizeRenderer::~FinalizeRenderer() = default;

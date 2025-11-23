@@ -40,6 +40,12 @@ constexpr BufferResourceAccess BufferResourceAccess::IndirectCommandRead = {
     .access = vk::AccessFlagBits2::eIndirectCommandRead,
 };
 
+constexpr BufferResourceAccess BufferResourceAccess::GraphicsShaderUniformRead = {
+    .stage = vk::PipelineStageFlagBits2::eAllGraphics,
+    .access = vk::AccessFlagBits2::eUniformRead,
+};
+
+
 void BufferResource::barrier(
         vk::Buffer buffer,
         size_t offset,

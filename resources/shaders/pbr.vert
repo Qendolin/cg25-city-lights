@@ -52,9 +52,9 @@ void main() {
 
     for(int i = 0; i < SHADOW_CASCADE_COUNT; i++) {
         out_shadow_position_ndc[i] = shadowSamplePosition(
-            uParams.cascades[i].projectionView,
+            uShadowCascades.cascades[i].projectionView,
             out_position_ws,
             N,
-            uParams.cascades[i].normalBias);
+            uShadowCascades.cascades[i].normalBias);
     }
 }

@@ -25,19 +25,19 @@ public:
             glm::vec4 radiance;
             glm::vec4 direction;
         };
-        struct alignas(16) ShadowCascade {
-            glm::mat4 projectionView;
-            float sampleBias;
-            float sampleBiasClamp;
-            float normalBias;
-            float dimension;
-        };
         glm::mat4 view;
         glm::mat4 projection;
         glm::vec4 camera; // Padded to 16 bytes
         DirectionalLight sun;
-        std::array<ShadowCascade, Settings::SHADOW_CASCADE_COUNT> cascades;
         glm::vec4 ambient;
+    };
+
+    struct alignas(16) ShadowCascadeUniformBlock {
+        glm::mat4 projectionView;
+        float sampleBias;
+        float sampleBiasClamp;
+        float normalBias;
+        float dimension;
     };
 
     struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
@@ -47,11 +47,14 @@ public:
         static constexpr CombinedImageSamplerBinding SunShadowMap{
             1, vk::ShaderStageFlagBits::eFragment, Settings::SHADOW_CASCADE_COUNT
         };
+        static constexpr UniformBufferBinding ShadowCascadeUniforms{
+            2, vk::ShaderStageFlagBits::eAllGraphics
+        };
 
         ShaderParamsDescriptorLayout() = default;
 
         explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
-            create(device, {}, SceneUniforms, SunShadowMap);
+            create(device, {}, SceneUniforms, SunShadowMap, ShadowCascadeUniforms);
             util::setDebugName(device, vk::DescriptorSetLayout(*this), "pbr_scene_renderer_descriptor_layout");
         }
     };
@@ -60,7 +63,7 @@ public:
     bool enableCulling = true;
 
     ~PbrSceneRenderer();
-    PbrSceneRenderer(const vk::Device &device);
+    explicit PbrSceneRenderer(const vk::Device &device);
 
     void recreate(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &fb);
 

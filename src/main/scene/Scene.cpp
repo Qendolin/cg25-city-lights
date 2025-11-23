@@ -19,16 +19,14 @@ namespace scene {
             const vk::Device &device,
             const vk::PhysicalDevice &physical_device,
             const DeviceQueue &transferQueue,
-            const DeviceQueue &graphicsQueue,
-            const DescriptorAllocator &descriptor_allocator
+            const DeviceQueue &graphicsQueue
     )
         : mLoader(loader),
           mAllocator(allocator),
           mDevice(device),
           mPhysicalDevice(physical_device),
           mTransferQueue(transferQueue),
-          mGraphicsQueue(graphicsQueue),
-          mDescriptorAllocator(descriptor_allocator) {}
+          mGraphicsQueue(graphicsQueue) {}
 
     Scene Loader::load(const std::filesystem::path &path) const {
         auto gltf_scene = mLoader->load(path);
@@ -72,9 +70,26 @@ namespace scene {
         GpuData result;
         StagingBuffer staging = {mAllocator, mDevice, *transfer_cmd_pool};
 
-        result.sceneDescriptorLayout = SceneDescriptorLayout(mDevice);
-        result.sceneDescriptor = mDescriptorAllocator.allocate(result.sceneDescriptorLayout);
-        util::setDebugName(mDevice, vk::DescriptorSet(result.sceneDescriptor), "scene_descriptor_set");
+        {
+            result.sceneDescriptorLayout = SceneDescriptorLayout(mDevice);
+            // Bindless gets it's own pool because of it's pool size requirements
+            std::array pool_sizes = {
+                vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 1024},
+                vk::DescriptorPoolSize{vk::DescriptorType::eCombinedImageSampler, 65536},
+                vk::DescriptorPoolSize{vk::DescriptorType::eStorageBuffer, 1024},
+            };
+            result.sceneDescriptorPool = mDevice.createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{
+                .maxSets = 1,
+            }
+                                                                                    .setPoolSizes(pool_sizes));
+            util::setDebugName(mDevice, *result.sceneDescriptorPool, "scene_descriptor_pool");
+
+            vk::DescriptorSetLayout vk_layout = result.sceneDescriptorLayout;
+            result.sceneDescriptor = DescriptorSet(mDevice.allocateDescriptorSets(
+                    {.descriptorPool = *result.sceneDescriptorPool, .descriptorSetCount = 1, .pSetLayouts = &vk_layout}
+            )[0]);
+            util::setDebugName(mDevice, vk::DescriptorSet(result.sceneDescriptor), "scene_descriptor_set");
+        }
 
         float max_anisotropy = mPhysicalDevice.getProperties().limits.maxSamplerAnisotropy;
         result.sampler = mDevice.createSamplerUnique(
@@ -160,6 +175,25 @@ namespace scene {
                 staging.upload(scene_data.index_data, vk::BufferUsageFlagBits::eIndexBuffer);
         util::setDebugName(mDevice, *result.indices, "scene_vertex_indices");
 
+        std::vector<InstanceBlock> instance_blocks;
+        instance_blocks.reserve(std::ranges::count_if(scene_data.nodes, [](const auto &node) {
+            return node.mesh != UINT32_MAX;
+        }));
+        // maps node index to instance index
+        std::vector<glm::uint> node_instance_map(scene_data.nodes.size());
+        for (size_t i = 0; i < scene_data.nodes.size(); i++) {
+            const auto& node = scene_data.nodes[i];
+            if (node.mesh == UINT32_MAX) {
+                node_instance_map[i] = UINT32_MAX;
+                continue;
+            }
+            node_instance_map[i] = instance_blocks.size();
+            instance_blocks.emplace_back() = {.transform = node.transform};
+        }
+        std::tie(result.instances, result.instancesAlloc) =
+                staging.upload(instance_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
+        util::setDebugName(mDevice, *result.instances, "scene_instances");
+
         std::vector<SectionBlock> section_blocks;
         section_blocks.reserve(scene_data.sections.size());
         std::vector<vk::DrawIndexedIndirectCommand> draw_commands;
@@ -175,10 +209,15 @@ namespace scene {
                 .vertexOffset = section.vertexOffset,
                 .firstInstance = static_cast<uint32_t>(i),
             };
-            section_blocks.emplace_back() = {.instance = section.node, .material = section.material};
+            section_blocks.emplace_back() = {.instance = node_instance_map[section.node], .material = section.material};
             const auto &bounds = scene_data.bounds[section.bounds];
             bounding_box_blocks.emplace_back() = {.min = glm::vec4(bounds.min, 0.0f), .max = glm::vec4(bounds.max, 0.0f)};
         }
+        std::tie(result.drawCommands, result.drawCommandsAlloc) = staging.upload(
+                draw_commands, vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eStorageBuffer
+        );
+        util::setDebugName(mDevice, *result.drawCommands, "scene_draw_commands");
+        result.drawCommandCount = static_cast<uint32_t>(draw_commands.size());
         std::tie(result.sections, result.sectionsAlloc) =
                 staging.upload(section_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
         util::setDebugName(mDevice, *result.sections, "scene_sections");
@@ -186,23 +225,6 @@ namespace scene {
                 staging.upload(bounding_box_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
         util::setDebugName(mDevice, *result.boundingBoxes, "scene_bounding_boxes");
 
-        std::vector<InstanceBlock> instance_blocks;
-        instance_blocks.reserve(std::ranges::count_if(scene_data.nodes, [](const auto &node) {
-            return node.mesh != UINT32_MAX;
-        }));
-        for (const auto &node: scene_data.nodes) {
-            if (node.mesh == UINT32_MAX)
-                continue;
-            instance_blocks.emplace_back() = {.transform = node.transform};
-        }
-        std::tie(result.instances, result.instancesAlloc) =
-                staging.upload(instance_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
-        util::setDebugName(mDevice, *result.instances, "scene_instances");
-        std::tie(result.drawCommands, result.drawCommandsAlloc) = staging.upload(
-                draw_commands, vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eStorageBuffer
-        );
-        util::setDebugName(mDevice, *result.drawCommands, "scene_draw_commands");
-        result.drawCommandCount = static_cast<uint32_t>(draw_commands.size());
 
         std::vector<MaterialBlock> material_blocks;
         material_blocks.reserve(scene_data.materials.size());

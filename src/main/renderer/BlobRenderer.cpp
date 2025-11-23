@@ -127,6 +127,10 @@ void BlobRenderer::renderVertices(
 ) {
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *mGraphicsPipeline.pipeline);
 
+    mGraphicsPipeline.config.viewports = {{framebuffer.viewport(true)}};
+    mGraphicsPipeline.config.scissors = {{framebuffer.area()}};
+    mGraphicsPipeline.config.apply(commandBuffer);
+
     VertexFragmentPushConstant push{};
     glm::mat4 ModelMatrix = blobModel.getModelMatrix();
     push.projectionViewModel = camera.projectionMatrix() * camera.viewMatrix() * ModelMatrix;
@@ -146,11 +150,6 @@ void BlobRenderer::renderVertices(
         .depthLoadOp = vk::AttachmentLoadOp::eLoad,
     }));
 
-    mGraphicsPipeline.config.viewports = {{framebuffer.viewport(true)}};
-    mGraphicsPipeline.config.scissors = {{framebuffer.area()}};
-    mGraphicsPipeline.config.apply(commandBuffer);
-
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *mGraphicsPipeline.pipeline);
     commandBuffer.bindVertexBuffers(0, {blobModel.getVertexBuffer()}, {0});
     commandBuffer.drawIndirect(blobModel.getIndirectDrawBuffer(), 0, 1, sizeof(vk::DrawIndirectCommand));
     commandBuffer.endRendering();

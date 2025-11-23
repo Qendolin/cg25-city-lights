@@ -3,6 +3,7 @@
 #include <glm/mat4x4.hpp>
 
 #include "../backend/Descriptors.h"
+#include "../debug/Annotation.h"
 
 // Storage buffers use std430 layout alignment rules:
 // scalar = 4
@@ -78,6 +79,7 @@ namespace scene {
         explicit SceneDescriptorLayout(const vk::Device &device) {
             create(device, {}, SectionBuffer, InstanceBuffer, MaterialBuffer, ImageSamplers, PointLightBuffer,
                    SpotLightBuffer, BoundingBoxBuffer);
+            util::setDebugName(device, vk::DescriptorSetLayout(*this), "scene_descriptor_layout");
         }
     };
 } // namespace scene

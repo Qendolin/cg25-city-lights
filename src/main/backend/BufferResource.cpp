@@ -20,6 +20,21 @@ constexpr BufferResourceAccess BufferResourceAccess::ComputeShaderRead = {
     .access = vk::AccessFlagBits2::eShaderRead,
 };
 
+constexpr BufferResourceAccess BufferResourceAccess::ComputeShaderStorageRead = {
+    .stage = vk::PipelineStageFlagBits2::eComputeShader,
+    .access = vk::AccessFlagBits2::eShaderStorageRead,
+};
+
+constexpr BufferResourceAccess BufferResourceAccess::ComputeShaderStorageWrite = {
+    .stage = vk::PipelineStageFlagBits2::eComputeShader,
+    .access = vk::AccessFlagBits2::eShaderStorageWrite,
+};
+
+constexpr BufferResourceAccess BufferResourceAccess::ComputeShaderStorageReadWrite = {
+    .stage = vk::PipelineStageFlagBits2::eComputeShader,
+    .access = vk::AccessFlagBits2::eShaderStorageWrite | vk::AccessFlagBits2::eShaderStorageRead,
+};
+
 constexpr BufferResourceAccess BufferResourceAccess::IndirectCommandRead = {
     .stage = vk::PipelineStageFlagBits2::eDrawIndirect,
     .access = vk::AccessFlagBits2::eIndirectCommandRead,

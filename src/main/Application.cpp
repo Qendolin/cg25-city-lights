@@ -120,7 +120,7 @@ void Application::init() {
 
     renderSystem->recreate();
 
-    blobModel = std::make_unique<blob::Model>(context->allocator(), BLOB_RESOLUTION);
+    blobModel = std::make_unique<blob::Model>(context->allocator(), context->device(), BLOB_RESOLUTION);
 
     const std::array<std::string, 6> skyboxImageFilenames{"resources/skybox/px.hdr", "resources/skybox/nx.hdr",
                                                           "resources/skybox/py.hdr", "resources/skybox/ny.hdr",

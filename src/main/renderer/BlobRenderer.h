@@ -7,6 +7,7 @@
 #include "../backend/Pipeline.h"
 #include "../backend/ShaderCompiler.h"
 #include "../blob/Model.h"
+#include "../debug/Annotation.h"
 #include "../entity/Camera.h"
 
 class BlobRenderer {
@@ -19,6 +20,7 @@ public:
 
         explicit ComputeDescriptorLayout(const vk::Device &device) {
             create(device, {}, VERTICES_BINDING, INDIRECT_DRAW_BINDING);
+            util::setDebugName(device, vk::DescriptorSetLayout(*this), "blob_renderer_compute_descriptor_layout");
         }
     };
 

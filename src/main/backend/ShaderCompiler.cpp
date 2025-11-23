@@ -6,6 +6,7 @@
 #include <utility>
 #include <vulkan/vulkan.hpp>
 
+#include "../debug/Annotation.h"
 #include "../util/Logger.h"
 
 
@@ -161,6 +162,7 @@ UniqueCompiledShaderStage ShaderLoader::loadFromSource(const vk::Device& device,
         .pCode = code.data()
     };
     vk::UniqueShaderModule module = device.createShaderModuleUnique(create_info);
+    util::setDebugName(device, *module, path.filename().string());
     return {path.filename().string(), stage, std::move(module)};
 }
 
@@ -186,5 +188,6 @@ UniqueCompiledShaderStage ShaderLoader::loadFromBinary(const vk::Device& device,
         .pCode = reinterpret_cast<const uint32_t *>(code.data())
     };
     vk::UniqueShaderModule module = device.createShaderModuleUnique(create_info);
+    util::setDebugName(device, *module, path.filename().string());
     return {path.filename().string(), stage, std::move(module)};
 }

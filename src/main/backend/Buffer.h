@@ -154,7 +154,7 @@ protected:
 class UniqueTransientBufferAllocator : public TransientBufferAllocator {
 public:
     UniqueTransientBufferAllocator() = default;
-    UniqueTransientBufferAllocator(vma::Allocator allocator, vk::DeviceSize capacity = 64 * 1024 * 1024);
+    UniqueTransientBufferAllocator(const vk::Device &device, const vma::Allocator &allocator, vk::DeviceSize capacity = 64 * 1024 * 1024);
     ~UniqueTransientBufferAllocator();
 
     UniqueTransientBufferAllocator(UniqueTransientBufferAllocator&& other) noexcept;

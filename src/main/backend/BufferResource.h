@@ -17,6 +17,9 @@ struct BufferResourceAccess {
     static const BufferResourceAccess TransferRead;
     static const BufferResourceAccess ComputeShaderWrite;
     static const BufferResourceAccess ComputeShaderRead;
+    static const BufferResourceAccess ComputeShaderStorageWrite;
+    static const BufferResourceAccess ComputeShaderStorageRead;
+    static const BufferResourceAccess ComputeShaderStorageReadWrite;
     static const BufferResourceAccess IndirectCommandRead;
 };
 

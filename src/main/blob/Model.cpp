@@ -1,14 +1,17 @@
 #include "Model.h"
 
 #include <glm/gtc/matrix_transform.hpp>
-
 #include <iostream>
+
+#include "../debug/Annotation.h"
 
 namespace blob {
 
-    Model::Model(const vma::Allocator &allocator, int resolution) : allocator{allocator}, resolution{resolution} {
+    Model::Model(const vma::Allocator &allocator, const vk::Device& device, int resolution) : allocator{allocator}, resolution{resolution} {
         createVertexBuffer();
+        util::setDebugName(device, vertexBuffer, "blob_vertex_buffer");
         createIndirectDrawBuffer();
+        util::setDebugName(device, indirectDrawBuffer, "blob_indirect_draw_buffer");
         modelMatrix = glm::translate(modelMatrix, {0.f, 1.f, 1.5f});
     }
 

@@ -29,7 +29,7 @@ namespace blob {
         float time = 0.f;
 
     public:
-        Model(const vma::Allocator &allocator, int resolution);
+        Model(const vma::Allocator &allocator, const vk::Device& device, int resolution);
         ~Model();
 
         Model(const Model &) = delete;

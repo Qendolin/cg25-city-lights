@@ -1,6 +1,7 @@
 #include "RenderSystem.h"
 
 #include "backend/Swapchain.h"
+#include "debug/Annotation.h"
 #include "entity/ShadowCaster.h"
 
 RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
@@ -60,12 +61,14 @@ void RenderSystem::recreate() {
             .inFlightFence = device.createFenceUnique({.flags = vk::FenceCreateFlagBits::eSignaled}),
         };
     });
-    mCommandBuffers.create(swapchain.imageCount(), [&] {
-        return device
+    mCommandBuffers.create(swapchain.imageCount(), [&] (int i) {
+        auto buf = device
                 .allocateCommandBuffers(
                         {.commandPool = cmd_pool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1}
                 )
                 .at(0);
+        util::setDebugName(device, buf, std::format("per_frame_command_buffer_{}", i));
+        return buf;
     });
     mSwapchainFramebuffers.create(swapchain.imageCount(), [&](int i) {
         auto fb = Framebuffer(swapchain.area());
@@ -86,8 +89,9 @@ void RenderSystem::recreate() {
         return fb;
     });
     mDescriptorAllocators.create(swapchain.imageCount(), [&] { return UniqueDescriptorAllocator(device); });
+    // I have no clue why, but without `* 2` I'm getting WRITE-AFTER-READ errors, that make no sense at all.
     mTransientBufferAllocators.create(swapchain.imageCount(), [&] {
-        return UniqueTransientBufferAllocator(mContext->allocator());
+        return UniqueTransientBufferAllocator(mContext->device(), mContext->allocator());
     });
 }
 
@@ -97,15 +101,19 @@ void RenderSystem::draw(const RenderData &rd) {
     const auto &buf_alloc = mTransientBufferAllocators.get();
     const auto &swapchain = mContext->swapchain();
 
+    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
+
     // Framebuffer needs to be synced to swapchain, so get it explicitly
     Framebuffer &swapchain_fb = mSwapchainFramebuffers.get(swapchain.activeImageIndex());
 
     // Shadow pass
+    util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Shadow Pass");
     for (auto &caster: rd.sunShadowCasterCascades) {
         mShadowRenderer->execute(mContext->device(), desc_alloc, buf_alloc, cmd_buf, rd.gltfScene, *mFrustumCuller, caster);
     }
 
     // Main render pass
+    dbg_cmd_label_region.swap("Main Pass");
     mPbrSceneRenderer->enableCulling = rd.settings.rendering.enableFrustumCulling;
     mPbrSceneRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
     mPbrSceneRenderer->execute(
@@ -114,20 +122,24 @@ void RenderSystem::draw(const RenderData &rd) {
     );
 
     // Blob render pass
+    dbg_cmd_label_region.swap("Blob Pass");
     mBlobRenderer->execute(mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.blobModel);
 
     // Skybox render pass (render late to reduce overdraw)
+    dbg_cmd_label_region.swap("Skybox Pass");
     mSkyboxRenderer->execute(
             mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.skybox, rd.settings.sky.exposure
     );
 
     // Post-processing pass
+    dbg_cmd_label_region.swap("Post-Process Pass");
     mFinalizeRenderer->execute(
             mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer.colorAttachments[0],
             swapchain_fb.colorAttachments[0], rd.settings.agx
     );
 
     // ImGui render pass
+    dbg_cmd_label_region.swap("ImGUI Pass");
     {
         // temporarily change view to linear format to fix an ImGui issue.
         Framebuffer imgui_fb = swapchain_fb;
@@ -136,6 +148,8 @@ void RenderSystem::draw(const RenderData &rd) {
         mImguiBackend->render(cmd_buf);
         cmd_buf.endRendering();
     }
+
+    dbg_cmd_label_region.end();
 
     swapchain_fb.colorAttachments[0].barrier(cmd_buf, ImageResourceAccess::PresentSrc);
 }
@@ -146,11 +160,10 @@ void RenderSystem::advance() {
 
     while (mContext->device().waitForFences(*sync_objects.inFlightFence, true, UINT64_MAX) == vk::Result::eTimeout) {
     }
+    mContext->device().resetFences(*sync_objects.inFlightFence);
 
     if (!swapchain.advance(*sync_objects.availableSemaphore)) {
         recreate();
-        // Swapchain was re-created, skip this frame
-        return;
     }
 
     mCommandBuffers.next();
@@ -177,7 +190,6 @@ void RenderSystem::submit() {
                                          .setWaitDstStageMask(pipe_stage_flags)
                                          .setSignalSemaphores(*sync_objects.finishedSemaphore);
 
-    mContext->device().resetFences(*sync_objects.inFlightFence);
     mContext->mainQueue->submit({submit_info}, *sync_objects.inFlightFence);
 
     if (!mContext->swapchain().present(

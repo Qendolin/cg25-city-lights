@@ -4,6 +4,7 @@
 #include <glm/ext/matrix_transform.hpp>
 
 #include "../blob/VertexData.h"
+#include "../debug/Annotation.h"
 #include "../util/globals.h"
 #include "../util/math.h"
 
@@ -60,6 +61,8 @@ void BlobRenderer::createGraphicsPipeline_(
 }
 
 void BlobRenderer::computeVertices(const vk::Device &device, const DescriptorAllocator &allocator, const vk::CommandBuffer &commandBuffer, const blob::Model &blobModel) {
+    util::ScopedCommandLabel dbg_cmd_label_func(commandBuffer);
+
     DescriptorSet set = allocator.allocate(mComputeDescriptorLayout);
 
     vk::DescriptorBufferInfo vertexBufferInfo{
@@ -125,6 +128,8 @@ void BlobRenderer::computeVertices(const vk::Device &device, const DescriptorAll
 void BlobRenderer::renderVertices(
         const vk::CommandBuffer &commandBuffer, const Framebuffer &framebuffer, const Camera &camera, const blob::Model &blobModel
 ) {
+    util::ScopedCommandLabel dbg_cmd_label_func(commandBuffer);
+
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *mGraphicsPipeline.pipeline);
 
     mGraphicsPipeline.config.viewports = {{framebuffer.viewport(true)}};

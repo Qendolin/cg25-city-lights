@@ -1,6 +1,7 @@
 #include "SkyboxRenderer.h"
 
 #include "../backend/ShaderCompiler.h"
+#include "../debug/Annotation.h"
 
 SkyboxRenderer::SkyboxRenderer(const vk::Device &device) {
     mShaderParamsDescriptorLayout = ShaderParamsDescriptorLayout(device);
@@ -25,13 +26,15 @@ SkyboxRenderer::~SkyboxRenderer() {}
 void SkyboxRenderer::execute(
         const vk::Device &device,
         const DescriptorAllocator &allocator,
-        const vk::CommandBuffer &commandBuffer,
+        const vk::CommandBuffer &cmd_buf,
         const Framebuffer &framebuffer,
         const Camera &camera,
         const Cubemap &skybox,
         float exposure
 ) {
-    commandBuffer.beginRendering(framebuffer.renderingInfo({
+    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
+
+    cmd_buf.beginRendering(framebuffer.renderingInfo({
         .enabledColorAttachments = {true},
         .enableDepthAttachment = true,
         .enableStencilAttachment = false,
@@ -43,15 +46,15 @@ void SkyboxRenderer::execute(
 
     mPipeline.config.viewports = {{framebuffer.viewport(true)}};
     mPipeline.config.scissors = {{framebuffer.area()}};
-    mPipeline.config.apply(commandBuffer);
+    mPipeline.config.apply(cmd_buf);
 
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *mPipeline.pipeline);
+    cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics, *mPipeline.pipeline);
 
     ShaderParamsPushConstants push{};
     push.projViewNoTranslation = camera.projectionMatrix() * glm::mat4(glm::mat3(camera.viewMatrix()));
     push.brightness = exp2(exposure);
 
-    commandBuffer.pushConstants(
+    cmd_buf.pushConstants(
             *mPipeline.layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(ShaderParamsPushConstants), &push
     );
 
@@ -66,12 +69,12 @@ void SkyboxRenderer::execute(
             {descriptor_set.write(ShaderParamsDescriptorLayout::SamplerCubeMap, descriptorImageInfo)}, {}
     );
 
-    commandBuffer.bindDescriptorSets(
+    cmd_buf.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0, {descriptor_set}, {}
     );
 
-    commandBuffer.draw(SKYBOX_VERTEX_COUNT, 1, 0, 0);
-    commandBuffer.endRendering();
+    cmd_buf.draw(SKYBOX_VERTEX_COUNT, 1, 0, 0);
+    cmd_buf.endRendering();
 }
 
 void SkyboxRenderer::createPipeline(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer) {

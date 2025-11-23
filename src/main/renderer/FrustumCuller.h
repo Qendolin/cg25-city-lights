@@ -6,6 +6,7 @@
 #include "../backend/Buffer.h"
 #include "../backend/Descriptors.h"
 #include "../backend/Pipeline.h"
+#include "../debug/Annotation.h"
 
 class TransientBufferAllocator;
 namespace scene {
@@ -26,6 +27,7 @@ public:
 
         explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
             create(device, {}, InputDrawCommandBuffer, OutputDrawCommandBuffer, DrawCommandCountBuffer);
+            util::setDebugName(device, vk::DescriptorSetLayout(*this), "frustum_culler_descriptor_layout");
         }
     };
 
@@ -34,7 +36,7 @@ public:
     };
 
     ~FrustumCuller();
-    FrustumCuller(const vk::Device &device);
+    explicit FrustumCuller(const vk::Device &device);
 
 
     void recreate(const vk::Device &device, const ShaderLoader &shader_loader) {

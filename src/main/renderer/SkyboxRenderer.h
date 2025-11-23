@@ -5,6 +5,7 @@
 #include "../backend/Descriptors.h"
 #include "../backend/Framebuffer.h"
 #include "../backend/Pipeline.h"
+#include "../debug/Annotation.h"
 #include "../entity/Camera.h"
 #include "../entity/Cubemap.h"
 #include "../util/PerFrame.h"
@@ -21,7 +22,10 @@ public:
 
         ShaderParamsDescriptorLayout() = default;
 
-        explicit ShaderParamsDescriptorLayout(const vk::Device &device) { create(device, {}, SamplerCubeMap); }
+        explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
+            create(device, {}, SamplerCubeMap);
+            util::setDebugName(device, vk::DescriptorSetLayout(*this), "skybox_renderer_descriptor_layout");
+        }
     };
 
     struct ShaderParamsPushConstants {
@@ -47,7 +51,7 @@ public:
     void execute(
             const vk::Device &device,
             const DescriptorAllocator &allocator,
-            const vk::CommandBuffer &commandBuffer,
+            const vk::CommandBuffer &cmd_buf,
             const Framebuffer &framebuffer,
             const Camera &camera,
             const Cubemap &skybox,

@@ -1,6 +1,7 @@
 #include "Scene.h"
 
 #include "../backend/StagingBuffer.h"
+#include "../debug/Annotation.h"
 #include "Gltf.h"
 #include "gpu_types.h"
 
@@ -73,6 +74,7 @@ namespace scene {
 
         result.sceneDescriptorLayout = SceneDescriptorLayout(mDevice);
         result.sceneDescriptor = mDescriptorAllocator.allocate(result.sceneDescriptorLayout);
+        util::setDebugName(mDevice, vk::DescriptorSet(result.sceneDescriptor), "scene_descriptor_set");
 
         float max_anisotropy = mPhysicalDevice.getProperties().limits.maxSamplerAnisotropy;
         result.sampler = mDevice.createSamplerUnique(
@@ -84,6 +86,7 @@ namespace scene {
                  .maxLod = vk::LodClampNone,
                  .borderColor = vk::BorderColor::eFloatOpaqueBlack}
         );
+        util::setDebugName(mDevice, *result.sampler, "scene_sampler");
 
         result.images.reserve(scene_data.images.size());
         result.views.reserve(scene_data.images.size());
@@ -103,6 +106,8 @@ namespace scene {
 
             Image &image = result.images.emplace_back();
             image = Image::create(staging.allocator(), create_info);
+            util::setDebugName(mDevice, *image, "scene_image");
+
             vk::Buffer staged_buffer = staging.stage(image_data.pixels);
             image.load(staging.commands(), 0, {}, staged_buffer);
             image.transfer(staging.commands(), graphics_cmds, mTransferQueue, mGraphicsQueue);
@@ -111,6 +116,7 @@ namespace scene {
 
             vk::UniqueImageView &view = result.views.emplace_back();
             view = image.createDefaultView(mDevice);
+            util::setDebugName(mDevice, *view, "scene_image_view");
 
             mDevice.updateDescriptorSets(
                     {result.sceneDescriptor.write(
@@ -140,14 +146,19 @@ namespace scene {
 
         std::tie(result.positions, result.positionsAlloc) =
                 staging.upload(scene_data.vertex_position_data, vk::BufferUsageFlagBits::eVertexBuffer);
+        util::setDebugName(mDevice, *result.positions, "scene_vertex_positions");
         std::tie(result.normals, result.normalsAlloc) =
                 staging.upload(scene_data.vertex_normal_data, vk::BufferUsageFlagBits::eVertexBuffer);
+        util::setDebugName(mDevice, *result.normals, "scene_vertex_normals");
         std::tie(result.tangents, result.tangentsAlloc) =
                 staging.upload(scene_data.vertex_tangent_data, vk::BufferUsageFlagBits::eVertexBuffer);
+        util::setDebugName(mDevice, *result.tangents, "scene_vertex_tangents");
         std::tie(result.texcoords, result.texcoordsAlloc) =
                 staging.upload(scene_data.vertex_texcoord_data, vk::BufferUsageFlagBits::eVertexBuffer);
+        util::setDebugName(mDevice, *result.texcoords, "scene_vertex_texcoords");
         std::tie(result.indices, result.indicesAlloc) =
                 staging.upload(scene_data.index_data, vk::BufferUsageFlagBits::eIndexBuffer);
+        util::setDebugName(mDevice, *result.indices, "scene_vertex_indices");
 
         std::vector<SectionBlock> section_blocks;
         section_blocks.reserve(scene_data.sections.size());
@@ -170,8 +181,10 @@ namespace scene {
         }
         std::tie(result.sections, result.sectionsAlloc) =
                 staging.upload(section_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
+        util::setDebugName(mDevice, *result.sections, "scene_sections");
         std::tie(result.boundingBoxes, result.boundingBoxesAlloc) =
                 staging.upload(bounding_box_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
+        util::setDebugName(mDevice, *result.boundingBoxes, "scene_bounding_boxes");
 
         std::vector<InstanceBlock> instance_blocks;
         instance_blocks.reserve(std::ranges::count_if(scene_data.nodes, [](const auto &node) {
@@ -184,9 +197,11 @@ namespace scene {
         }
         std::tie(result.instances, result.instancesAlloc) =
                 staging.upload(instance_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
+        util::setDebugName(mDevice, *result.instances, "scene_instances");
         std::tie(result.drawCommands, result.drawCommandsAlloc) = staging.upload(
                 draw_commands, vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eStorageBuffer
         );
+        util::setDebugName(mDevice, *result.drawCommands, "scene_draw_commands");
         result.drawCommandCount = static_cast<uint32_t>(draw_commands.size());
 
         std::vector<MaterialBlock> material_blocks;
@@ -204,6 +219,7 @@ namespace scene {
         }
         std::tie(result.materials, result.materialsAlloc) =
                 staging.upload(material_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
+        util::setDebugName(mDevice, *result.materials, "scene_materials");
 
         std::vector<PointLightBlock> point_light_blocks;
         point_light_blocks.reserve(scene_data.pointLights.size());
@@ -215,6 +231,7 @@ namespace scene {
         }
         std::tie(result.pointLights, result.pointLightsAlloc) =
                 staging.upload(point_light_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
+        util::setDebugName(mDevice, *result.pointLights, "scene_point_lights");
 
         std::vector<SpotLightBlock> spot_light_blocks;
         spot_light_blocks.reserve(scene_data.spotLights.size());
@@ -233,6 +250,7 @@ namespace scene {
         }
         std::tie(result.spotLights, result.spotLightsAlloc) =
                 staging.upload(spot_light_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
+        util::setDebugName(mDevice, *result.spotLights, "scene_spot_lights");
 
         mDevice.updateDescriptorSets(
                 {

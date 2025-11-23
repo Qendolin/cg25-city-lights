@@ -3,6 +3,7 @@
 #include <GLFW/glfw3.h>
 #include <algorithm>
 
+#include "../debug/Annotation.h"
 #include "../util/Logger.h"
 #include "../util/globals.h"
 
@@ -94,6 +95,8 @@ void Swapchain::create() {
     mSwapchainImages = mDevice.getSwapchainImagesKHR(*mSwapchain);
 
     for (const auto &swapchain_image: mSwapchainImages) {
+        util::setDebugName(mDevice, swapchain_image, "swapchain_image");
+
         vk::ImageViewCreateInfo image_view_create_info = {
             .image = swapchain_image,
             .viewType = vk::ImageViewType::e2D,
@@ -108,7 +111,8 @@ void Swapchain::create() {
                 .layerCount = 1,
             },
         };
-        mSwapchainImageViewsUnorm.emplace_back(mDevice.createImageViewUnique(image_view_create_info));
+        const auto& view = mSwapchainImageViewsUnorm.emplace_back(mDevice.createImageViewUnique(image_view_create_info));
+        util::setDebugName(mDevice, *view, "swapchain_image_view");
     }
 
     std::tie(mDepthImage, mDepthImageAllocation) = mAllocator.createImageUnique(
@@ -124,6 +128,7 @@ void Swapchain::create() {
             .usage = vma::MemoryUsage::eAutoPreferDevice,
             .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
         });
+    util::setDebugName(mDevice, *mDepthImage, "swapchain_depth_image");
 
     mDepthImageView = mDevice.createImageViewUnique({
         .image = *mDepthImage,
@@ -131,6 +136,7 @@ void Swapchain::create() {
         .format = vk::Format::eD32Sfloat,
         .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
     });
+    util::setDebugName(mDevice, *mDepthImage, "swapchain_depth_image_view");
 
     mInvalid = false;
 }
@@ -156,13 +162,13 @@ bool Swapchain::advance(const vk::Semaphore &image_available_semaphore) {
     }
 
     try {
-        auto image_acquistion_result =
+        auto image_acquisition_result =
                 mDevice.acquireNextImageKHR(*mSwapchain, UINT64_MAX, image_available_semaphore, nullptr);
-        if (image_acquistion_result.result == vk::Result::eSuboptimalKHR) {
+        if (image_acquisition_result.result == vk::Result::eSuboptimalKHR) {
             Logger::debug("Swapchain may need recreation: VK_SUBOPTIMAL_KHR");
             invalidate();
         }
-        mActiveImageIndex = image_acquistion_result.value;
+        mActiveImageIndex = image_acquisition_result.value;
     } catch (const vk::OutOfDateKHRError &) {
         Logger::debug("Swapchain needs recreation: VK_ERROR_OUT_OF_DATE_KHR");
         invalidate();

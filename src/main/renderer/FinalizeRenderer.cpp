@@ -3,6 +3,7 @@
 #include "../backend/Framebuffer.h"
 #include "../backend/Pipeline.h"
 #include "../backend/ShaderCompiler.h"
+#include "../debug/Annotation.h"
 #include "../debug/Settings.h"
 #include "../util/globals.h"
 #include "../util/math.h"
@@ -35,6 +36,7 @@ void FinalizeRenderer::execute(
         const Attachment &sdr_attachment,
         const Settings::AgXParams &agx_params
 ) {
+    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
 
     hdr_attachment.barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
     sdr_attachment.barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);

@@ -52,6 +52,7 @@ public:
 
         explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
             create(device, {}, SceneUniforms, SunShadowMap);
+            util::setDebugName(device, vk::DescriptorSetLayout(*this), "pbr_scene_renderer_descriptor_layout");
         }
     };
 

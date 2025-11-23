@@ -3,6 +3,8 @@
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
 
+#include "../debug/Annotation.h"
+
 
 ShadowCaster::ShadowCaster(
         const vk::Device &device, const vma::Allocator &allocator, uint32_t resolution, float dimension, float start, float end
@@ -19,7 +21,10 @@ ShadowCaster::ShadowCaster(
                 .mipLevels = 1,
             }
     );
+    util::setDebugName(device, *mDepthImage, "shadow_depth_image");
     mDepthImageView = mDepthImage.createDefaultView(device);
+
+    util::setDebugName(device, *mDepthImage, "shadow_depth_image_view");
     mFramebuffer = Framebuffer{vk::Extent2D{resolution, resolution}};
     mFramebuffer.depthAttachment = {
         .image = *mDepthImage,

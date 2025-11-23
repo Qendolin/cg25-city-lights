@@ -4,6 +4,7 @@
 
 #include "../backend/Framebuffer.h"
 #include "../backend/ShaderCompiler.h"
+#include "../debug/Annotation.h"
 #include "../entity/Camera.h"
 #include "../entity/Light.h"
 #include "../entity/ShadowCaster.h"
@@ -43,6 +44,7 @@ void PbrSceneRenderer::execute(
         std::span<ShadowCaster> sun_shadow_cascades,
         const glm::vec3 &ambient_light
 ) {
+    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
 
     Logger::check(
             sun_shadow_cascades.size() == ShaderParamsInlineUniformBlock{}.cascades.size(),
@@ -50,6 +52,7 @@ void PbrSceneRenderer::execute(
     );
 
     // Culling
+    util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Culling");
 
     glm::mat4 frustum_matrix = camera.projectionMatrix() * camera.viewMatrix();
     if (pauseCulling) {
@@ -68,6 +71,7 @@ void PbrSceneRenderer::execute(
     }
 
     // Rendering
+    dbg_cmd_label_region.swap("Rendering");
 
     ShaderParamsInlineUniformBlock uniform_block = {
         .view = camera.viewMatrix(),
@@ -149,8 +153,6 @@ void PbrSceneRenderer::execute(
                 *gpu_data.drawCommands, 0, gpu_data.drawCommandCount, sizeof(vk::DrawIndexedIndirectCommand)
         );
     }
-
-
     cmd_buf.endRendering();
 }
 

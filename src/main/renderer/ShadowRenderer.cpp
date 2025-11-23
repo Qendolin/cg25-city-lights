@@ -4,6 +4,7 @@
 #include <glm/ext/matrix_transform.hpp>
 
 #include "../backend/ShaderCompiler.h"
+#include "../debug/Annotation.h"
 #include "../entity/ShadowCaster.h"
 #include "../scene/Scene.h"
 
@@ -20,14 +21,17 @@ void ShadowRenderer::execute(
         const FrustumCuller &frustum_culler,
         const ShadowCaster &shadow_caster
 ) {
+    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
 
     // Culling
+    util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Culling");
 
     glm::mat4 frustum_matrix = shadow_caster.projectionMatrix() * shadow_caster.viewMatrix();
     BufferRef culled_commands = frustum_culler.execute(device, desc_alloc, buf_alloc, cmd_buf, gpu_data, frustum_matrix);
     culled_commands.barrier(cmd_buf, BufferResourceAccess::IndirectCommandRead);
 
     // Rendering
+    dbg_cmd_label_region.swap("Rendering");
 
     shadow_caster.framebuffer().depthAttachment.barrier(cmd_buf, ImageResourceAccess::DepthAttachmentWrite);
 
@@ -61,7 +65,6 @@ void ShadowRenderer::execute(
     };
     cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(shader_params), &shader_params);
 
-    // cmd_buf.drawIndexedIndirect(*gpu_data.drawCommands, 0, gpu_data.drawCommandCount, sizeof(vk::DrawIndexedIndirectCommand));
     cmd_buf.drawIndexedIndirectCount(
             culled_commands, 0, culled_commands, culled_commands.size - 32, gpu_data.drawCommandCount,
             sizeof(vk::DrawIndexedIndirectCommand)

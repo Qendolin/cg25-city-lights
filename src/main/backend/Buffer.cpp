@@ -1,5 +1,6 @@
 #include "Buffer.h"
 
+#include "../debug/Annotation.h"
 #include "../util/Logger.h"
 #include "../util/math.h"
 
@@ -48,6 +49,7 @@ void BufferRef::transfer(vk::CommandBuffer src_cmd_buf, vk::CommandBuffer dst_cm
 }
 
 struct TransientBufferAllocatorImpl {
+    vk::Device mDevice;
     vma::Allocator mAllocator;
 
     vk::Buffer mBackingBuffer;
@@ -62,8 +64,8 @@ struct TransientBufferAllocatorImpl {
     };
     std::vector<Dedicated> mDedicated;
 
-    TransientBufferAllocatorImpl(vma::Allocator allocator, vk::DeviceSize capacity)
-        : mAllocator(allocator), mTotalSize(capacity) {
+    TransientBufferAllocatorImpl(const vk::Device& device, const vma::Allocator& allocator, vk::DeviceSize capacity)
+        : mDevice(device), mAllocator(allocator), mTotalSize(capacity) {
 
         vk::BufferCreateInfo bufInfo = {};
         bufInfo.size = capacity;
@@ -76,6 +78,8 @@ struct TransientBufferAllocatorImpl {
         allocInfo.flags = vma::AllocationCreateFlagBits::eCanAlias;
 
         std::tie(mBackingBuffer, mBackingAlloc) = mAllocator.createBuffer(bufInfo, allocInfo);
+        allocator.setAllocationName(mBackingAlloc, "transient_buffer_allocator_backing_allocation");
+        util::setDebugName(mDevice, mBackingBuffer, "transient_buffer_allocator_backing_buffer");
         mAliases.reserve(64);
     }
 
@@ -110,6 +114,7 @@ BufferRef TransientBufferAllocator::allocate(vk::DeviceSize size, vk::BufferUsag
 
         auto [buf, alloc] = mImpl->mAllocator.createBuffer(bufInfo, allocInfo);
         mImpl->mDedicated.push_back({buf, alloc});
+        util::setDebugName(mImpl->mDevice, buf, "transient_buffer_dedicated_buffer");
         return BufferRef(buf, size);
     }
 
@@ -119,6 +124,7 @@ BufferRef TransientBufferAllocator::allocate(vk::DeviceSize size, vk::BufferUsag
     info.usage = usage;
 
     vk::Buffer alias = mImpl->mAllocator.createAliasingBuffer2(mImpl->mBackingAlloc, alignedOffset, info);
+    util::setDebugName(mImpl->mDevice, alias, "transient_buffer_aliased_buffer");
 
     mImpl->mAliases.push_back(alias);
     mImpl->mCurrentOffset = alignedOffset + size;
@@ -140,8 +146,8 @@ void TransientBufferAllocator::reset() {
     mImpl->mDedicated.clear();
 }
 
-UniqueTransientBufferAllocator::UniqueTransientBufferAllocator(vma::Allocator allocator, vk::DeviceSize capacity) {
-    mImpl = new TransientBufferAllocatorImpl(allocator, capacity);
+UniqueTransientBufferAllocator::UniqueTransientBufferAllocator(const vk::Device& device, const vma::Allocator& allocator, vk::DeviceSize capacity) {
+    mImpl = new TransientBufferAllocatorImpl(device, allocator, capacity);
 }
 
 UniqueTransientBufferAllocator::~UniqueTransientBufferAllocator() { delete mImpl; }

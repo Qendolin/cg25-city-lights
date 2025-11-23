@@ -1,6 +1,7 @@
 #pragma once
 #include "../backend/Descriptors.h"
 #include "../backend/Pipeline.h"
+#include "../debug/Annotation.h"
 #include "../debug/Settings.h"
 
 struct Attachment;
@@ -18,7 +19,10 @@ public:
 
         ShaderParamsDescriptorLayout() = default;
 
-        explicit ShaderParamsDescriptorLayout(const vk::Device &device) { create(device, {}, InColor, OutColor); }
+        explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
+            create(device, {}, InColor, OutColor);
+            util::setDebugName(device, vk::DescriptorSetLayout(*this), "finalize_renderer_descriptor_layout");
+        }
     };
 
     ~FinalizeRenderer();

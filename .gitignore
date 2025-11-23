@@ -24,6 +24,7 @@ vcpkg_installed/**
 
 # Build
 _build/
+_release/
 
 # CLion
 .idea

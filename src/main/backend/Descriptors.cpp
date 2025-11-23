@@ -43,12 +43,17 @@ struct DescriptorAllocatorImpl {
             {vk::DescriptorType::eCombinedImageSampler, 1024},
             {vk::DescriptorType::eStorageBuffer, 1024},
             {vk::DescriptorType::eStorageImage, 1024},
+            {vk::DescriptorType::eInlineUniformBlock, 1024}
         };
 
-        vk::DescriptorPoolCreateInfo info = {};
+        vk::DescriptorPoolInlineUniformBlockCreateInfo inlineUniformInfo{};
+        inlineUniformInfo.maxInlineUniformBlockBindings = 1024;
+
+        vk::DescriptorPoolCreateInfo info{};
         info.maxSets = 1024;
         info.poolSizeCount = static_cast<uint32_t>(sizes.size());
         info.pPoolSizes = sizes.data();
+        info.pNext = &inlineUniformInfo;
 
         return mDevice.createDescriptorPool(info);
     }

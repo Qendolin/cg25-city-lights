@@ -93,6 +93,8 @@ void Application::init() {
 
     // imgui must be initialized after input
     input = std::make_unique<glfw::Input>(context->window());
+    if (glfwRawMouseMotionSupported())
+        glfwSetInputMode(context->window(), GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
 
     renderSystem = std::make_unique<RenderSystem>(context.get());
 

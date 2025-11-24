@@ -41,8 +41,8 @@ void PbrSceneRenderer::execute(
         const scene::GpuData &gpu_data,
         const FrustumCuller &frustum_culler,
         const DirectionalLight &sun_light,
-        std::span<ShadowCaster> sun_shadow_cascades,
-        const glm::vec3 &ambient_light
+        std::span<const CascadedShadowCaster> sun_shadow_cascades,
+        const Settings &settings
 ) {
     util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
 
@@ -79,20 +79,20 @@ void PbrSceneRenderer::execute(
                     .radiance = glm::vec4{sun_light.radiance(), 0.0},
                     .direction = glm::vec4{sun_light.direction(), 0.0},
                 },
-        .ambient = glm::vec4(ambient_light, 1.0),
+        .ambient = glm::vec4(settings.rendering.ambient, 1.0),
     };
 
-    std::array<ShadowCascadeUniformBlock, Settings::SHADOW_CASCADE_COUNT> shadow_cascade_uniform_blocks;
+    std::array<ShadowCascadeUniformBlock, Settings::SHADOW_CASCADE_COUNT> shadow_cascade_uniform_blocks = {};
     for (size_t i = 0; i < sun_shadow_cascades.size(); i++) {
         const auto &cascade = sun_shadow_cascades[i];
         // Divide by resolution to help keep the bias resolution independent
         float normal_bias = cascade.normalBias / static_cast<float>(cascade.resolution());
         shadow_cascade_uniform_blocks[i] = {
-            .projectionView = cascade.projectionMatrix() * cascade.viewMatrix(),
+            .projectionView = cascade.projectionMatrix * cascade.viewMatrix,
             .sampleBias = cascade.sampleBias,
             .sampleBiasClamp = cascade.sampleBiasClamp,
             .normalBias = normal_bias,
-            .dimension = cascade.dimension
+            .distance = cascade.distance
         };
     }
 
@@ -101,7 +101,10 @@ void PbrSceneRenderer::execute(
     );
     util::setDebugName(device, shadow_cascade_uniform_buffer.buffer, "shadow_cascades_uniform_buffer");
     shadow_cascade_uniform_buffer.barrier(cmd_buf, BufferResourceAccess::TransferWrite);
-    cmd_buf.updateBuffer(shadow_cascade_uniform_buffer.buffer, 0, sizeof(shadow_cascade_uniform_blocks), shadow_cascade_uniform_blocks.data());
+    cmd_buf.updateBuffer(
+            shadow_cascade_uniform_buffer.buffer, 0, sizeof(shadow_cascade_uniform_blocks),
+            shadow_cascade_uniform_blocks.data()
+    );
     shadow_cascade_uniform_buffer.barrier(cmd_buf, BufferResourceAccess::GraphicsShaderUniformRead);
 
     auto descriptor_set = desc_alloc.allocate(mShaderParamsDescriptorLayout);
@@ -162,6 +165,8 @@ void PbrSceneRenderer::execute(
     cmd_buf.bindVertexBuffers(
             0, {*gpu_data.positions, *gpu_data.normals, *gpu_data.tangents, *gpu_data.texcoords}, {0, 0, 0, 0}
     );
+    ShaderPushConstants push_constants = {.flags = {.visualize = settings.shadowCascade.visualize}};
+    cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eAllGraphics, 0, sizeof(push_constants), &push_constants);
 
     if (enableCulling) {
         cmd_buf.drawIndexedIndirectCount(
@@ -200,7 +205,9 @@ void PbrSceneRenderer::createPipeline(const vk::Device &device, const ShaderLoad
                             },
                 },
         .descriptorSetLayouts = {scene_descriptor_layout, mShaderParamsDescriptorLayout},
-        .pushConstants = {},
+        .pushConstants = {vk::PushConstantRange{
+            .stageFlags = vk::ShaderStageFlagBits::eAllGraphics, .offset = 0, .size = sizeof(ShaderPushConstants)
+        }},
         .attachments =
                 {
                     .colorFormats = fb.colorFormats(),

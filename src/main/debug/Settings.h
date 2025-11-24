@@ -12,21 +12,24 @@ struct Settings {
         float exposure = 1.49f;
     } sky;
     struct Shadow {
-        int resolution = 2048;
-        float dimension = 20.0f;
-        float start = -1000.0f;
-        float end = 1000.0f;
         float extrusionBias = -0.5f;
         float normalBias = 7.0f;
         float sampleBias = 0.1f;
         float sampleBiasClamp = 0.02f;
         float depthBiasConstant = 0.0f;
-        float depthBiasClamp = 0.0f;
         float depthBiasSlope = -2.5f;
+        float depthBiasClamp = 0.0f;
 
         void applyTo(ShadowCaster &caster) const;
     };
     std::array<Shadow, SHADOW_CASCADE_COUNT> shadowCascades;
+    struct ShadowCascade {
+        float lambda = 0.9f;
+        float distance = 64.0f;
+        const int resolution = 2048;
+        bool visualize = false;
+    } shadowCascade;
+
     struct AgXParams {
         float ev_min = -12.47393f;
         float ev_max = 4.026069f;
@@ -44,16 +47,13 @@ struct Settings {
 
     Settings() {
         shadowCascades[0] = {
-            .dimension = 12,
-            .extrusionBias = 0.0f,
-            .normalBias = 0.0f,
-            .sampleBiasClamp = 0.05f,
-            .depthBiasSlope = 0.0f,
+            .extrusionBias = -0.5f,
+            .normalBias = 20.0f,
+            .sampleBias = 0.01f,
+            .sampleBiasClamp = 0.01f,
+            .depthBiasConstant = 0.0f,
+            .depthBiasSlope = -1.0f,
         };
-        shadowCascades[1].dimension = 24;
-        shadowCascades[2].dimension = 48;
-        shadowCascades[3].dimension = 128;
-        shadowCascades[4].dimension = 256;
     }
 };
 

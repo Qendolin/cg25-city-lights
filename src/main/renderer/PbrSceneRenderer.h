@@ -8,6 +8,7 @@
 #include "FrustumCuller.h"
 
 
+class CascadedShadowCaster;
 class FrustumCuller;
 class ShadowCaster;
 struct DirectionalLight;
@@ -32,12 +33,24 @@ public:
         glm::vec4 ambient;
     };
 
+    struct alignas(4) ShaderPushConstants {
+        union FlagsUnion {
+            uint32_t raw_value;
+
+            struct {
+                unsigned int visualize: 1;
+                unsigned int unused: 31;
+            };
+        } flags;
+    };
+
+
     struct alignas(16) ShadowCascadeUniformBlock {
         glm::mat4 projectionView;
         float sampleBias;
         float sampleBiasClamp;
         float normalBias;
-        float dimension;
+        float distance;
     };
 
     struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
@@ -77,8 +90,8 @@ public:
             const scene::GpuData &gpu_data,
             const FrustumCuller &frustum_culler,
             const DirectionalLight &sun_light,
-            std::span<ShadowCaster> sun_shadow_cascades,
-            const glm::vec3 &ambient_light
+            std::span<const CascadedShadowCaster> sun_shadow_cascades,
+            const Settings& settings
     );
 
 private:

@@ -9,7 +9,7 @@ struct ShadowCascade {
     float sampleBias;
     float sampleBiasClamp;
     float normalBias;
-    float dimension;
+    float splitDistance;
 };
 
 layout (std140, set = 1, binding = 0) uniform SceneUniforms {
@@ -23,3 +23,8 @@ layout (std140, set = 1, binding = 0) uniform SceneUniforms {
 layout (std140, set = 1, binding = 2) uniform ShadowCascadesUniforms {
     ShadowCascade[SHADOW_CASCADE_COUNT] cascades;
 } uShadowCascades;
+
+layout (push_constant) uniform ShaderPushConstants
+{
+    uint flags;
+} cParams;

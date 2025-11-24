@@ -4,6 +4,8 @@
 
 #include "debug/Settings.h"
 
+
+class ShadowCascade;
 class RenderSystem;
 class FinalizeRenderer;
 class ShadowCaster;
@@ -44,7 +46,7 @@ class Application {
     std::unique_ptr<glfw::Input> input;
     std::unique_ptr<Camera> camera;
     std::unique_ptr<scene::Scene> scene;
-    std::vector<ShadowCaster> sunShadowCasterCascades;
+    std::unique_ptr<ShadowCascade> sunShadowCascade;
 
     Settings settings = {};
     std::unique_ptr<SettingsGui> settingsGui;

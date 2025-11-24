@@ -23,22 +23,27 @@ void SettingsGui::draw(Settings &settings) {
         SliderFloat("Power", &settings.sun.power, 0, 50);
         PopID();
     }
-    for (size_t i = 0; i < settings.shadowCascades.size(); i++) {
-        if (CollapsingHeader(std::format("Shadow Cascade {}", i).c_str())) {
-            PushID(std::format("shadow_{}", i).c_str());
-            auto& cascade = settings.shadowCascades[i];
-            DragFloat("Dimension", &cascade.dimension);
-            DragFloat("Start", &cascade.start);
-            DragFloat("End", &cascade.end);
-            SliderFloat("Extrusion Bias", &cascade.extrusionBias, -10, 10);
-            DragFloat("Normal Bias", &cascade.normalBias);
-            SliderFloat("Sample Bias", &cascade.sampleBias, 0.0f, 10.0f);
-            SliderFloat("Sample Bias Clamp", &cascade.sampleBiasClamp, 0.0f, 1.0f, "%.5f");
-            DragFloat("Depth Bias Const", &cascade.depthBiasConstant);
-            SliderFloat("Depth Bias Slope", &cascade.depthBiasSlope, -2.5f, 2.5f, "%.5f");
-            SliderFloat("Depth Bias Clamp", &cascade.depthBiasClamp, 0.0f, 0.1f, "%.5f");
-            PopID();
+
+    if (CollapsingHeader("Shadows")) {
+        Checkbox("Visualize", &settings.shadowCascade.visualize);
+        SliderFloat("Split Lambda", &settings.shadowCascade.lambda, 0.0f, 1.0f);
+        DragFloat("Distance", &settings.shadowCascade.distance);
+        Indent();
+        for (size_t i = 0; i < settings.shadowCascades.size(); i++) {
+            if (CollapsingHeader(std::format("Shadow Cascade {}", i).c_str())) {
+                PushID(std::format("shadow_{}", i).c_str());
+                auto &cascade = settings.shadowCascades[i];
+                SliderFloat("Extrusion Bias", &cascade.extrusionBias, -10, 10);
+                DragFloat("Normal Bias", &cascade.normalBias);
+                SliderFloat("Sample Bias", &cascade.sampleBias, 0.0f, 10.0f);
+                SliderFloat("Sample Bias Clamp", &cascade.sampleBiasClamp, 0.0f, 1.0f, "%.5f");
+                DragFloat("Depth Bias Const", &cascade.depthBiasConstant);
+                SliderFloat("Depth Bias Slope", &cascade.depthBiasSlope, -2.5f, 2.5f, "%.5f");
+                SliderFloat("Depth Bias Clamp", &cascade.depthBiasClamp, 0.0f, 0.1f, "%.5f");
+                PopID();
+            }
         }
+        Unindent();
     }
 
     if (CollapsingHeader("Tonemap")) {

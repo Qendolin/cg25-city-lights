@@ -102,20 +102,15 @@ void Application::init() {
 
     gltf::Loader gltf_loader = {};
     scene::Loader scene_loader = {
-        &gltf_loader,
-        context->allocator(),
-        context->device(),
-        context->physicalDevice(),
-        context->transferQueue,
-        context->mainQueue,
+        &gltf_loader,           context->allocator(), context->device(), context->physicalDevice(),
+        context->transferQueue, context->mainQueue,
     };
 
     scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/CityTest.glb")));
-    for (const auto &config: settings.shadowCascades) {
-        sunShadowCasterCascades.emplace_back(
-                context->device(), context->allocator(), config.resolution, config.dimension, config.start, config.end
-        );
-    }
+    sunShadowCascade = std::make_unique<ShadowCascade>(
+            context->device(), context->allocator(), settings.shadowCascade.resolution, Settings::SHADOW_CASCADE_COUNT
+    );
+
     camera = std::make_unique<Camera>(glm::radians(90.0f), 0.001f, glm::vec3{0, 1, 5}, glm::vec3{});
     debugFrameTimes = std::make_unique<FrameTimes>();
 
@@ -145,12 +140,11 @@ void Application::run() {
 
         camera->setViewport(context->swapchain().width(), context->swapchain().height());
 
-        // Should probably move this somewhere else
-        for (size_t i = 0; i < sunShadowCasterCascades.size(); i++) {
-            auto &caster = sunShadowCasterCascades[i];
-            const auto &config = settings.shadowCascades[i];
-            caster.lookAt(camera->position, -settings.sun.direction());
-            config.applyTo(caster);
+        sunShadowCascade->lambda = settings.shadowCascade.lambda;
+        sunShadowCascade->distance = settings.shadowCascade.distance;
+        sunShadowCascade->update(camera->fov(), camera->aspect(), camera->viewMatrix(), -settings.sun.direction());
+        for (size_t i = 0; i < settings.shadowCascades.size(); i++) {
+            settings.shadowCascades[i].applyTo(sunShadowCascade->cascades()[i]);
         }
 
         blobModel->advanceTime(input->timeDelta());
@@ -158,7 +152,7 @@ void Application::run() {
         renderSystem->draw({
             .gltfScene = scene->gpu(),
             .camera = *camera,
-            .sunShadowCasterCascades = sunShadowCasterCascades,
+            .sunShadowCasterCascade = *sunShadowCascade,
             .sunLight = settings.sun,
             .settings = settings,
             .blobModel = *blobModel,

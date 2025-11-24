@@ -14,10 +14,12 @@
 #include "renderer/SkyboxRenderer.h"
 #include "util/PerFrame.h"
 
+
+class ShadowCascade;
 struct RenderData {
     const scene::GpuData &gltfScene;
     const Camera &camera;
-    std::span<ShadowCaster> sunShadowCasterCascades;
+    const ShadowCascade& sunShadowCasterCascade;
     const DirectionalLight &sunLight;
     const Settings &settings;
     const blob::Model &blobModel;

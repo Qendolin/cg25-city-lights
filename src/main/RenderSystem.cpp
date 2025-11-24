@@ -118,7 +118,7 @@ void RenderSystem::draw(const RenderData &rd) {
 
     // Shadow pass
     util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Shadow Pass");
-    for (auto &caster: rd.sunShadowCasterCascades) {
+    for (auto &caster: rd.sunShadowCasterCascade.cascades()) {
         mShadowRenderer->execute(mContext->device(), desc_alloc, buf_alloc, cmd_buf, rd.gltfScene, *mFrustumCuller, caster);
     }
 
@@ -128,7 +128,7 @@ void RenderSystem::draw(const RenderData &rd) {
     mPbrSceneRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
     mPbrSceneRenderer->execute(
             mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene,
-            *mFrustumCuller, rd.sunLight, rd.sunShadowCasterCascades, rd.settings.rendering.ambient
+            *mFrustumCuller, rd.sunLight, rd.sunShadowCasterCascade.cascades(), rd.settings
     );
 
     // Blob render pass

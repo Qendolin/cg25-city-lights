@@ -1,8 +1,8 @@
 #version 460
 
-#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_nonuniform_qualifier: require
 
-layout(early_fragment_tests) in;
+layout (early_fragment_tests) in;
 
 #include "pbr_common.glsl"
 
@@ -20,6 +20,21 @@ const float PI = 3.14159265359;
 const float INV_PI = 1.0 / 3.14159265359;
 const vec3 LIGHT_EPSILON = vec3(1.0 / 255.0);
 const uint NO_TEXTURE = 0xffff;
+
+const vec3 CASCADE_DEBUG_COLORS[6] = {
+vec3(1.0, 0.0, 0.0),
+vec3(1.0, 1.0, 0.0),
+vec3(0.0, 1.0, 0.0),
+vec3(0.0, 1.0, 1.0),
+vec3(0.0, 0.0, 1.0),
+vec3(1.0, 1.0, 1.0)
+};
+
+const vec2 POISSON[9] = vec2[](
+vec2(-0.75, -0.25), vec2(-0.25, -0.75), vec2( 0.25, -0.5),
+vec2(-0.5,   0.25), vec2( 0.0,   0.0 ), vec2( 0.5,   0.25),
+vec2(-0.25,  0.5 ), vec2( 0.75,  0.25), vec2( 0.25,  0.75)
+);
 
 void unpackUint16(in uint packed, out uint lower, out uint upper) {
     lower = packed & 0xffff;
@@ -95,7 +110,7 @@ float microShadowNaughtyDog(float ao, float n_dot_l) {
     return clamp(n_dot_l + aperture - 1.0, 0.0, 1.0);
 }
 
-float sampleShadow(vec3 P_shadow_ndc, float n_dot_l, int index) {
+float sampleShadowGpuGems(vec3 P_shadow_ndc, float n_dot_l, int index) {
     ShadowCascade cascade = uShadowCascades.cascades[index];
     vec2 texel_size = vec2(1.0) / textureSize(uSunShadowMaps[index], 0).xy;
     // z is seperate because we are using 0..1 depth
@@ -117,6 +132,36 @@ float sampleShadow(vec3 P_shadow_ndc, float n_dot_l, int index) {
     shadow *= 0.25;
 
     return shadow;
+}
+
+mat2 rotate(float a) {
+    float s = sin(a), c = cos(a);
+    return mat2(c,-s,s,c);
+}
+
+// Higher quality than GpuGems
+float sampleShadowPoisson(vec3 P_shadow_ndc, float n_dot_l, int index, float distance_vs) {
+    ShadowCascade cascade = uShadowCascades.cascades[index];
+    vec2 texel_size = vec2(1.0f) / textureSize(uSunShadowMaps[index], 0).xy;
+    // z is seperate because we are using 0..1 depth
+    vec3 shadow_uvz = vec3(P_shadow_ndc.xy * 0.5f + 0.5f, P_shadow_ndc.z);
+
+    // tan(acos(x)) = sqrt(1-x^2)/x
+    n_dot_l = max(n_dot_l, 1e-5f);
+    float bias = cascade.sampleBias * texel_size.x * sqrt(1.0f - n_dot_l * n_dot_l) / n_dot_l;
+    bias = clamp(bias, 0.0f, cascade.sampleBiasClamp * texel_size.x);
+
+    float split = uShadowCascades.cascades[index].splitDistance;
+    float blend_start = split * 0.5f;
+    float blend_end   = split;
+    float kernel_scale = 1.0f + 1.0f * clamp((distance_vs - blend_start) / (blend_end - blend_start), 0.0f, 1.0f);
+
+    float result = 0.0f;
+    for(int i = 0; i < 9; ++i) {
+        vec2 offset = kernel_scale * POISSON[i] * texel_size * 2.0f;
+        result += texture(uSunShadowMaps[index], vec3(shadow_uvz.xy + offset, shadow_uvz.z + bias));
+    }
+    return result / 9.0f;
 }
 
 vec3 backsideNormal(vec3 texture_normal, vec3 geometry_normal, vec3 light_dir) {
@@ -215,9 +260,9 @@ void main() {
     bsdf_params.f0 = vec3(0.04);
     bsdf_params.f0 = mix(bsdf_params.f0, bsdf_params.albedo.rgb, bsdf_params.metalness);
 
-    int shadow_index = 0;
+    int shadow_index = SHADOW_CASCADE_COUNT-1;
     for (int i = SHADOW_CASCADE_COUNT - 1; i >= 0; i--) {
-        if (distance_vs < uShadowCascades.cascades[i].dimension * 0.5f) {
+        if (distance_vs < uShadowCascades.cascades[i].splitDistance) {
             shadow_index = i;
         }
     }
@@ -226,7 +271,7 @@ void main() {
 
     // directional light
     {
-        float shadow = sampleShadow(in_shadow_position_ndc[shadow_index], dot(geometry_normal, uParams.sun.direction.xyz), shadow_index);
+        float shadow = sampleShadowPoisson(in_shadow_position_ndc[shadow_index], dot(geometry_normal, uParams.sun.direction.xyz), shadow_index, distance_vs);
         vec3 radiance = uParams.sun.radiance.xyz * shadow;
         if (any(greaterThan(radiance, LIGHT_EPSILON))) {
             Lo += bsdf(uParams.sun.direction.xyz, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
@@ -265,4 +310,8 @@ void main() {
 
     vec3 color = ambient + Lo;
     out_color = vec4(color, 1.0);
+
+    if ((cParams.flags & 0x1) != 0x0) {
+        out_color.rgb = mix(out_color.rgb, CASCADE_DEBUG_COLORS[shadow_index], 0.3f);
+    }
 }

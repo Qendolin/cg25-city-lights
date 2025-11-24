@@ -23,6 +23,8 @@ function(set_compiler_flags target)
     set_compiler_warnings(${target})
 
     if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        # remove CMake flag (prefer c++23preview over c++latest)
+        string(REPLACE "/std:c++latest" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
         target_compile_options(${target} PRIVATE /std:c++23preview)
     elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")

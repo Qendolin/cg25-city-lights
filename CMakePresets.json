@@ -6,7 +6,8 @@
       "displayName": "Debug",
       "binaryDir": "_build/Debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INSTALL_PREFIX": "${CMAKE_SOURCE_DIR}/_release"
       },
       "condition": {
         "type": "equals",
@@ -19,7 +20,8 @@
       "displayName": "Release",
       "binaryDir": "_build/Release",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_PREFIX": "${CMAKE_SOURCE_DIR}/_release"
       }
     },
     {
@@ -27,7 +29,8 @@
       "displayName": "Release with Debug information",
       "binaryDir": "_build/RelWithDebInfo",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_INSTALL_PREFIX": "${CMAKE_SOURCE_DIR}/_release"
       }
     }
   ]

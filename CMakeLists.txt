@@ -8,6 +8,7 @@ include(FetchContent)
 set(CMAKE_VERBOSE_MAKEFILE ON CACHE BOOL "Verbose Makefile" FORCE)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING "" FORCE)
 
 # Dependencies are managed with vcpkg when possible
 include(cmake/VcpkgToolchain.cmake)

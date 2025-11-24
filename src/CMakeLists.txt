@@ -1,8 +1,23 @@
 project(main CXX)
 
+option(BUILD_SHARED_LIBS "Build using shared libraries" OFF) # Don't know if we actually need this
+# Force MSVC static runtime before project()
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "" FORCE)
+endif()
+
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS "main/*.cpp")
 file(GLOB_RECURSE headers CONFIGURE_DEPENDS "main/*.h")
 add_executable(main ${sources} ${headers})
+
+set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/_release" CACHE PATH "" FORCE)
+install(
+        TARGETS main
+        RUNTIME DESTINATION "$<CONFIG>"
+)
+install(
+        DIRECTORY "${CMAKE_SOURCE_DIR}/resources/" DESTINATION "$<CONFIG>/resources"
+)
 
 set_compiler_flags(main)
 set_target_properties(main PROPERTIES
@@ -36,6 +51,7 @@ FetchContent_Declare(
         GIT_TAG v0.12.2
         GIT_SHALLOW TRUE
         GIT_PROGRESS TRUE
+        EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(tracy)
 

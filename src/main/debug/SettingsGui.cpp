@@ -70,6 +70,7 @@ void SettingsGui::draw(Settings &settings) {
         ColorEdit3("Ambient", glm::value_ptr(settings.rendering.ambient), ImGuiColorEditFlags_Float);
         Checkbox("Frustum Culling", &settings.rendering.enableFrustumCulling);
         Checkbox("Pause", &settings.rendering.pauseFrustumCulling);
+        Checkbox("White World", &settings.rendering.whiteWorld);
         PopID();
     }
 

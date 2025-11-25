@@ -37,11 +37,12 @@ public:
 
     struct alignas(4) ShaderPushConstants {
         union FlagsUnion {
-            uint32_t raw_value;
+            uint32_t value;
 
             struct FlagBits {
-                unsigned int visualize: 1;
-                unsigned int unused: 31;
+                unsigned int shadowCascades: 1;
+                unsigned int whiteWorld: 1;
+                unsigned int unused: 30;
             } bits;
         } flags;
     };

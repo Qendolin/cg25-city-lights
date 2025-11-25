@@ -179,7 +179,7 @@ void PbrSceneRenderer::execute(
     cmd_buf.bindVertexBuffers(
             0, {*gpu_data.positions, *gpu_data.normals, *gpu_data.tangents, *gpu_data.texcoords}, {0, 0, 0, 0}
     );
-    ShaderPushConstants push_constants = {.flags = {.bits = {.visualize = settings.shadowCascade.visualize}}};
+    ShaderPushConstants push_constants = {.flags = {.bits = {.shadowCascades = settings.shadowCascade.visualize, .whiteWorld = settings.rendering.whiteWorld}}};
     cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eAllGraphics, 0, sizeof(push_constants), &push_constants);
 
     if (enableCulling) {

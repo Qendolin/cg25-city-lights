@@ -21,6 +21,8 @@ const float PI = 3.14159265359;
 const float INV_PI = 1.0 / 3.14159265359;
 const vec3 LIGHT_EPSILON = vec3(1.0 / 255.0);
 const uint NO_TEXTURE = 0xffff;
+const uint FLAG_SHADOW_CASCADES = 0x1;
+const uint FLAG_WHITE_WORLD = 0x2;
 
 const vec3 CASCADE_DEBUG_COLORS[6] = {
 vec3(1.0, 0.0, 0.0),
@@ -233,6 +235,10 @@ void main() {
         bsdf_params.albedo *= texture(uTextures[nonuniformEXT(albedoTextureIndex)], in_tex_coord);
     }
 
+    if ((cParams.flags & FLAG_WHITE_WORLD) != 0x0) {
+        bsdf_params.albedo.xyz = vec3(1.0f);
+    }
+
     vec3 orm = vec3(1.0, material.rmnFactors.xy);
     if (ormTextureIndex != NO_TEXTURE) {
         orm *= texture(uTextures[nonuniformEXT(ormTextureIndex)], in_tex_coord).xyz;
@@ -315,7 +321,7 @@ void main() {
     vec3 color = ambient + Lo;
     out_color = vec4(color, 1.0);
 
-    if ((cParams.flags & 0x1) != 0x0) {
+    if ((cParams.flags & FLAG_SHADOW_CASCADES) != 0x0) {
         out_color.rgb = mix(out_color.rgb, CASCADE_DEBUG_COLORS[shadow_index], 0.3f);
     }
 }

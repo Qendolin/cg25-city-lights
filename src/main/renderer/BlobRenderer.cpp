@@ -147,7 +147,7 @@ void BlobRenderer::renderVertices(
     );
 
     commandBuffer.beginRendering(framebuffer.renderingInfo({
-        .enabledColorAttachments = {true},
+        .enableColorAttachments = true,
         .enableDepthAttachment = true,
         .enableStencilAttachment = false,
         .colorLoadOps = {vk::AttachmentLoadOp::eLoad},

@@ -90,7 +90,8 @@ struct FramebufferRenderingConfig {
     uint32_t layerCount = 1;
     uint32_t viewMask = 0;
 
-    util::static_vector<bool, 32> enabledColorAttachments = {};
+    // Without VK_EXT_dynamic_rendering_unused_attachments individual color attachments cannot be disabled
+    bool enableColorAttachments = true;
     bool enableDepthAttachment = true;
     bool enableStencilAttachment = true;
     util::static_vector<vk::AttachmentLoadOp, 32> colorLoadOps = {};

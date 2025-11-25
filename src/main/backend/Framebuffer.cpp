@@ -103,26 +103,27 @@ vk::RenderingInfo Framebuffer::renderingInfo(const FramebufferRenderingConfig &c
         .viewMask = config.viewMask,
     };
 
-    for (size_t i = 0; i < colorAttachments.size(); i++) {
-        const auto &attachment = colorAttachments[i];
-        bool enabled = i < config.enabledColorAttachments.size() ? config.enabledColorAttachments[i] : true;
-        auto clearColor = i < config.clearColors.size() ? config.clearColors[i] : vk::ClearColorValue{};
-        auto loadOp = i < config.colorLoadOps.size() ? config.colorLoadOps[i] : vk::AttachmentLoadOp::eLoad;
-        auto storeOp = i < config.colorStoreOps.size() ? config.colorStoreOps[i] : vk::AttachmentStoreOp::eStore;
-        if (attachment && enabled) {
-            mColorAttachmentInfos[i] = {
-                .imageView = attachment.view,
-                .imageLayout = vk::ImageLayout::eAttachmentOptimal,
-                .loadOp = loadOp,
-                .storeOp = storeOp,
-                .clearValue = {.color = clearColor},
-            };
-        } else {
-            mColorAttachmentInfos[i] = {};
+    if (config.enableColorAttachments) {
+        for (size_t i = 0; i < colorAttachments.size(); i++) {
+            const auto &attachment = colorAttachments[i];
+            auto clearColor = i < config.clearColors.size() ? config.clearColors[i] : vk::ClearColorValue{};
+            auto loadOp = i < config.colorLoadOps.size() ? config.colorLoadOps[i] : vk::AttachmentLoadOp::eLoad;
+            auto storeOp = i < config.colorStoreOps.size() ? config.colorStoreOps[i] : vk::AttachmentStoreOp::eStore;
+            if (attachment) {
+                mColorAttachmentInfos[i] = {
+                    .imageView = attachment.view,
+                    .imageLayout = vk::ImageLayout::eAttachmentOptimal,
+                    .loadOp = loadOp,
+                    .storeOp = storeOp,
+                    .clearValue = {.color = clearColor},
+                };
+            } else {
+                mColorAttachmentInfos[i] = {};
+            }
         }
+        result.colorAttachmentCount = static_cast<uint32_t>(colorAttachments.size());
+        result.pColorAttachments = mColorAttachmentInfos.data();
     }
-    result.colorAttachmentCount = static_cast<uint32_t>(colorAttachments.size());
-    result.pColorAttachments = mColorAttachmentInfos.data();
 
     if (depthAttachment && config.enableDepthAttachment) {
         mDepthAttachmentInfo = {

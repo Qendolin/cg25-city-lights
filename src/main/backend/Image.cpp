@@ -380,14 +380,14 @@ vk::UniqueImageView Image::createDefaultView(const vk::Device &device) {
     });
 }
 
-void Image::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) {
+void Image::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) const {
     ImageResource::barrier(
             *mImage, {.aspectMask = imageAspectFlags(), .levelCount = info.mipLevels, .layerCount = info.arrayLayers},
             cmd_buf, begin, end
     );
 }
 
-void Image::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) {
+void Image::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) const {
     barrier(cmd_buf, single, single);
 }
 

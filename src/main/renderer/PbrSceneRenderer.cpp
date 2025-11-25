@@ -25,6 +25,12 @@ PbrSceneRenderer::PbrSceneRenderer(const vk::Device &device) {
         .compareOp = vk::CompareOp::eGreaterOrEqual,
         .borderColor = vk::BorderColor::eFloatTransparentBlack,
     });
+    mAoSampler = device.createSamplerUnique({
+        .magFilter = vk::Filter::eLinear,
+        .minFilter = vk::Filter::eLinear,
+        .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+        .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+    });
 }
 
 void PbrSceneRenderer::recreate(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &fb) {
@@ -42,6 +48,7 @@ void PbrSceneRenderer::execute(
         const FrustumCuller &frustum_culler,
         const DirectionalLight &sun_light,
         std::span<const CascadedShadowCaster> sun_shadow_cascades,
+        const Attachment &ao_attachment,
         const Settings &settings
 ) {
     util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
@@ -70,18 +77,6 @@ void PbrSceneRenderer::execute(
     // Descriptor Update
     dbg_cmd_label_region.swap("Descriptor Update");
 
-    ShaderParamsInlineUniformBlock uniform_block = {
-        .view = camera.viewMatrix(),
-        .projection = camera.projectionMatrix(),
-        .camera = {camera.position, 0},
-        .sun =
-                {
-                    .radiance = glm::vec4{sun_light.radiance(), 0.0},
-                    .direction = glm::vec4{sun_light.direction(), 0.0},
-                },
-        .ambient = glm::vec4(settings.rendering.ambient, 1.0),
-    };
-
     std::array<ShadowCascadeUniformBlock, Settings::SHADOW_CASCADE_COUNT> shadow_cascade_uniform_blocks = {};
     for (size_t i = 0; i < sun_shadow_cascades.size(); i++) {
         const auto &cascade = sun_shadow_cascades[i];
@@ -107,7 +102,22 @@ void PbrSceneRenderer::execute(
     );
     shadow_cascade_uniform_buffer.barrier(cmd_buf, BufferResourceAccess::GraphicsShaderUniformRead);
 
+    glm::vec2 viewport_size = glm::vec2(fb.extent().width, fb.extent().height);
+    ShaderParamsInlineUniformBlock uniform_block = {
+        .view = camera.viewMatrix(),
+        .projection = camera.projectionMatrix(),
+        .camera = {camera.position, 0},
+        .viewport = glm::vec4(viewport_size, 1.0f / viewport_size),
+        .sun =
+                {
+                    .radiance = glm::vec4{sun_light.radiance(), 0.0},
+                    .direction = glm::vec4{sun_light.direction(), 0.0},
+                },
+        .ambient = glm::vec4(settings.rendering.ambient, 1.0),
+    };
+
     auto descriptor_set = desc_alloc.allocate(mShaderParamsDescriptorLayout);
+    ao_attachment.barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
     device.updateDescriptorSets(
             {descriptor_set.write(
                      ShaderParamsDescriptorLayout::SceneUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
@@ -115,10 +125,15 @@ void PbrSceneRenderer::execute(
              descriptor_set.write(
                      ShaderParamsDescriptorLayout::ShadowCascadeUniforms,
                      {.buffer = shadow_cascade_uniform_buffer, .offset = 0, .range = vk::WholeSize}
+             ),
+             descriptor_set.write(
+                     ShaderParamsDescriptorLayout::AmbientOcclusion,
+                     {.sampler = *mAoSampler, .imageView = ao_attachment.view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal}
              )},
             {}
     );
-    for (size_t i = 0; i < sun_shadow_cascades.size(); i++) {
+    for (uint32_t i = 0; i < sun_shadow_cascades.size(); i++) {
+        sun_shadow_cascades[i].framebuffer().depthAttachment.barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
         device.updateDescriptorSets(
                 descriptor_set.write(
                         ShaderParamsDescriptorLayout::SunShadowMap,
@@ -131,7 +146,6 @@ void PbrSceneRenderer::execute(
                 ),
                 {}
         );
-        sun_shadow_cascades[i].framebuffer().depthAttachment.barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
     }
 
     // Rendering
@@ -145,12 +159,12 @@ void PbrSceneRenderer::execute(
     );
 
     cmd_buf.beginRendering(fb.renderingInfo({
-        .enabledColorAttachments = {true},
+        .enableColorAttachments = true,
         .enableDepthAttachment = true,
         .enableStencilAttachment = false,
         .colorLoadOps = {vk::AttachmentLoadOp::eLoad},
         .colorStoreOps = {vk::AttachmentStoreOp::eStore},
-        .depthLoadOp = vk::AttachmentLoadOp::eClear,
+        .depthLoadOp = vk::AttachmentLoadOp::eLoad,
     }));
 
     mPipeline.config.viewports = {{fb.viewport(true)}};
@@ -165,7 +179,7 @@ void PbrSceneRenderer::execute(
     cmd_buf.bindVertexBuffers(
             0, {*gpu_data.positions, *gpu_data.normals, *gpu_data.tangents, *gpu_data.texcoords}, {0, 0, 0, 0}
     );
-    ShaderPushConstants push_constants = {.flags = {.visualize = settings.shadowCascade.visualize}};
+    ShaderPushConstants push_constants = {.flags = {.bits = {.visualize = settings.shadowCascade.visualize}}};
     cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eAllGraphics, 0, sizeof(push_constants), &push_constants);
 
     if (enableCulling) {
@@ -212,6 +226,11 @@ void PbrSceneRenderer::createPipeline(const vk::Device &device, const ShaderLoad
                 {
                     .colorFormats = fb.colorFormats(),
                     .depthFormat = fb.depthFormat(),
+                },
+        .depth =
+                {
+                    .writeEnabled = false,
+                    .compareOp = vk::CompareOp::eEqual,
                 },
     };
 

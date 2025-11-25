@@ -57,18 +57,27 @@ void SettingsGui::draw(Settings &settings) {
         SliderFloat("Saturation", &settings.agx.saturation, 0.0, 5.0);
         PopID();
     }
+
     if (CollapsingHeader("Sky")) {
         PushID("sky");
         SliderFloat("EV", &settings.sky.exposure, -8.0f, 8.0f);
+        ColorEdit3("Tint", glm::value_ptr(settings.sky.tint), ImGuiColorEditFlags_Float);
         PopID();
     }
-
 
     if (CollapsingHeader("Rendering")) {
         PushID("rendering");
         ColorEdit3("Ambient", glm::value_ptr(settings.rendering.ambient), ImGuiColorEditFlags_Float);
         Checkbox("Frustum Culling", &settings.rendering.enableFrustumCulling);
         Checkbox("Pause", &settings.rendering.pauseFrustumCulling);
+        PopID();
+    }
+
+    if (CollapsingHeader("SSAO")) {
+        PushID("ssao");
+        SliderFloat("Radius", &settings.ssao.radius, 0.0f, 4.0f);
+        SliderFloat("Exponent", &settings.ssao.exponent, 0.0f, 4.0f);
+        SliderFloat("Depth Bias", &settings.ssao.bias, 0.0f, 0.1f);
         PopID();
     }
 

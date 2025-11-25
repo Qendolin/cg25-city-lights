@@ -8,9 +8,9 @@ layout (location = 0) out vec4 outColor;
 
 layout(push_constant) uniform Push {
 	mat4 projViewNoTranslation;
-	float brightness;
+	vec4 tint;
 } push;
 
 void main() {
-	outColor = texture(samplerCubeMap, uvw) * push.brightness;
+	outColor = texture(samplerCubeMap, uvw) * push.tint;
 }

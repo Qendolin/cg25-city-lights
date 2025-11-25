@@ -10,6 +10,7 @@ struct Settings {
     DirectionalLight sun = {.elevation = 40.0f, .azimuth = 10.0f, .color = glm::vec3{1.0f, 1.0f, 1.0f}, .power = 15.0f};
     struct Sky {
         float exposure = 1.49f;
+        glm::vec3 tint = glm::vec3(1.0f);
     } sky;
     struct Shadow {
         float extrusionBias = -0.5f;
@@ -44,6 +45,12 @@ struct Settings {
         bool enableFrustumCulling = true;
         bool pauseFrustumCulling = false;
     } rendering;
+    struct SSAO {
+        float radius = 0.5f;
+        float exponent = 2.0f;
+        float bias = 0.01f;
+        float filterSharpness = 50.0f;
+    } ssao;
 
     Settings() {
         shadowCascades[0] = {

@@ -8,6 +8,7 @@
 #include "FrustumCuller.h"
 
 
+struct Attachment;
 class CascadedShadowCaster;
 class FrustumCuller;
 class ShadowCaster;
@@ -29,6 +30,7 @@ public:
         glm::mat4 view;
         glm::mat4 projection;
         glm::vec4 camera; // Padded to 16 bytes
+        glm::vec4 viewport;
         DirectionalLight sun;
         glm::vec4 ambient;
     };
@@ -37,10 +39,10 @@ public:
         union FlagsUnion {
             uint32_t raw_value;
 
-            struct {
+            struct FlagBits {
                 unsigned int visualize: 1;
                 unsigned int unused: 31;
-            };
+            } bits;
         } flags;
     };
 
@@ -55,19 +57,22 @@ public:
 
     struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
         static constexpr InlineUniformBlockBinding SceneUniforms{
-            0, vk::ShaderStageFlagBits::eAllGraphics, sizeof(ShaderParamsInlineUniformBlock)
+            0, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, sizeof(ShaderParamsInlineUniformBlock)
         };
         static constexpr CombinedImageSamplerBinding SunShadowMap{
             1, vk::ShaderStageFlagBits::eFragment, Settings::SHADOW_CASCADE_COUNT
         };
         static constexpr UniformBufferBinding ShadowCascadeUniforms{
-            2, vk::ShaderStageFlagBits::eAllGraphics
+            2,  vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+        };
+        static constexpr CombinedImageSamplerBinding AmbientOcclusion{
+            3, vk::ShaderStageFlagBits::eFragment
         };
 
         ShaderParamsDescriptorLayout() = default;
 
         explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
-            create(device, {}, SceneUniforms, SunShadowMap, ShadowCascadeUniforms);
+            create(device, {}, SceneUniforms, SunShadowMap, ShadowCascadeUniforms, AmbientOcclusion);
             util::setDebugName(device, vk::DescriptorSetLayout(*this), "pbr_scene_renderer_descriptor_layout");
         }
     };
@@ -91,6 +96,7 @@ public:
             const FrustumCuller &frustum_culler,
             const DirectionalLight &sun_light,
             std::span<const CascadedShadowCaster> sun_shadow_cascades,
+            const Attachment& ao_attachment,
             const Settings& settings
     );
 
@@ -101,6 +107,7 @@ private:
 
     ConfiguredGraphicsPipeline mPipeline;
     vk::UniqueSampler mShadowSampler;
+    vk::UniqueSampler mAoSampler;
 
     std::optional<glm::mat4> mCapturedFrustum;
 };

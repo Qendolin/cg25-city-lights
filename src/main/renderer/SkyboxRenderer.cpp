@@ -30,12 +30,13 @@ void SkyboxRenderer::execute(
         const Framebuffer &framebuffer,
         const Camera &camera,
         const Cubemap &skybox,
-        float exposure
+        float exposure,
+        const glm::vec3& tint
 ) {
     util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
 
     cmd_buf.beginRendering(framebuffer.renderingInfo({
-        .enabledColorAttachments = {true},
+        .enableColorAttachments = true,
         .enableDepthAttachment = true,
         .enableStencilAttachment = false,
         .colorLoadOps = {vk::AttachmentLoadOp::eLoad},
@@ -52,7 +53,7 @@ void SkyboxRenderer::execute(
 
     ShaderParamsPushConstants push{};
     push.projViewNoTranslation = camera.projectionMatrix() * glm::mat4(glm::mat3(camera.viewMatrix()));
-    push.brightness = exp2(exposure);
+    push.tint = glm::vec4(tint, 1.0f) * exp2(exposure);
 
     cmd_buf.pushConstants(
             *mPipeline.layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(ShaderParamsPushConstants), &push

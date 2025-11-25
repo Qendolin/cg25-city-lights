@@ -2,7 +2,6 @@
 
 #include <array>
 #include <span>
-#include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 #include <vulkan/vulkan.hpp>
 
 /// <summary>
@@ -83,6 +82,7 @@ using CombinedImageSamplerBinding = TypedBinding<vk::DescriptorType::eCombinedIm
 using UniformBufferBinding = TypedBinding<vk::DescriptorType::eUniformBuffer>;
 using StorageBufferBinding = TypedBinding<vk::DescriptorType::eStorageBuffer>;
 using StorageImageBinding = TypedBinding<vk::DescriptorType::eStorageImage>;
+using SampledImageBinding = TypedBinding<vk::DescriptorType::eSampledImage>;
 using InlineUniformBlockBinding = TypedBinding<vk::DescriptorType::eInlineUniformBlock>;
 
 /// <summary>

@@ -8,8 +8,10 @@
 #include "entity/Cubemap.h"
 #include "imgui/ImGui.h"
 #include "renderer/BlobRenderer.h"
+#include "renderer/DepthPrePassRenderer.h"
 #include "renderer/FinalizeRenderer.h"
 #include "renderer/PbrSceneRenderer.h"
+#include "renderer/SSAORenderer.h"
 #include "renderer/ShadowRenderer.h"
 #include "renderer/SkyboxRenderer.h"
 #include "util/PerFrame.h"
@@ -52,6 +54,8 @@ class RenderSystem {
     Framebuffer mHdrFramebuffer;
     AttachmentImage mHdrColorAttachment;
     AttachmentImage mHdrDepthAttachment;
+    AttachmentImage mSsaoRawAttachment;
+    AttachmentImage mSsaoFilteredAttachment;
 
     std::unique_ptr<ImGuiBackend> mImguiBackend;
 
@@ -61,6 +65,8 @@ class RenderSystem {
     std::unique_ptr<BlobRenderer> mBlobRenderer;
     std::unique_ptr<SkyboxRenderer> mSkyboxRenderer;
     std::unique_ptr<FrustumCuller> mFrustumCuller;
+    std::unique_ptr<SSAORenderer> mSSAORenderer;
+    std::unique_ptr<DepthPrePassRenderer> mDepthPrePassRenderer;
 
 
 public:

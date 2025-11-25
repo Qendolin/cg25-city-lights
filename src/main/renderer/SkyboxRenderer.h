@@ -30,7 +30,7 @@ public:
 
     struct ShaderParamsPushConstants {
         glm::mat4 projViewNoTranslation = {1.f};
-        float brightness = 1.0f;
+        glm::vec4 tint = glm::vec4(1.0f);
     };
 
 private:
@@ -55,7 +55,8 @@ public:
             const Framebuffer &framebuffer,
             const Camera &camera,
             const Cubemap &skybox,
-            float exposure
+            float exposure,
+            const glm::vec3& tint
     );
 
 private:

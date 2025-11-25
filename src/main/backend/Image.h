@@ -244,14 +244,14 @@ public:
     /// <param name="cmd_buf">The command buffer to record the barrier into.</param>
     /// <param name="begin">The resource access state before the barrier.</param>
     /// <param name="end">The resource access state after the barrier.</param>
-    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end);
+    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) const;
 
     /// <summary>
     /// Inserts an image memory barrier, transitioning the image to a single state.
     /// </summary>
     /// <param name="cmd_buf">The command buffer to record the barrier into.</param>
     /// <param name="single">The resource access state to transition to.</param>
-    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single);
+    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) const;
 
     /// <summary>
     /// Transfers ownership of the image between queue families.

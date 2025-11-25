@@ -26,7 +26,7 @@ public:
     };
 
     ~FinalizeRenderer();
-    FinalizeRenderer(const vk::Device &device);
+    explicit FinalizeRenderer(const vk::Device &device);
 
 
     void recreate(const vk::Device &device, const ShaderLoader &shader_loader) {

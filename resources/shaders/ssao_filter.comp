@@ -1,0 +1,70 @@
+#version 460
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout (set = 0, binding = 0) uniform sampler2D in_raw_ao;
+layout (set = 0, binding = 1) uniform sampler2D in_depth;
+layout (set = 0, binding = 2) uniform writeonly restrict image2D out_result;
+
+layout (push_constant) uniform ShaderParamPush {
+    float zNear;
+    float sharpness;
+    float exponent;
+} cParams;
+
+// 1 = Check neighbor pixels (High quality)
+// 2 = Check neighbor's neighbor (Stronger blur, slightly less detail)
+const int STRIDE = 1;
+
+float getLinearZ(vec2 uv) {
+    float d = textureLod(in_depth, uv, 0).x;
+    return cParams.zNear / d;
+}
+
+void main() {
+    ivec2 tex_size = textureSize(in_raw_ao, 0);
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+
+    if (p.x >= tex_size.x || p.y >= tex_size.y) return;
+
+    vec2 texel_size = 1.0f / vec2(tex_size);
+    vec2 center_uv = (vec2(p) + 0.5f) * texel_size;
+
+    float center_ao = textureLod(in_raw_ao, center_uv, 0).x;
+    float center_z = getLinearZ(center_uv);
+
+    float total_weight = 0.0f;
+    float total_ao = 0.0f;
+
+    // 3x3 Kernel Loop
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            // Calculate Offset
+            vec2 offset = vec2(x, y) * STRIDE * texel_size;
+            vec2 uv = center_uv + offset;
+
+            // Sample
+            float z = getLinearZ(uv);
+            float ao = textureLod(in_raw_ao, uv, 0).x;
+
+            // Calculate Weight
+            // 1. Spatial: Simple Box filter (1.0).
+            //    Optional: Use 0.5 for diagonals to make it circular.
+            float w = 1.0f;
+
+            // 2. Depth: Check similarity to center
+            float depth_diff = abs(center_z - z);
+            w *= max(0.0f, 1.0f - depth_diff * cParams.sharpness);
+
+            // Accumulate
+            total_ao += ao * w;
+            total_weight += w;
+        }
+    }
+
+    // Normalize
+    // Prevent divide by zero if all neighbors were edges (very rare)
+    float result = total_ao / max(total_weight, 0.0001f);
+    result = pow(result, cParams.exponent);
+    imageStore(out_result, p, vec4(result));
+}

@@ -27,6 +27,8 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mBlobRenderer = std::make_unique<BlobRenderer>(context->device());
     mSkyboxRenderer = std::make_unique<SkyboxRenderer>(context->device());
     mFrustumCuller = std::make_unique<FrustumCuller>(context->device());
+    mSSAORenderer = std::make_unique<SSAORenderer>(context->device(), context->allocator(), context->mainQueue);
+    mDepthPrePassRenderer = std::make_unique<DepthPrePassRenderer>();
 }
 
 void RenderSystem::recreate() {
@@ -34,20 +36,37 @@ void RenderSystem::recreate() {
     const auto &device = mContext->device();
     const auto &cmd_pool = *mCommandPool;
 
+    vk::Extent2D screen_extent = mContext->swapchain().area().extent;
+    vk::Extent2D screen_half_extent = {screen_extent.width / 2, screen_extent.height / 2};
+
     mHdrColorAttachment = AttachmentImage(
-            mContext->allocator(), mContext->device(), vk::Format::eR16G16B16A16Sfloat,
-            mContext->swapchain().area().extent, vk::ImageUsageFlagBits::eSampled
+            mContext->allocator(), device, vk::Format::eR16G16B16A16Sfloat, screen_extent, vk::ImageUsageFlagBits::eSampled
     );
     util::setDebugName(device, mHdrColorAttachment.image(), "hdr_color_attachment_image");
     util::setDebugName(device, mHdrColorAttachment.view(), "hdr_color_attachment_image_view");
     mHdrDepthAttachment = AttachmentImage(
-            mContext->allocator(), mContext->device(), vk::Format::eD32Sfloat, mContext->swapchain().area().extent
+            mContext->allocator(), device, vk::Format::eD32Sfloat, screen_extent, vk::ImageUsageFlagBits::eSampled
     );
     util::setDebugName(device, mHdrDepthAttachment.image(), "hdr_depth_attachment_image");
     util::setDebugName(device, mHdrDepthAttachment.view(), "hdr_depth_attachment_image_view");
     mHdrFramebuffer = Framebuffer(mContext->swapchain().area());
     mHdrFramebuffer.depthAttachment = mHdrDepthAttachment;
     mHdrFramebuffer.colorAttachments = {mHdrColorAttachment};
+
+    // TODO: dont use attachment type because image is never used as one
+    mSsaoRawAttachment = AttachmentImage(
+            mContext->allocator(), device, vk::Format::eR8Unorm, screen_half_extent,
+            vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
+    );
+    util::setDebugName(device, mSsaoRawAttachment.image(), "ao_raw_attachment_image");
+    util::setDebugName(device, mSsaoRawAttachment.view(), "ao_raw_attachment_image_view");
+
+    mSsaoFilteredAttachment = AttachmentImage(
+            mContext->allocator(), device, vk::Format::eR8Unorm, screen_half_extent,
+            vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
+    );
+    util::setDebugName(device, mSsaoFilteredAttachment.image(), "ao_filtered_attachment_image");
+    util::setDebugName(device, mSsaoFilteredAttachment.view(), "ao_filtered_attachment_image_view");
 
     // I don't really like that recrate has to be called explicitly.
     // I'd prefer an implicit solution, but I couldn't think of a good one right now.
@@ -57,6 +76,8 @@ void RenderSystem::recreate() {
     mBlobRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mSkyboxRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mFrustumCuller->recreate(device, mShaderLoader);
+    mSSAORenderer->recreate(device, mShaderLoader);
+    mDepthPrePassRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
 
     // These have to match the max frames in flight count but an be more
     mFramesInFlightSyncObjects.create(util::MaxFramesInFlight, [&] {
@@ -116,8 +137,26 @@ void RenderSystem::draw(const RenderData &rd) {
     // Framebuffer needs to be synced to swapchain, so get it explicitly
     Framebuffer &swapchain_fb = mSwapchainFramebuffers.get(swapchain.activeImageIndex());
 
+    util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Depth PrePass");
+    // Depth pre-pass
+    mDepthPrePassRenderer->enableCulling = rd.settings.rendering.enableFrustumCulling;
+    mDepthPrePassRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
+    mDepthPrePassRenderer->execute(
+            mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene, *mFrustumCuller
+    );
+
+    dbg_cmd_label_region.swap("SSAO Pass");
+    mSSAORenderer->radius = rd.settings.ssao.radius;
+    mSSAORenderer->exponent = rd.settings.ssao.exponent;
+    mSSAORenderer->bias = rd.settings.ssao.bias;
+    mSSAORenderer->filterSharpness = rd.settings.ssao.filterSharpness;
+    mSSAORenderer->execute(
+            mContext->device(), desc_alloc, cmd_buf, rd.camera.projectionMatrix(), rd.camera.nearPlane(),
+            mHdrFramebuffer.depthAttachment, mSsaoRawAttachment, mSsaoFilteredAttachment
+    );
+
     // Shadow pass
-    util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Shadow Pass");
+    dbg_cmd_label_region.swap("Shadow Pass");
     for (auto &caster: rd.sunShadowCasterCascade.cascades()) {
         mShadowRenderer->execute(mContext->device(), desc_alloc, buf_alloc, cmd_buf, rd.gltfScene, *mFrustumCuller, caster);
     }
@@ -128,7 +167,7 @@ void RenderSystem::draw(const RenderData &rd) {
     mPbrSceneRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
     mPbrSceneRenderer->execute(
             mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene,
-            *mFrustumCuller, rd.sunLight, rd.sunShadowCasterCascade.cascades(), rd.settings
+            *mFrustumCuller, rd.sunLight, rd.sunShadowCasterCascade.cascades(), mSsaoFilteredAttachment, rd.settings
     );
 
     // Blob render pass
@@ -138,7 +177,8 @@ void RenderSystem::draw(const RenderData &rd) {
     // Skybox render pass (render late to reduce overdraw)
     dbg_cmd_label_region.swap("Skybox Pass");
     mSkyboxRenderer->execute(
-            mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.skybox, rd.settings.sky.exposure
+            mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.skybox, rd.settings.sky.exposure,
+            rd.settings.sky.tint
     );
 
     // Post-processing pass

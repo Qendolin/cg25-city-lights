@@ -1,0 +1,143 @@
+#version 460
+
+#extension GL_EXT_samplerless_texture_functions : require
+
+#define LOCAL_SIZE_POWER 3
+#define LOCAL_SIZE (1 << LOCAL_SIZE_POWER)
+#define LOCAL_SIZE_2 (LOCAL_SIZE * LOCAL_SIZE)
+#define TILE_BORDER 1
+#define TILE_SIZE (LOCAL_SIZE + 2 * TILE_BORDER)
+#define TILE_SIZE_2 (TILE_SIZE * TILE_SIZE)
+#define AO_RESOLUTION_SCALE 2
+#define PI 3.14159265359
+
+layout (local_size_x = LOCAL_SIZE, local_size_y = LOCAL_SIZE, local_size_z = 1) in;
+
+layout (std140, set = 0, binding = 0) uniform ShaderParamConstants
+{
+    mat4 projection;
+    vec2 inverseProjectionScale;
+    vec2 inverseProjectionOffset;
+    float zNear;
+    float radius;
+    float bias;
+    float pad0;
+} cParams;
+
+layout (set = 0, binding = 1) uniform sampler2D in_depth;
+layout (set = 0, binding = 2) uniform writeonly restrict image2D out_ao;
+layout (set = 0, binding = 3) uniform texture2D in_noise;
+
+shared float sPositionZ[TILE_SIZE_2];
+
+float depthToViewZ(float depth) {
+    return cParams.zNear / depth;
+}
+
+ivec2 unflatten(uint i) {
+    return ivec2(i % TILE_SIZE, i / TILE_SIZE);
+}
+
+uint flatten(ivec2 p) {
+    return p.x + p.y * TILE_SIZE;
+}
+
+// Reconstructs Y-Up View Space position from linear depth and pixel coordinates
+vec3 getPositionVS(vec2 p, float dist) {
+    vec2 ray_xy = fma(p, cParams.inverseProjectionScale, cParams.inverseProjectionOffset);
+    return vec3(ray_xy.x * dist, -ray_xy.y * dist, -dist);
+}
+
+vec3 reconstructNormal(ivec2 local_id, ivec2 global_id, float z_c) {
+    // Center ray
+    vec2 ray_c = fma(vec2(global_id), cParams.inverseProjectionScale, cParams.inverseProjectionOffset);
+    vec2 s = cParams.inverseProjectionScale;
+
+    // Neighbors
+    float z_r = sPositionZ[flatten(local_id + TILE_BORDER + ivec2( 1, 0))];
+    float z_l = sPositionZ[flatten(local_id + TILE_BORDER + ivec2(-1, 0))];
+    float z_d = sPositionZ[flatten(local_id + TILE_BORDER + ivec2( 0, 1))];
+    float z_u = sPositionZ[flatten(local_id + TILE_BORDER + ivec2( 0,-1))];
+
+    // Reconstruction (Y-Up, Z-Back)
+    // Note: s.x/s.y are added directly because we assume inverseProjectionScale matches
+    // the pixel stride of the shared memory (AO resolution)
+    vec3 p_c = vec3(ray_c.x * z_c, -ray_c.y * z_c, -z_c);
+    vec3 p_r = vec3((ray_c.x + s.x) * z_r, -ray_c.y * z_r, -z_r);
+    vec3 p_l = vec3((ray_c.x - s.x) * z_l, -ray_c.y * z_l, -z_l);
+    vec3 p_d = vec3(ray_c.x * z_d, -(ray_c.y + s.y) * z_d, -z_d);
+    vec3 p_u = vec3(ray_c.x * z_u, -(ray_c.y - s.y) * z_u, -z_u);
+
+    vec3 t_x = (abs(z_r - z_c) < abs(z_l - z_c)) ? (p_r - p_c) : (p_c - p_l);
+    vec3 t_y = (abs(z_d - z_c) < abs(z_u - z_c)) ? (p_d - p_c) : (p_c - p_u);
+
+    return normalize(-cross(t_x, t_y));
+}
+
+vec3 loadRandomVec(ivec2 global_id) {
+    ivec2 noise_size = textureSize(in_noise, 0);
+    ivec2 noise_coord = global_id % noise_size;
+    // stores sin(x), cos(x)
+    vec2 encoded_rot = texelFetch(in_noise, noise_coord, 0).xy;
+    vec2 random_vec_xy = encoded_rot * 2.0f - 1.0f;
+    return vec3(random_vec_xy, 0.0f);
+}
+
+const vec3 SAMPLES[8] = vec3[](
+vec3( 0.230,  0.125,  0.850) * 0.15, vec3(-0.450,  0.350,  0.650) * 0.25,
+vec3( 0.650, -0.250,  0.550) * 0.35, vec3(-0.150, -0.650,  0.450) * 0.45,
+vec3( 0.350,  0.550,  0.350) * 0.55, vec3(-0.650, -0.150,  0.250) * 0.65,
+vec3( 0.150, -0.350,  0.150) * 0.75, vec3(-0.250,  0.250,  0.950) * 0.95
+);
+
+void main() {
+    ivec2 global_id = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 local_id = ivec2(gl_LocalInvocationID.xy);
+    ivec2 group_id = ivec2(gl_WorkGroupID.xy);
+
+    uint local_index = gl_LocalInvocationIndex;
+    ivec2 start_pixel = group_id * LOCAL_SIZE - TILE_BORDER;
+    vec2 inv_tex_size = 1.0f / vec2(textureSize(in_depth, 0));
+
+    // Fill shared memory
+    for (uint i = local_index; i < TILE_SIZE_2; i += LOCAL_SIZE_2) {
+        ivec2 p = start_pixel + unflatten(i);
+        vec2 uv = (vec2(p * AO_RESOLUTION_SCALE) + 0.5f) * inv_tex_size;
+        float d = textureLod(in_depth, uv, 0).x;
+        sPositionZ[i] = depthToViewZ(d);
+    }
+
+    barrier();
+
+    float linear_z = sPositionZ[flatten(local_id + TILE_BORDER)];
+
+    vec3 normal = reconstructNormal(local_id, global_id, linear_z);
+    vec3 pos_vs = getPositionVS(vec2(global_id), linear_z);
+
+    vec3 random_vec = loadRandomVec(global_id);
+    vec3 tangent = normalize(random_vec - normal * dot(random_vec, normal));
+    vec3 bitangent = cross(normal, tangent);
+    mat3 TBN = mat3(tangent, bitangent, normal);
+
+    float occlusion = 0.0f;
+    for (uint i = 0; i < 8; i++) {
+        vec3 sample_offset = TBN * SAMPLES[i];
+        vec3 sample_pos_vs = pos_vs + sample_offset * cParams.radius;
+
+        vec4 sample_pos_cs = cParams.projection * vec4(sample_pos_vs, 1.0f);
+        sample_pos_cs.xyz /= sample_pos_cs.w;
+
+        // Flip Y for texture space (Vulkan Y-Down)
+        vec2 sample_uv = sample_pos_cs.xy * vec2(0.5f, -0.5f) + 0.5f;
+
+        float sampled_dist = depthToViewZ(textureLod(in_depth, sample_uv, 0).x);
+        float check_dist = -sample_pos_vs.z - cParams.bias;
+
+        float range_check = smoothstep(0.0, 1.0, cParams.radius / abs(linear_z - sampled_dist));
+
+        occlusion += (sampled_dist < check_dist ? range_check : 0.0f);
+    }
+
+    occlusion = 1.0f - occlusion / 8.0f;
+    imageStore(out_ao, global_id, vec4(occlusion));
+}

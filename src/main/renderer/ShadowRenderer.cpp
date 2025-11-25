@@ -37,7 +37,7 @@ void ShadowRenderer::execute(
 
     const Framebuffer &fb = shadow_caster.framebuffer();
     cmd_buf.beginRendering(fb.renderingInfo({
-        .enabledColorAttachments = {true},
+        .enableColorAttachments = false,
         .enableDepthAttachment = true,
         .enableStencilAttachment = false,
         .colorLoadOps = {vk::AttachmentLoadOp::eDontCare},

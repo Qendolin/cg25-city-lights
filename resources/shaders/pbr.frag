@@ -15,6 +15,7 @@ layout (location = 6) in vec3 in_shadow_position_ndc[SHADOW_CASCADE_COUNT];
 layout (location = 0) out vec4 out_color;
 
 layout (set = 1, binding = 1) uniform sampler2DShadow uSunShadowMaps[SHADOW_CASCADE_COUNT];
+layout (set = 1, binding = 3) uniform sampler2D uAmbientOcclusion;
 
 const float PI = 3.14159265359;
 const float INV_PI = 1.0 / 3.14159265359;
@@ -303,7 +304,10 @@ void main() {
         }
     }
 
-    vec3 ambient = uParams.ambient.rgb * bsdf_params.occlusion;
+    vec2 screen_uv = vec2(gl_FragCoord.xy) * uParams.viewport.zw;
+    float ambient_occlusion = textureLod(uAmbientOcclusion, screen_uv, 0).x;
+
+    vec3 ambient = uParams.ambient.rgb * bsdf_params.occlusion * ambient_occlusion;
     ambient *= fresnelSchlickRoughness(n_dot_v, bsdf_params.f0, bsdf_params.roughness);
     ambient *= bsdf_params.albedo.rgb;
     ambient *= 1.0 - bsdf_params.metalness;

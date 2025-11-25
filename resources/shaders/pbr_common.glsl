@@ -16,6 +16,7 @@ layout (std140, set = 1, binding = 0) uniform SceneUniforms {
     mat4 view;
     mat4 projection;
     vec4 camera;
+    vec4 viewport; // viewport size and inverse viewport size
     DirectionalLight sun;
     vec4 ambient;
 } uParams;

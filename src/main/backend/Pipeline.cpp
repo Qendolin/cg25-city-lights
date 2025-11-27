@@ -2,9 +2,44 @@
 
 #include "../glfw/Context.h"
 #include "../util/Logger.h"
+#include "../util/math.h"
+
+
+SpecializationConstantsBuilder::SpecializationConstantsBuilder(size_t capacity)
+    : mCapacity(capacity), mData(new std::byte[capacity]) {}
+
+SpecializationConstantsBuilder& SpecializationConstantsBuilder::add(uint32_t id, size_t size, const void *data) {
+    if (mOffset + size > mCapacity) {
+        throw std::runtime_error("data size exceeds capacity");
+    }
+    memcpy(mData.get() + mOffset, data, size);
+    mEntries.emplace_back(id, mOffset, size);
+    mOffset += size;
+    mOffset = util::alignOffset(mOffset, 4);
+    return *this;
+}
+
+SpecializationConstants SpecializationConstantsBuilder::build() {
+    SpecializationConstants result = {
+        .entries = std::move(mEntries),
+        .data = std::move(mData),
+    };
+    result.info = vk::SpecializationInfo{
+        .mapEntryCount = static_cast<uint32_t>(result.entries.size()),
+        .pMapEntries = result.entries.data(),
+        .dataSize = mOffset,
+        .pData = result.data.get(),
+    };
+    mOffset = 0;
+    mCapacity = 0;
+    return result;
+}
 
 ConfiguredGraphicsPipeline createGraphicsPipeline(
-        const vk::Device &device, const GraphicsPipelineConfig &c, std::initializer_list<CompiledShaderStage> stages
+        const vk::Device &device,
+        const GraphicsPipelineConfig &c,
+        std::initializer_list<CompiledShaderStage> stages,
+        std::initializer_list<std::reference_wrapper<const SpecializationConstants>> specializations
 ) {
     auto vertex_input_state = vk::PipelineVertexInputStateCreateInfo()
                                       .setVertexAttributeDescriptions(c.vertexInput.attributes)
@@ -121,6 +156,11 @@ ConfiguredGraphicsPipeline createGraphicsPipeline(
         };
     }
 
+    for (size_t i = 0; i < specializations.size(); i++) {
+        const auto &value = *(specializations.begin() + i);
+        shader_stage_create_infos.at(i).pSpecializationInfo = &value.get().info;
+    }
+
     auto pipeline_create_info =
             vk::GraphicsPipelineCreateInfo{
                 .pVertexInputState = &vertex_input_state,
@@ -151,14 +191,19 @@ ConfiguredGraphicsPipeline createGraphicsPipeline(
         .config = c,
     };
 }
+
 ConfiguredComputePipeline createComputePipeline(
-        const vk::Device &device, const ComputePipelineConfig& c, const CompiledShaderStage& shader
+        const vk::Device &device,
+        const ComputePipelineConfig &c,
+        const CompiledShaderStage &shader,
+        const SpecializationConstants &specialization
 ) {
 
     vk::PipelineShaderStageCreateInfo shader_stage_create_info = {
         .stage = shader.stage,
         .module = shader.module,
         .pName = "main",
+        .pSpecializationInfo = &specialization.info,
     };
 
     auto layout = device.createPipelineLayoutUnique(
@@ -178,7 +223,6 @@ ConfiguredComputePipeline createComputePipeline(
         .config = c,
     };
 }
-
 
 void GraphicsPipelineConfig::apply(const vk::CommandBuffer &cmd) const {
     const DynamicStateFlags &flags = dynamic;

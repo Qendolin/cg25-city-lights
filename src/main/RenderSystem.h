@@ -54,8 +54,8 @@ class RenderSystem {
     Framebuffer mHdrFramebuffer;
     AttachmentImage mHdrColorAttachment;
     AttachmentImage mHdrDepthAttachment;
-    AttachmentImage mSsaoRawAttachment;
-    AttachmentImage mSsaoFilteredAttachment;
+    AttachmentImage mSsaoIntermediaryAttachment;
+    AttachmentImage mSsaoResultAttachment;
 
     std::unique_ptr<ImGuiBackend> mImguiBackend;
 
@@ -72,16 +72,16 @@ class RenderSystem {
 public:
     explicit RenderSystem(VulkanContext *context);
 
-    void recreate();
+    void recreate(const Settings& settings);
 
     void draw(const RenderData &render_data);
 
     /// <summary>Advance to the next frame</summary>
-    void advance();
+    void advance(const Settings& settings);
     /// <summary>Begin recording commands</summary>
     void begin();
 
-    void submit();
+    void submit(const Settings& settings);
 
     [[nodiscard]] const DescriptorAllocator &staticDescriptorAllocator() const { return mStaticDescriptorAllocator; }
     [[nodiscard]] DescriptorAllocator &staticDescriptorAllocator() { return mStaticDescriptorAllocator; }

@@ -2,19 +2,20 @@
 
 layout (local_size_x = 16, local_size_y = 16) in;
 
-layout (set = 0, binding = 0) uniform sampler2D in_raw_ao;
+layout (set = 0, binding = 0) uniform sampler2D in_source;
 layout (set = 0, binding = 1) uniform sampler2D in_depth;
 layout (set = 0, binding = 2) uniform writeonly restrict image2D out_result;
 
 layout (push_constant) uniform ShaderParamPush {
+    vec2 direction;
     float zNear;
     float sharpness;
     float exponent;
 } cParams;
 
-// 1 = Check neighbor pixels (High quality)
-// 2 = Check neighbor's neighbor (Stronger blur, slightly less detail)
-const int STRIDE = 1;
+// 9-Tap Gaussian Weights (Sigma ~ 2.0)
+// Center + 4 neighbors on each side
+const float WEIGHTS[5] = float[](0.20236, 0.179044, 0.124009, 0.067234, 0.028532);
 
 float getLinearZ(vec2 uv) {
     float d = textureLod(in_depth, uv, 0).x;
@@ -22,49 +23,78 @@ float getLinearZ(vec2 uv) {
 }
 
 void main() {
-    ivec2 tex_size = textureSize(in_raw_ao, 0);
+    ivec2 size = textureSize(in_source, 0);
     ivec2 p = ivec2(gl_GlobalInvocationID.xy);
 
-    if (p.x >= tex_size.x || p.y >= tex_size.y) return;
+    if (p.x >= size.x || p.y >= size.y) return;
 
-    vec2 texel_size = 1.0f / vec2(tex_size);
+    vec2 texel_size = 1.0f / vec2(size);
     vec2 center_uv = (vec2(p) + 0.5f) * texel_size;
 
-    float center_ao = textureLod(in_raw_ao, center_uv, 0).x;
+    float center_val = textureLod(in_source, center_uv, 0).x;
     float center_z = getLinearZ(center_uv);
 
-    float total_weight = 0.0f;
-    float total_ao = 0.0f;
+    // Calculate Slope
+    // We only care about the slope along the current blur direction.
+    // We check immediate neighbors to estimate how Z changes per pixel.
+    vec2 offset_one = cParams.direction * texel_size;
 
-    // 3x3 Kernel Loop
-    for (int x = -1; x <= 1; x++) {
-        for (int y = -1; y <= 1; y++) {
-            // Calculate Offset
-            vec2 offset = vec2(x, y) * STRIDE * texel_size;
-            vec2 uv = center_uv + offset;
+    float z_plus_1 = getLinearZ(center_uv + offset_one);
+    float z_minus_1 = getLinearZ(center_uv - offset_one);
 
-            // Sample
+    // Calculate Forward and Backward gradients
+    float grad_fwd = z_plus_1 - center_z;
+    float grad_bwd = center_z - z_minus_1;
+
+    // Use the smallest gradient to avoid smoothing over creases (corners)
+    // If we are on a flat slope, fwd and bwd are similar.
+    // If we are on a corner, one will be huge. We pick the safe one.
+    float gradient = (abs(grad_fwd) < abs(grad_bwd)) ? grad_fwd : grad_bwd;
+
+    // Initialize Accumulators
+    float total_weight = WEIGHTS[0];
+    float total_val = center_val * total_weight;
+
+    // Loop radius
+    for (int i = 1; i < 5; i++) {
+        vec2 uv_offset = cParams.direction * float(i) * texel_size;
+
+        // Positive Side
+        {
+            vec2 uv = center_uv + uv_offset;
+            float val = textureLod(in_source, uv, 0).x;
             float z = getLinearZ(uv);
-            float ao = textureLod(in_raw_ao, uv, 0).x;
 
-            // Calculate Weight
-            // 1. Spatial: Simple Box filter (1.0).
-            //    Optional: Use 0.5 for diagonals to make it circular.
-            float w = 1.0f;
+            // Plane Prediction: What should Z be if this is just a slope?
+            float expected_z = center_z + gradient * float(i);
 
-            // 2. Depth: Check similarity to center
-            float depth_diff = abs(center_z - z);
-            w *= max(0.0f, 1.0f - depth_diff * cParams.sharpness);
+            // Error: How far is the actual Z from the slope prediction?
+            float error = abs(z - expected_z);
 
-            // Accumulate
-            total_ao += ao * w;
+            // Weight based on Plane Error, NOT raw Z difference
+            float w = WEIGHTS[i] * max(0.0f, 1.0f - error * cParams.sharpness);
+
+            total_val += val * w;
+            total_weight += w;
+        }
+
+        // Negative Side
+        {
+            vec2 uv = center_uv - uv_offset;
+            float val = textureLod(in_source, uv, 0).x;
+            float z = getLinearZ(uv);
+
+            float expected_z = center_z - gradient * float(i);
+            float error = abs(z - expected_z);
+
+            float w = WEIGHTS[i] * max(0.0f, 1.0f - error * cParams.sharpness);
+
+            total_val += val * w;
             total_weight += w;
         }
     }
 
-    // Normalize
-    // Prevent divide by zero if all neighbors were edges (very rare)
-    float result = total_ao / max(total_weight, 0.0001f);
+    float result = total_val / max(total_weight, 0.0001f);
     result = pow(result, cParams.exponent);
     imageStore(out_result, p, vec4(result));
 }

@@ -78,7 +78,13 @@ void SettingsGui::draw(Settings &settings) {
         PushID("ssao");
         SliderFloat("Radius", &settings.ssao.radius, 0.0f, 4.0f);
         SliderFloat("Exponent", &settings.ssao.exponent, 0.0f, 4.0f);
+        DragFloat("Filter Sharpness", &settings.ssao.filterSharpness, 1, 0, 200);
         SliderFloat("Depth Bias", &settings.ssao.bias, 0.0f, 0.1f);
+        Text("Settings below require a resource reload.");
+        Checkbox("Half Resolution", &settings.ssao.halfResolution);
+        SliderInt("Slices", &settings.ssao.slices, 1, 16);
+        SliderInt("Samples", &settings.ssao.samples, 1, 32);
+
         PopID();
     }
 

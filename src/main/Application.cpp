@@ -30,7 +30,7 @@ void Application::processInput() {
         Logger::info("Reloading render system");
         context->device().waitIdle();
         try {
-            renderSystem->recreate();
+            renderSystem->recreate(settings);
         } catch (const std::exception &exc) {
             Logger::error("Reload failed: " + std::string(exc.what()));
         }
@@ -114,7 +114,7 @@ void Application::init() {
     camera = std::make_unique<Camera>(glm::radians(90.0f), 0.001f, glm::vec3{0, 1, 5}, glm::vec3{});
     debugFrameTimes = std::make_unique<FrameTimes>();
 
-    renderSystem->recreate();
+    renderSystem->recreate(settings);
 
     blobModel = std::make_unique<blob::Model>(context->allocator(), context->device(), BLOB_RESOLUTION);
 
@@ -128,7 +128,7 @@ void Application::init() {
 
 void Application::run() {
     while (!context->window().shouldClose()) {
-        renderSystem->advance();
+        renderSystem->advance(settings);
 
         input->update();
         processInput();
@@ -159,7 +159,7 @@ void Application::run() {
             .skybox = *skybox,
         });
 
-        renderSystem->submit();
+        renderSystem->submit(settings);
     }
     context->device().waitIdle();
 }

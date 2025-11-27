@@ -27,7 +27,7 @@ SSAORenderer::SSAORenderer(const vk::Device &device, const vma::Allocator &alloc
     StagingBuffer staging = {allocator, device, *cmd_pool};
 
     PlainImageDataU8 noise_image_data =
-            PlainImageDataU8::create(vk::Format::eR8G8Unorm, "resources/images/blue_noise_rotation.png");
+            PlainImageDataU8::create(vk::Format::eR8G8Unorm, "resources/images/gtao_blue_noise.png");
     auto create_info = ImageCreateInfo::from(noise_image_data);
     create_info.usage |= vk::ImageUsageFlagBits::eSampled;
 
@@ -51,14 +51,14 @@ void SSAORenderer::execute(
         const glm::mat4 &projection_mat,
         float z_near,
         const Attachment &depth_attachment,
-        const Attachment &ao_raw,
-        const Attachment &ao_filtered
+        const Attachment &ao_intermediary,
+        const Attachment &ao_result
 ) {
     util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
     util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Sampling");
 
     depth_attachment.barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
-    ao_raw.barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
+    ao_result.barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
 
     ShaderParamsInlineUniformBlock shader_params = {
         .projection = projection_mat,
@@ -67,8 +67,8 @@ void SSAORenderer::execute(
         .bias = bias,
     };
 
-    uint32_t ao_width = ao_raw.extents.width;
-    uint32_t ao_height = ao_raw.extents.height;
+    uint32_t ao_width = ao_result.extents.width;
+    uint32_t ao_height = ao_result.extents.height;
 
     calculateInverseProjectionConstants(
             projection_mat, static_cast<float>(ao_width), static_cast<float>(ao_height),
@@ -93,7 +93,7 @@ void SSAORenderer::execute(
                 ),
                 descriptor_set_sampler.write(
                         SamplerShaderParamsDescriptorLayout::OutRawAO,
-                        vk::DescriptorImageInfo{.imageView = ao_raw.view, .imageLayout = vk::ImageLayout::eGeneral}
+                        vk::DescriptorImageInfo{.imageView = ao_result.view, .imageLayout = vk::ImageLayout::eGeneral}
                 ),
                 descriptor_set_sampler.write(
                         SamplerShaderParamsDescriptorLayout::InNoise,
@@ -108,52 +108,76 @@ void SSAORenderer::execute(
 
 
     // Filtering
+    FilterShaderPushConstants filter_params = {
+        .zNear = z_near,
+        .sharpness = filterSharpness,
+        .exponent = 1.0f,
+    };
 
-    dbg_cmd_label_region.swap("Filter");
+    // First pass: Horizontal
+    dbg_cmd_label_region.swap("Filter X");
+    filter_params.direction = glm::vec2(1, 0);
+    filterPass(device, allocator, cmd_buf, depth_attachment, ao_result, ao_intermediary, filter_params);
 
-    auto descriptor_set_filter = allocator.allocate(mFilterShaderParamsDescriptorLayout);
-    ao_raw.barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
-    ao_filtered.barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
+    // Second pass: Vertical
+    dbg_cmd_label_region.swap("Filter Y");
+    filter_params.direction = glm::vec2(0, 1);
+    filter_params.exponent = exponent;
+    filterPass(device, allocator, cmd_buf, depth_attachment, ao_intermediary, ao_result, filter_params);
+}
+
+void SSAORenderer::filterPass(
+        const vk::Device &device,
+        const DescriptorAllocator &allocator,
+        const vk::CommandBuffer &cmd_buf,
+        const Attachment &depth_attachment,
+        const Attachment &ao_input,
+        const Attachment &ao_output,
+        const FilterShaderPushConstants &filter_params
+) {
+    uint32_t ao_width = ao_input.extents.width;
+    uint32_t ao_height = ao_input.extents.height;
+
+    auto descriptor_set = allocator.allocate(mFilterShaderParamsDescriptorLayout);
+    ao_input.barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
+    ao_output.barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
     device.updateDescriptorSets(
             {
-                descriptor_set_filter.write(
+                descriptor_set.write(
                         FilterShaderParamsDescriptorLayout::InRawAO,
                         vk::DescriptorImageInfo{
-                            .sampler = *mDepthSampler, .imageView = ao_raw.view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+                            .sampler = *mDepthSampler, .imageView = ao_input.view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
                         }
                 ),
-                descriptor_set_filter.write(
+                descriptor_set.write(
                         FilterShaderParamsDescriptorLayout::InDepth,
                         vk::DescriptorImageInfo{
                             .sampler = *mDepthSampler, .imageView = depth_attachment.view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
                         }
                 ),
-                descriptor_set_filter.write(
+                descriptor_set.write(
                         FilterShaderParamsDescriptorLayout::OutFilteredAO,
-                        vk::DescriptorImageInfo{.imageView = ao_filtered.view, .imageLayout = vk::ImageLayout::eGeneral}
+                        vk::DescriptorImageInfo{.imageView = ao_output.view, .imageLayout = vk::ImageLayout::eGeneral}
                 ),
             },
             {}
     );
 
-    FilterShaderPushConstants filter_params = {
-        .zNear = z_near,
-        .sharpness = filterSharpness,
-        .exponent = exponent,
-    };
-    cmd_buf.pushConstants(*mFilterPipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(filter_params), &filter_params);
-
-    cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *mFilterPipeline.layout, 0, {descriptor_set_filter}, {});
+    cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *mFilterPipeline.layout, 0, {descriptor_set}, {});
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eCompute, *mFilterPipeline.pipeline);
-    cmd_buf.dispatch(util::divCeil(ao_width, 8u), util::divCeil(ao_height, 8u), 1);
+
+    cmd_buf.pushConstants(*mFilterPipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(filter_params), &filter_params);
+    cmd_buf.dispatch(util::divCeil(ao_width, 16u), util::divCeil(ao_height, 16u), 1);
 }
 
-void SSAORenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader) {
+
+void SSAORenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, int slices, int samples) {
     auto comp_sh_sampler = shader_loader.loadFromSource(device, "resources/shaders/ssao.comp");
     ComputePipelineConfig pipeline_config_sampler = {
         .descriptorSetLayouts = {mSamplerShaderParamsDescriptorLayout}, .pushConstants = {}
     };
-    mSamplerPipeline = createComputePipeline(device, pipeline_config_sampler, *comp_sh_sampler);
+    auto specialization_constants = SpecializationConstantsBuilder().add(0, slices).add(1, samples).build();
+    mSamplerPipeline = createComputePipeline(device, pipeline_config_sampler, *comp_sh_sampler, specialization_constants);
 
     auto comp_sh_filter = shader_loader.loadFromSource(device, "resources/shaders/ssao_filter.comp");
     ComputePipelineConfig pipeline_config_filter = {

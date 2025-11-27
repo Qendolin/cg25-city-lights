@@ -137,30 +137,17 @@ template<typename T>
 PlainImageData<T> PlainImageData<T>::create(vk::Format format, const std::filesystem::path &path)
     requires std::is_same_v<T, float> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint8_t>
 {
-    int result_channels = getFormatComponentCount(format);
     int width = 0, height = 0, channels = 0;
     T *pixels;
     if constexpr (std::is_same_v<T, float>) {
-        pixels = stbi_loadf(path.string().c_str(), &width, &height, &channels, result_channels);
+        pixels = stbi_loadf(path.string().c_str(), &width, &height, &channels, 0);
     } else if constexpr (std::is_same_v<T, uint16_t>) {
-        pixels = stbi_load_16(path.string().c_str(), &width, &height, &channels, result_channels);
+        pixels = stbi_load_16(path.string().c_str(), &width, &height, &channels, 0);
     } else if constexpr (std::is_same_v<T, uint8_t>) {
-        pixels = stbi_load(path.string().c_str(), &width, &height, &channels, result_channels);
-    } else {
-        // TODO: should be a compile time assert
-        assert(false && "cannot create image of this type from path");
+        pixels = stbi_load(path.string().c_str(), &width, &height, &channels, 0);
     }
 
-    // clang-format off
-    return {
-        std::unique_ptr<T>(pixels),
-        static_cast<size_t>(width * height * result_channels),
-        static_cast<uint32_t>(width),
-        static_cast<uint32_t>(height),
-        static_cast<uint32_t>(result_channels),
-        format,
-    };
-    // clang-format on
+    return create(format, width, height, channels, pixels);
 }
 template<typename T>
 PlainImageData<T> PlainImageData<T>::create(
@@ -195,7 +182,7 @@ PlainImageData<T> PlainImageData<T>::create(
 
 template<typename T>
 int PlainImageData<T>::getFormatComponentCount(vk::Format format) {
-    return vkuFormatComponentCount(static_cast<VkFormat>(format));
+    return static_cast<int>(vkuFormatComponentCount(static_cast<VkFormat>(format)));
 }
 
 template<typename T>

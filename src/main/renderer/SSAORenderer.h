@@ -7,12 +7,6 @@
 #include "../backend/Pipeline.h"
 #include "../debug/Annotation.h"
 
-// SSAO TODO:
-// - Proper sample direction generation (not just a constant array in the shader)
-// - Improved, two-pass blur
-// - On a general level: Getting more physically accurate with HBAO or GTAO
-// - Improve depth bounds check
-
 struct DeviceQueue;
 struct Attachment;
 class ShaderLoader;
@@ -59,6 +53,7 @@ public:
     };
 
     struct alignas(4) FilterShaderPushConstants {
+        glm::vec2 direction;
         float zNear;
         float sharpness;
         float exponent;
@@ -72,8 +67,18 @@ public:
     ~SSAORenderer();
     SSAORenderer(const vk::Device &device, const vma::Allocator &allocator, const DeviceQueue &graphicsQueue);
 
-    void recreate(const vk::Device &device, const ShaderLoader &shader_loader) {
-        createPipeline(device, shader_loader);
+    void filterPass(
+            const vk::Device &device,
+            const DescriptorAllocator &allocator,
+            const vk::CommandBuffer &cmd_buf,
+            const Attachment &depth_attachment,
+            const Attachment &ao_input,
+            const Attachment &ao_output,
+            const FilterShaderPushConstants &filter_params
+    );
+
+    void recreate(const vk::Device &device, const ShaderLoader &shader_loader, int slices, int samples) {
+        createPipeline(device, shader_loader, slices, samples);
     }
 
     void execute(
@@ -83,12 +88,12 @@ public:
             const glm::mat4 &projection_mat,
             float z_near,
             const Attachment &depth_attachment,
-            const Attachment &ao_raw,
-            const Attachment &ao_filtered
+            const Attachment &ao_intermediary,
+            const Attachment &ao_result
     );
 
 private:
-    void createPipeline(const vk::Device &device, const ShaderLoader &shader_loader);
+    void createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, int slices, int samples);
 
     static void calculateInverseProjectionConstants(
             const glm::mat4 &projectionMatrix, float textureWidth, float textureHeight, glm::vec2 &viewScale, glm::vec2 &viewOffset

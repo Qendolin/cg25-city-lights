@@ -31,7 +31,7 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mDepthPrePassRenderer = std::make_unique<DepthPrePassRenderer>();
 }
 
-void RenderSystem::recreate() {
+void RenderSystem::recreate(const Settings& settings) {
     const auto &swapchain = mContext->swapchain();
     const auto &device = mContext->device();
     const auto &cmd_pool = *mCommandPool;
@@ -54,19 +54,20 @@ void RenderSystem::recreate() {
     mHdrFramebuffer.colorAttachments = {mHdrColorAttachment};
 
     // TODO: dont use attachment type because image is never used as one
-    mSsaoRawAttachment = AttachmentImage(
-            mContext->allocator(), device, vk::Format::eR8Unorm, screen_half_extent,
+    auto ao_size = settings.ssao.halfResolution ? screen_half_extent : screen_extent;
+    mSsaoIntermediaryAttachment = AttachmentImage(
+            mContext->allocator(), device, vk::Format::eR8Unorm, ao_size,
             vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
     );
-    util::setDebugName(device, mSsaoRawAttachment.image(), "ao_raw_attachment_image");
-    util::setDebugName(device, mSsaoRawAttachment.view(), "ao_raw_attachment_image_view");
+    util::setDebugName(device, mSsaoIntermediaryAttachment.image(), "ao_intermediary_attachment_image");
+    util::setDebugName(device, mSsaoIntermediaryAttachment.view(), "ao_intermediary_attachment_image_view");
 
-    mSsaoFilteredAttachment = AttachmentImage(
-            mContext->allocator(), device, vk::Format::eR8Unorm, screen_half_extent,
+    mSsaoResultAttachment = AttachmentImage(
+            mContext->allocator(), device, vk::Format::eR8Unorm, ao_size,
             vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
     );
-    util::setDebugName(device, mSsaoFilteredAttachment.image(), "ao_filtered_attachment_image");
-    util::setDebugName(device, mSsaoFilteredAttachment.view(), "ao_filtered_attachment_image_view");
+    util::setDebugName(device, mSsaoResultAttachment.image(), "ao_result_attachment_image");
+    util::setDebugName(device, mSsaoResultAttachment.view(), "ao_result_attachment_image_view");
 
     // I don't really like that recrate has to be called explicitly.
     // I'd prefer an implicit solution, but I couldn't think of a good one right now.
@@ -76,7 +77,7 @@ void RenderSystem::recreate() {
     mBlobRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mSkyboxRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mFrustumCuller->recreate(device, mShaderLoader);
-    mSSAORenderer->recreate(device, mShaderLoader);
+    mSSAORenderer->recreate(device, mShaderLoader, settings.ssao.slices, settings.ssao.samples);
     mDepthPrePassRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
 
     // These have to match the max frames in flight count but an be more
@@ -152,7 +153,7 @@ void RenderSystem::draw(const RenderData &rd) {
     mSSAORenderer->filterSharpness = rd.settings.ssao.filterSharpness;
     mSSAORenderer->execute(
             mContext->device(), desc_alloc, cmd_buf, rd.camera.projectionMatrix(), rd.camera.nearPlane(),
-            mHdrFramebuffer.depthAttachment, mSsaoRawAttachment, mSsaoFilteredAttachment
+            mHdrFramebuffer.depthAttachment, mSsaoIntermediaryAttachment, mSsaoResultAttachment
     );
 
     // Shadow pass
@@ -167,7 +168,7 @@ void RenderSystem::draw(const RenderData &rd) {
     mPbrSceneRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
     mPbrSceneRenderer->execute(
             mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene,
-            *mFrustumCuller, rd.sunLight, rd.sunShadowCasterCascade.cascades(), mSsaoFilteredAttachment, rd.settings
+            *mFrustumCuller, rd.sunLight, rd.sunShadowCasterCascade.cascades(), mSsaoResultAttachment, rd.settings
     );
 
     // Blob render pass
@@ -207,7 +208,7 @@ void RenderSystem::draw(const RenderData &rd) {
     swapchain_fb.colorAttachments[0].barrier(cmd_buf, ImageResourceAccess::PresentSrc);
 }
 
-void RenderSystem::advance() {
+void RenderSystem::advance(const Settings& settings) {
     auto &swapchain = mContext->swapchain();
     const auto &sync_objects = mFramesInFlightSyncObjects.next();
 
@@ -216,7 +217,7 @@ void RenderSystem::advance() {
     mContext->device().resetFences(*sync_objects.inFlightFence);
 
     if (!swapchain.advance(*sync_objects.availableSemaphore)) {
-        recreate();
+        recreate(settings);
     }
 
     mCommandBuffers.next();
@@ -230,7 +231,7 @@ void RenderSystem::begin() {
     cmd_buf.begin(vk::CommandBufferBeginInfo{});
 }
 
-void RenderSystem::submit() {
+void RenderSystem::submit(const Settings& settings) {
     const auto &cmd_buf = mCommandBuffers.get();
     const auto &sync_objects = mFramesInFlightSyncObjects.get();
     // These must correspond to the active swapchain image index
@@ -250,6 +251,6 @@ void RenderSystem::submit() {
     if (!mContext->swapchain().present(
                 mContext->presentQueue, vk::PresentInfoKHR().setWaitSemaphores(*render_finished_semaphore)
         )) {
-        recreate();
+        recreate(settings);
     }
 }

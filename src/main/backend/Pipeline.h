@@ -251,6 +251,34 @@ struct DynamicStateFlags {
     bool viewport = true;
 };
 
+struct SpecializationConstants {
+    std::vector<vk::SpecializationMapEntry> entries = {};
+    std::unique_ptr<std::byte[]> data = {};
+    vk::SpecializationInfo info = {};
+};
+
+class SpecializationConstantsBuilder {
+public:
+    explicit SpecializationConstantsBuilder(size_t capacity = 128);
+
+    template<typename T>
+    SpecializationConstantsBuilder& add(uint32_t id, const T &value) {
+        constexpr size_t size = sizeof(T);
+        add(id, size, &value);
+        return *this;
+    }
+
+    SpecializationConstantsBuilder& add(uint32_t id, size_t size, const void *data);
+
+    SpecializationConstants build();
+
+private:
+    size_t mCapacity = 0;
+    std::unique_ptr<std::byte[]> mData;
+    size_t mOffset = 0;
+    std::vector<vk::SpecializationMapEntry> mEntries;
+};
+
 /// <summary>
 /// Configuration for creating a Vulkan compute pipeline.
 /// </summary>
@@ -423,9 +451,9 @@ struct ConfiguredComputePipeline {
 };
 
 ConfiguredGraphicsPipeline createGraphicsPipeline(
-        const vk::Device &device, const GraphicsPipelineConfig &c, std::initializer_list<CompiledShaderStage> stages
+        const vk::Device &device, const GraphicsPipelineConfig &c, std::initializer_list<CompiledShaderStage> stages, std::initializer_list<std::reference_wrapper<const SpecializationConstants>> specializations = {}
 );
 
 ConfiguredComputePipeline createComputePipeline(
-        const vk::Device &device, const ComputePipelineConfig &c, const CompiledShaderStage& shader
+        const vk::Device &device, const ComputePipelineConfig &c, const CompiledShaderStage &shader, const SpecializationConstants& specialization = {}
 );

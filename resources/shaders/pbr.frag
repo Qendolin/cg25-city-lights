@@ -109,7 +109,7 @@ vec3 fresnelSchlickRoughness(float cos_theta, vec3 F0, float roughness)
 
 // https://advances.realtimerendering.com/other/2016/naughty_dog/index.html
 float microShadowNaughtyDog(float ao, float n_dot_l) {
-    float aperture = 2.0 * ao; // They use ao^2, but linear looks better imo
+    float aperture = 2.0 * ao * ao; // They use 2 * ao^2, but linear looks better imo
     return clamp(n_dot_l + aperture - 1.0, 0.0, 1.0);
 }
 
@@ -230,13 +230,13 @@ void main() {
     uint ormTextureIndex, unusedTextureIndex;
     unpackUint16(material.packedImageIndices1, ormTextureIndex, unusedTextureIndex);
 
-    bsdf_params.albedo = material.albedoFactors;
-    if (albedoTextureIndex != NO_TEXTURE) {
-        bsdf_params.albedo *= texture(uTextures[nonuniformEXT(albedoTextureIndex)], in_tex_coord);
-    }
-
     if ((cParams.flags & FLAG_WHITE_WORLD) != 0x0) {
         bsdf_params.albedo.xyz = vec3(1.0f);
+    } else {
+        bsdf_params.albedo = material.albedoFactors;
+        if (albedoTextureIndex != NO_TEXTURE) {
+            bsdf_params.albedo *= texture(uTextures[nonuniformEXT(albedoTextureIndex)], in_tex_coord);
+        }
     }
 
     vec3 orm = vec3(1.0, material.rmnFactors.xy);
@@ -257,7 +257,7 @@ void main() {
         bsdf_params.roughness = adjustRoughness(normal_ts, bsdf_params.roughness);
     }
 
-    vec3 geometry_normal = tbn[2].xyz;
+    vec3 geometry_normal = normalize(tbn[2].xyz);
     vec3 texture_normal = transformNormal(tbn, normal_ts);
     vec3 position = in_position_ws;
     vec3 view_dir = normalize(uParams.camera.xyz - position);

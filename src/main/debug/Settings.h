@@ -47,10 +47,13 @@ struct Settings {
         bool whiteWorld = false;
     } rendering;
     struct SSAO {
-        float radius = 0.5f;
+        bool halfResolution = true;
+        int slices = 3;
+        int samples = 6;
+        float radius = 2.0f;
         float exponent = 2.0f;
-        float bias = 0.01f;
-        float filterSharpness = 50.0f;
+        float bias = 0.0f;
+        float filterSharpness = 20.0f;
     } ssao;
 
     Settings() {

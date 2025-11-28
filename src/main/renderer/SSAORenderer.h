@@ -8,7 +8,6 @@
 #include "../debug/Annotation.h"
 
 struct DeviceQueue;
-struct Attachment;
 class ShaderLoader;
 class SSAORenderer {
 
@@ -71,9 +70,9 @@ public:
             const vk::Device &device,
             const DescriptorAllocator &allocator,
             const vk::CommandBuffer &cmd_buf,
-            const Attachment &depth_attachment,
-            const Attachment &ao_input,
-            const Attachment &ao_output,
+            const ImageViewPairBase &depth_attachment,
+            const ImageViewPairBase &ao_input,
+            const ImageViewPairBase &ao_output,
             const FilterShaderPushConstants &filter_params
     );
 
@@ -87,9 +86,9 @@ public:
             const vk::CommandBuffer &cmd_buf,
             const glm::mat4 &projection_mat,
             float z_near,
-            const Attachment &depth_attachment,
-            const Attachment &ao_intermediary,
-            const Attachment &ao_result
+            const ImageViewPairBase &depth_attachment,
+            const ImageViewPairBase &ao_intermediary,
+            const ImageViewPairBase &ao_result
     );
 
 private:
@@ -101,8 +100,7 @@ private:
 
     vk::UniqueSampler mDepthSampler;
     vk::UniqueSampler mNoiseSampler;
-    Image mNoise;
-    vk::UniqueImageView mNoiseView;
+    ImageWithView mNoise;
 
     ConfiguredComputePipeline mSamplerPipeline;
     SamplerShaderParamsDescriptorLayout mSamplerShaderParamsDescriptorLayout;

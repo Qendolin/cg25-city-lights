@@ -226,36 +226,100 @@ void PlainImageData<T>::copyPixels(const T *src, uint32_t src_channels, T *dst, 
     jmp[index](src, dst, elements);
 }
 
-Image::Image(vma::UniqueImage &&image, vma::UniqueAllocation &&allocation, const ImageCreateInfo &create_info)
-    : info(create_info), image(*image), mImage(std::move(image)), mAllocation(std::move(allocation)) {}
-
 Image Image::create(const vma::Allocator &allocator, const ImageCreateInfo &create_info_) {
-    ImageCreateInfo create_info = create_info_;
-    if (create_info.mipLevels == UINT32_MAX) {
-        create_info.mipLevels =
-                static_cast<uint32_t>(std::floor(std::log2(std::max(create_info.width, create_info.height)))) + 1;
+    ImageCreateInfo ci = create_info_;
+    if (ci.levels == UINT32_MAX) {
+        ci.levels = static_cast<uint32_t>(std::floor(std::log2(std::max(ci.width, ci.height)))) + 1;
     }
 
     auto [image, allocation] = allocator.createImageUnique(
             vk::ImageCreateInfo{
-                .flags = create_info.flags,
-                .imageType = create_info.type,
-                .format = create_info.format,
-                .extent = {.width = create_info.width, .height = create_info.height, .depth = create_info.depth},
-                .mipLevels = create_info.mipLevels,
-                .arrayLayers = create_info.arrayLayers,
-                .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | create_info.usage,
+                .flags = ci.flags,
+                .imageType = ci.type,
+                .format = ci.format,
+                .extent = {.width = ci.width, .height = ci.height, .depth = ci.depth},
+                .mipLevels = ci.levels,
+                .arrayLayers = ci.layers,
+                .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | ci.usage,
             },
             {
-                .usage = vma::MemoryUsage::eAuto,
-                .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
+                .usage = ci.device,
+                .requiredFlags = ci.requiredProperties,
+                .preferredFlags = ci.preferredProperties,
             }
     );
 
-    return {std::move(image), std::move(allocation), create_info};
+    return {std::move(image), std::move(allocation), ci};
 }
 
-void Image::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data) {
+ImageWithView ImageWithView::create(
+        const vk::Device &device,
+        const vma::Allocator &allocator,
+        const ImageCreateInfo &imageCreateInfo,
+        const ImageViewInfo &viewCreateInfo
+) {
+    auto &&image = Image::create(allocator, imageCreateInfo);
+    auto &&view = device.createImageViewUnique({
+        .image = image,
+        .viewType = static_cast<vk::ImageViewType>(viewCreateInfo.type),
+        .format = viewCreateInfo.format,
+        .subresourceRange = viewCreateInfo.resourceRange,
+    });
+    return ImageWithView(std::move(image), std::move(view), viewCreateInfo);
+}
+
+ImageWithView::operator TransientImageViewPair() const { return TransientImageViewPair(*this, *this); }
+UnmanagedImageWithView::operator TransientImageViewPair() const { return TransientImageViewPair(*this, *this); }
+UnmanagedImageWithManagedView::operator TransientImageViewPair() const { return TransientImageViewPair(*this, *this); }
+
+vk::ImageAspectFlags ImageInfo::getAspectsFromFormat(const vk::Format &format) {
+    switch (format) {
+        case vk::Format::eUndefined:
+            Logger::fatal("image format undefined");
+        case vk::Format::eS8Uint:
+            return vk::ImageAspectFlagBits::eStencil;
+        case vk::Format::eD16Unorm:
+        case vk::Format::eD32Sfloat:
+        case vk::Format::eX8D24UnormPack32:
+            return vk::ImageAspectFlagBits::eDepth;
+        case vk::Format::eD16UnormS8Uint:
+        case vk::Format::eD24UnormS8Uint:
+        case vk::Format::eD32SfloatS8Uint:
+            return vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
+        default:
+            if (format > vk::Format::eAstc12x12SrgbBlock)
+                Logger::fatal("unsupported image format");
+            return vk::ImageAspectFlagBits::eColor;
+    }
+}
+
+vk::ImageUsageFlags ImageInfo::getAttachmentUsageFromFormat(const vk::Format &format) {
+    if (vkuFormatIsColor(static_cast<VkFormat>(format))) {
+        return vk::ImageUsageFlagBits::eColorAttachment;
+    }
+    if (vkuFormatIsDepthOnly(static_cast<VkFormat>(format))) {
+        return vk::ImageUsageFlagBits::eDepthStencilAttachment;
+    }
+    if (vkuFormatIsDepthAndStencil(static_cast<VkFormat>(format))) {
+        return vk::ImageUsageFlagBits::eDepthStencilAttachment;
+    }
+    if (vkuFormatIsStencilOnly(static_cast<VkFormat>(format))) {
+        return vk::ImageUsageFlagBits::eDepthStencilAttachment;
+    }
+    Logger::fatal(std::format("Unsupported format: {}", vk::to_string(format)));
+}
+ImageViewInfo ImageViewInfo::from(const ImageInfo &info) {
+    return {
+        .format = info.format,
+        .type = static_cast<vk::ImageViewType>(info.type),
+        .width = info.width,
+        .height = info.height,
+        .depth = info.depth,
+        .resourceRange = info.resourceRange()
+    };
+}
+
+void ImageBase::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data) {
     if (region.width == 0)
         region.width = info.width;
     if (region.height == 0)
@@ -266,26 +330,26 @@ void Image::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D 
     barrier(cmd_buf, ImageResourceAccess::TransferWrite);
 
     vk::BufferImageCopy image_copy = {
-        .imageSubresource = {.aspectMask = imageAspectFlags(), .mipLevel = level, .layerCount = info.arrayLayers},
+        .imageSubresource = {.aspectMask = info.aspects, .mipLevel = level, .layerCount = info.layers},
         .imageExtent = region,
     };
-    cmd_buf.copyBufferToImage(data, *mImage, vk::ImageLayout::eTransferDstOptimal, image_copy);
+    cmd_buf.copyBufferToImage(data, vk::Image(*this), vk::ImageLayout::eTransferDstOptimal, image_copy);
 }
 
-void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
+void ImageBase::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
     barrier(cmd_buf, ImageResourceAccess::TransferWrite);
 
     vk::ImageMemoryBarrier2 barrier = {
         .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
         .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = *mImage,
+        .image = vk::Image(*this),
         .subresourceRange =
                 {
                     .aspectMask = vk::ImageAspectFlagBits::eColor,
                     .baseMipLevel = 0,
                     .levelCount = 1,
                     .baseArrayLayer = 0,
-                    .layerCount = info.arrayLayers,
+                    .layerCount = info.layers,
                 },
     };
 
@@ -293,7 +357,7 @@ void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
     auto level_height = static_cast<int32_t>(info.height);
 
     // run for images 1..n, the 0th is expected to be loaded
-    for (uint32_t lvl = 1; lvl < info.mipLevels; lvl++) {
+    for (uint32_t lvl = 1; lvl < info.levels; lvl++) {
         int32_t next_level_width = std::max(level_width / 2, 1);
         int32_t next_level_height = std::max(level_height / 2, 1);
 
@@ -316,7 +380,7 @@ void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
                         .aspectMask = vk::ImageAspectFlagBits::eColor,
                         .mipLevel = lvl - 1,
                         .baseArrayLayer = 0,
-                        .layerCount = info.arrayLayers,
+                        .layerCount = info.layers,
                     },
             .srcOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{level_width, level_height, 1}},
             .dstSubresource =
@@ -324,14 +388,14 @@ void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
                         .aspectMask = vk::ImageAspectFlagBits::eColor,
                         .mipLevel = lvl,
                         .baseArrayLayer = 0,
-                        .layerCount = info.arrayLayers,
+                        .layerCount = info.layers,
                     },
             .dstOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{next_level_width, next_level_height, 1}}
         };
 
         cmd_buf.blitImage(
-                *mImage, vk::ImageLayout::eTransferSrcOptimal, *mImage, vk::ImageLayout::eTransferDstOptimal, blit,
-                vk::Filter::eLinear
+                vk::Image(*this), vk::ImageLayout::eTransferSrcOptimal, vk::Image(*this),
+                vk::ImageLayout::eTransferDstOptimal, blit, vk::Filter::eLinear
         );
 
         level_width = next_level_width;
@@ -340,7 +404,7 @@ void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
 
     // final transition, kinda useless, but brings all levels to the same layout
     if (mPrevAccess.layout != vk::ImageLayout::eTransferSrcOptimal) {
-        barrier.subresourceRange.baseMipLevel = info.mipLevels - 1;
+        barrier.subresourceRange.baseMipLevel = info.levels - 1;
         barrier.oldLayout = mPrevAccess.layout;
         barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
         barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
@@ -357,53 +421,16 @@ void Image::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
         .layout = vk::ImageLayout::eTransferSrcOptimal
     };
 }
-
-vk::UniqueImageView Image::createDefaultView(const vk::Device &device) {
-    return device.createImageViewUnique({
-        .image = *mImage,
-        .viewType = static_cast<vk::ImageViewType>(info.type),
-        .format = info.format,
-        .subresourceRange = {.aspectMask = imageAspectFlags(), .levelCount = info.mipLevels, .layerCount = info.arrayLayers},
-    });
-}
-
-void Image::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) const {
-    ImageResource::barrier(
-            *mImage, {.aspectMask = imageAspectFlags(), .levelCount = info.mipLevels, .layerCount = info.arrayLayers},
-            cmd_buf, begin, end
+ImageView ImageView::create(const vk::Device &device, const vk::Image &image, const ImageViewInfo &info) {
+    return ImageView(
+            device.createImageViewUnique({
+                .image = image,
+                .viewType = static_cast<vk::ImageViewType>(info.type),
+                .format = info.format,
+                .subresourceRange = info.resourceRange,
+            }),
+            info
     );
-}
-
-void Image::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) const {
-    barrier(cmd_buf, single, single);
-}
-
-void Image::transfer(vk::CommandBuffer src_cmd_buf, vk::CommandBuffer dst_cmd_buf, uint32_t src_queue, uint32_t dst_queue) {
-    vk::ImageSubresourceRange range = {
-        .aspectMask = imageAspectFlags(), .levelCount = info.mipLevels, .layerCount = info.arrayLayers
-    };
-    ImageResource::transfer(*mImage, range, src_cmd_buf, dst_cmd_buf, src_queue, dst_queue);
-}
-
-vk::ImageAspectFlags Image::imageAspectFlags() const {
-    switch (info.format) {
-        case vk::Format::eUndefined:
-            Logger::fatal("image format undefined");
-        case vk::Format::eS8Uint:
-            return vk::ImageAspectFlagBits::eStencil;
-        case vk::Format::eD16Unorm:
-        case vk::Format::eD32Sfloat:
-        case vk::Format::eX8D24UnormPack32:
-            return vk::ImageAspectFlagBits::eDepth;
-        case vk::Format::eD16UnormS8Uint:
-        case vk::Format::eD24UnormS8Uint:
-        case vk::Format::eD32SfloatS8Uint:
-            return vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
-        default:
-            if (info.format > vk::Format::eAstc12x12SrgbBlock)
-                Logger::fatal("unsupported image format");
-            return vk::ImageAspectFlagBits::eColor;
-    }
 }
 
 template class PlainImageData<uint8_t>;

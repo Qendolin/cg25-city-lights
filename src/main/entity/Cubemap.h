@@ -22,7 +22,7 @@ private:
     vk::Device device;
 
     Image image;
-    vk::UniqueImageView view;
+    ImageView view;
 
 public:
     Cubemap(const vma::Allocator &allocator,
@@ -31,7 +31,7 @@ public:
             const DeviceQueue &graphicsQueue,
             const std::array<std::string, 6> &skyboxImageFilenames);
 
-    vk::ImageView getImageView() const { return *view; }
+    const ImageViewBase& getImageView() const { return view; }
 
 private:
     static std::vector<uint32_t> getPixelData(const std::array<PlainImageDataU32, FACES_COUNT> &plainImages);

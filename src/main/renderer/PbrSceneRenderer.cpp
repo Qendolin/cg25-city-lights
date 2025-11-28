@@ -48,7 +48,7 @@ void PbrSceneRenderer::execute(
         const FrustumCuller &frustum_culler,
         const DirectionalLight &sun_light,
         std::span<const CascadedShadowCaster> sun_shadow_cascades,
-        const Attachment &ao_attachment,
+        const ImageViewPairBase &ao_result,
         const Settings &settings
 ) {
     util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
@@ -117,7 +117,7 @@ void PbrSceneRenderer::execute(
     };
 
     auto descriptor_set = desc_alloc.allocate(mShaderParamsDescriptorLayout);
-    ao_attachment.barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
+    ao_result.image().barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
     device.updateDescriptorSets(
             {descriptor_set.write(
                      ShaderParamsDescriptorLayout::SceneUniforms, {.dataSize = sizeof(uniform_block), .pData = &uniform_block}
@@ -128,18 +128,18 @@ void PbrSceneRenderer::execute(
              ),
              descriptor_set.write(
                      ShaderParamsDescriptorLayout::AmbientOcclusion,
-                     {.sampler = *mAoSampler, .imageView = ao_attachment.view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal}
+                     {.sampler = *mAoSampler, .imageView = ao_result.view(), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal}
              )},
             {}
     );
     for (uint32_t i = 0; i < sun_shadow_cascades.size(); i++) {
-        sun_shadow_cascades[i].framebuffer().depthAttachment.barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
+        sun_shadow_cascades[i].framebuffer().depthAttachment.image().barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
         device.updateDescriptorSets(
                 descriptor_set.write(
                         ShaderParamsDescriptorLayout::SunShadowMap,
                         vk::DescriptorImageInfo{
                             .sampler = *mShadowSampler,
-                            .imageView = sun_shadow_cascades[i].framebuffer().depthAttachment.view,
+                            .imageView = sun_shadow_cascades[i].framebuffer().depthAttachment.view(),
                             .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
                         },
                         i
@@ -151,10 +151,10 @@ void PbrSceneRenderer::execute(
     // Rendering
     dbg_cmd_label_region.swap("Rendering");
 
-    fb.colorAttachments[0].barrier(
+    fb.colorAttachments[0].image().barrier(
             cmd_buf, ImageResourceAccess::ColorAttachmentLoad, ImageResourceAccess::ColorAttachmentWrite
     );
-    fb.depthAttachment.barrier(
+    fb.depthAttachment.image().barrier(
             cmd_buf, ImageResourceAccess::DepthAttachmentEarlyOps, ImageResourceAccess::DepthAttachmentLateOps
     );
 

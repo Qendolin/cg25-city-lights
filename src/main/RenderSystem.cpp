@@ -31,7 +31,7 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mDepthPrePassRenderer = std::make_unique<DepthPrePassRenderer>();
 }
 
-void RenderSystem::recreate(const Settings& settings) {
+void RenderSystem::recreate(const Settings &settings) {
     const auto &swapchain = mContext->swapchain();
     const auto &device = mContext->device();
     const auto &cmd_pool = *mCommandPool;
@@ -39,35 +39,64 @@ void RenderSystem::recreate(const Settings& settings) {
     vk::Extent2D screen_extent = mContext->swapchain().area().extent;
     vk::Extent2D screen_half_extent = {screen_extent.width / 2, screen_extent.height / 2};
 
-    mHdrColorAttachment = AttachmentImage(
-            mContext->allocator(), device, vk::Format::eR16G16B16A16Sfloat, screen_extent, vk::ImageUsageFlagBits::eSampled
+    mHdrColorAttachment = ImageWithView::create(
+            device, mContext->allocator(),
+            {
+                .format = vk::Format::eR16G16B16A16Sfloat,
+                .aspects = vk::ImageAspectFlagBits::eColor,
+                .width = screen_extent.width,
+                .height = screen_extent.height,
+                .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+                .device = vma::MemoryUsage::eGpuOnly,
+            }
     );
-    util::setDebugName(device, mHdrColorAttachment.image(), "hdr_color_attachment_image");
-    util::setDebugName(device, mHdrColorAttachment.view(), "hdr_color_attachment_image_view");
-    mHdrDepthAttachment = AttachmentImage(
-            mContext->allocator(), device, vk::Format::eD32Sfloat, screen_extent, vk::ImageUsageFlagBits::eSampled
+    util::setDebugName(device, *mHdrColorAttachment.image, "hdr_color_attachment_image");
+    util::setDebugName(device, *mHdrColorAttachment.view, "hdr_color_attachment_image_view");
+    mHdrDepthAttachment = ImageWithView::create(
+            device, mContext->allocator(),
+            {
+                .format = vk::Format::eD32Sfloat,
+                .aspects = vk::ImageAspectFlagBits::eDepth,
+                .width = screen_extent.width,
+                .height = screen_extent.height,
+                .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
+                .device = vma::MemoryUsage::eGpuOnly,
+            }
     );
-    util::setDebugName(device, mHdrDepthAttachment.image(), "hdr_depth_attachment_image");
-    util::setDebugName(device, mHdrDepthAttachment.view(), "hdr_depth_attachment_image_view");
+    util::setDebugName(device, *mHdrDepthAttachment.image, "hdr_depth_attachment_image");
+    util::setDebugName(device, *mHdrDepthAttachment.view, "hdr_depth_attachment_image_view");
     mHdrFramebuffer = Framebuffer(mContext->swapchain().area());
-    mHdrFramebuffer.depthAttachment = mHdrDepthAttachment;
-    mHdrFramebuffer.colorAttachments = {mHdrColorAttachment};
+    mHdrFramebuffer.depthAttachment = ImageViewPair(mHdrDepthAttachment);
+    mHdrFramebuffer.colorAttachments = {ImageViewPair(mHdrColorAttachment)};
 
-    // TODO: dont use attachment type because image is never used as one
     auto ao_size = settings.ssao.halfResolution ? screen_half_extent : screen_extent;
-    mSsaoIntermediaryAttachment = AttachmentImage(
-            mContext->allocator(), device, vk::Format::eR8Unorm, ao_size,
-            vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
+    mSsaoIntermediaryImage = ImageWithView::create(
+            device, mContext->allocator(),
+            {
+                .format = vk::Format::eR8Unorm,
+                .aspects = vk::ImageAspectFlagBits::eColor,
+                .width = ao_size.width,
+                .height = ao_size.height,
+                .usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
+                .device = vma::MemoryUsage::eGpuOnly,
+            }
     );
-    util::setDebugName(device, mSsaoIntermediaryAttachment.image(), "ao_intermediary_attachment_image");
-    util::setDebugName(device, mSsaoIntermediaryAttachment.view(), "ao_intermediary_attachment_image_view");
+    util::setDebugName(device, *mSsaoIntermediaryImage.image, "ao_intermediary_attachment_image");
+    util::setDebugName(device, *mSsaoIntermediaryImage.view, "ao_intermediary_attachment_image_view");
 
-    mSsaoResultAttachment = AttachmentImage(
-            mContext->allocator(), device, vk::Format::eR8Unorm, ao_size,
-            vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
+    mSsaoResultImage = ImageWithView::create(
+            device, mContext->allocator(),
+            {
+                .format = vk::Format::eR8Unorm,
+                .aspects = vk::ImageAspectFlagBits::eColor,
+                .width = ao_size.width,
+                .height = ao_size.height,
+                .usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
+                .device = vma::MemoryUsage::eGpuOnly,
+            }
     );
-    util::setDebugName(device, mSsaoResultAttachment.image(), "ao_result_attachment_image");
-    util::setDebugName(device, mSsaoResultAttachment.view(), "ao_result_attachment_image_view");
+    util::setDebugName(device, *mSsaoResultImage.image, "ao_result_attachment_image");
+    util::setDebugName(device, *mSsaoResultImage.view, "ao_result_attachment_image_view");
 
     // I don't really like that recrate has to be called explicitly.
     // I'd prefer an implicit solution, but I couldn't think of a good one right now.
@@ -100,27 +129,12 @@ void RenderSystem::recreate(const Settings& settings) {
     });
     mSwapchainFramebuffers.create(swapchain.imageCount(), [&](int i) {
         auto fb = Framebuffer(swapchain.area());
-        fb.colorAttachments = {{
-            .image = swapchain.colorImage(i),
-            .view = swapchain.colorViewLinear(i),
-            .format = swapchain.colorFormatLinear(),
-            .extents = swapchain.extents(),
-            .range = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1},
-        }};
-        // Not a pretty solution :(
-        fb.colorAttachments[0].setBarrierState(
+        fb.colorAttachments = {ImageViewPair(swapchain.colorImage(i), swapchain.colorViewLinear(i))};
+        // Not the best solution :(
+        swapchain.colorImage(i).setBarrierState(
                 {.stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput, .access = vk::AccessFlagBits2::eMemoryRead}
         );
-        fb.depthAttachment = {
-            .image = mContext->swapchain().depthImage(),
-            .view = mContext->swapchain().depthView(),
-            .format = mContext->swapchain().depthFormat(),
-            .extents = swapchain.extents(),
-            .range = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-        };
-        fb.depthAttachment.setBarrierState(
-                {.stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput, .access = vk::AccessFlagBits2::eMemoryRead}
-        );
+        fb.depthAttachment = ImageViewPair(mContext->swapchain().depthImage(), mContext->swapchain().depthView());
         return fb;
     });
     mDescriptorAllocators.create(swapchain.imageCount(), [&] { return UniqueDescriptorAllocator(device); });
@@ -153,7 +167,7 @@ void RenderSystem::draw(const RenderData &rd) {
     mSSAORenderer->filterSharpness = rd.settings.ssao.filterSharpness;
     mSSAORenderer->execute(
             mContext->device(), desc_alloc, cmd_buf, rd.camera.projectionMatrix(), rd.camera.nearPlane(),
-            mHdrFramebuffer.depthAttachment, mSsaoIntermediaryAttachment, mSsaoResultAttachment
+            mHdrFramebuffer.depthAttachment, mSsaoIntermediaryImage, mSsaoResultImage
     );
 
     // Shadow pass
@@ -168,7 +182,7 @@ void RenderSystem::draw(const RenderData &rd) {
     mPbrSceneRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
     mPbrSceneRenderer->execute(
             mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene,
-            *mFrustumCuller, rd.sunLight, rd.sunShadowCasterCascade.cascades(), mSsaoResultAttachment, rd.settings
+            *mFrustumCuller, rd.sunLight, rd.sunShadowCasterCascade.cascades(), mSsaoResultImage, rd.settings
     );
 
     // Blob render pass
@@ -192,12 +206,12 @@ void RenderSystem::draw(const RenderData &rd) {
     // ImGui render pass
     dbg_cmd_label_region.swap("ImGUI Pass");
     {
-        swapchain_fb.colorAttachments[0].barrier(
+        swapchain_fb.colorAttachments[0].image().barrier(
                 cmd_buf, ImageResourceAccess::ColorAttachmentLoad, ImageResourceAccess::ColorAttachmentWrite
         );
         // temporarily change view to linear format to fix an ImGui issue.
         Framebuffer imgui_fb = swapchain_fb;
-        imgui_fb.colorAttachments[0].view = swapchain.colorViewLinear();
+        imgui_fb.colorAttachments[0] = ImageViewPair(swapchain_fb.colorAttachments[0].image(), swapchain.colorViewLinear());
         cmd_buf.beginRendering(imgui_fb.renderingInfo({}));
         mImguiBackend->render(cmd_buf);
         cmd_buf.endRendering();
@@ -205,10 +219,10 @@ void RenderSystem::draw(const RenderData &rd) {
 
     dbg_cmd_label_region.end();
 
-    swapchain_fb.colorAttachments[0].barrier(cmd_buf, ImageResourceAccess::PresentSrc);
+    swapchain_fb.colorAttachments[0].image().barrier(cmd_buf, ImageResourceAccess::PresentSrc);
 }
 
-void RenderSystem::advance(const Settings& settings) {
+void RenderSystem::advance(const Settings &settings) {
     auto &swapchain = mContext->swapchain();
     const auto &sync_objects = mFramesInFlightSyncObjects.next();
 
@@ -231,7 +245,7 @@ void RenderSystem::begin() {
     cmd_buf.begin(vk::CommandBufferBeginInfo{});
 }
 
-void RenderSystem::submit(const Settings& settings) {
+void RenderSystem::submit(const Settings &settings) {
     const auto &cmd_buf = mCommandBuffers.get();
     const auto &sync_objects = mFramesInFlightSyncObjects.get();
     // These must correspond to the active swapchain image index

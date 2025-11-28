@@ -1,7 +1,6 @@
 #include "SSAORenderer.h"
 
 #include "../backend/DeviceQueue.h"
-#include "../backend/Framebuffer.h"
 #include "../backend/ImageResource.h"
 #include "../backend/ShaderCompiler.h"
 #include "../backend/StagingBuffer.h"
@@ -28,20 +27,22 @@ SSAORenderer::SSAORenderer(const vk::Device &device, const vma::Allocator &alloc
 
     PlainImageDataU8 noise_image_data =
             PlainImageDataU8::create(vk::Format::eR8G8Unorm, "resources/images/gtao_blue_noise.png");
-    auto create_info = ImageCreateInfo::from(noise_image_data);
-    create_info.usage |= vk::ImageUsageFlagBits::eSampled;
-
-    mNoise = Image::create(staging.allocator(), create_info);
-    util::setDebugName(device, *mNoise, "ssao_noise");
+    ImageCreateInfo create_info = {
+        .format = noise_image_data.format,
+        .aspects = vk::ImageAspectFlagBits::eColor,
+        .width = noise_image_data.width,
+        .height = noise_image_data.height,
+        .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+    };
+    mNoise = ImageWithView::create(device, staging.allocator(), create_info);
+    util::setDebugName(device, *mNoise.image, "ssao_noise");
+    util::setDebugName(device, *mNoise.view, "ssao_noise_view");
 
     auto staged_data = staging.stage(noise_image_data.pixels);
     mNoise.load(staging.commands(), 0, {}, staged_data);
     mNoise.barrier(staging.commands(), ImageResourceAccess::FragmentShaderReadOptimal);
 
     staging.submit(graphicsQueue);
-
-    mNoiseView = mNoise.createDefaultView(device);
-    util::setDebugName(device, *mNoiseView, "ssao_noise_view");
 }
 
 void SSAORenderer::execute(
@@ -50,15 +51,15 @@ void SSAORenderer::execute(
         const vk::CommandBuffer &cmd_buf,
         const glm::mat4 &projection_mat,
         float z_near,
-        const Attachment &depth_attachment,
-        const Attachment &ao_intermediary,
-        const Attachment &ao_result
+        const ImageViewPairBase &depth_attachment,
+        const ImageViewPairBase &ao_intermediary,
+        const ImageViewPairBase &ao_result
 ) {
     util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
     util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Sampling");
 
-    depth_attachment.barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
-    ao_result.barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
+    depth_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
+    ao_result.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
 
     ShaderParamsInlineUniformBlock shader_params = {
         .projection = projection_mat,
@@ -67,8 +68,8 @@ void SSAORenderer::execute(
         .bias = bias,
     };
 
-    uint32_t ao_width = ao_result.extents.width;
-    uint32_t ao_height = ao_result.extents.height;
+    uint32_t ao_width = ao_result.image().info.width;
+    uint32_t ao_height = ao_result.image().info.height;
 
     calculateInverseProjectionConstants(
             projection_mat, static_cast<float>(ao_width), static_cast<float>(ao_height),
@@ -88,16 +89,16 @@ void SSAORenderer::execute(
                 descriptor_set_sampler.write(
                         SamplerShaderParamsDescriptorLayout::InDepth,
                         vk::DescriptorImageInfo{
-                            .sampler = *mDepthSampler, .imageView = depth_attachment.view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+                            .sampler = *mDepthSampler, .imageView = depth_attachment.view(), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
                         }
                 ),
                 descriptor_set_sampler.write(
                         SamplerShaderParamsDescriptorLayout::OutRawAO,
-                        vk::DescriptorImageInfo{.imageView = ao_result.view, .imageLayout = vk::ImageLayout::eGeneral}
+                        vk::DescriptorImageInfo{.imageView = ao_result.view(), .imageLayout = vk::ImageLayout::eGeneral}
                 ),
                 descriptor_set_sampler.write(
                         SamplerShaderParamsDescriptorLayout::InNoise,
-                        vk::DescriptorImageInfo{.imageView = *mNoiseView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal}
+                        vk::DescriptorImageInfo{.imageView = mNoise, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal}
                 ),
             },
             {}
@@ -130,34 +131,34 @@ void SSAORenderer::filterPass(
         const vk::Device &device,
         const DescriptorAllocator &allocator,
         const vk::CommandBuffer &cmd_buf,
-        const Attachment &depth_attachment,
-        const Attachment &ao_input,
-        const Attachment &ao_output,
+        const ImageViewPairBase &depth_attachment,
+        const ImageViewPairBase &ao_input,
+        const ImageViewPairBase &ao_output,
         const FilterShaderPushConstants &filter_params
 ) {
-    uint32_t ao_width = ao_input.extents.width;
-    uint32_t ao_height = ao_input.extents.height;
+    uint32_t ao_width = ao_input.image().info.width;
+    uint32_t ao_height = ao_input.image().info.height;
 
     auto descriptor_set = allocator.allocate(mFilterShaderParamsDescriptorLayout);
-    ao_input.barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
-    ao_output.barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
+    ao_input.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
+    ao_output.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
     device.updateDescriptorSets(
             {
                 descriptor_set.write(
                         FilterShaderParamsDescriptorLayout::InRawAO,
                         vk::DescriptorImageInfo{
-                            .sampler = *mDepthSampler, .imageView = ao_input.view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+                            .sampler = *mDepthSampler, .imageView = ao_input.view(), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
                         }
                 ),
                 descriptor_set.write(
                         FilterShaderParamsDescriptorLayout::InDepth,
                         vk::DescriptorImageInfo{
-                            .sampler = *mDepthSampler, .imageView = depth_attachment.view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+                            .sampler = *mDepthSampler, .imageView = depth_attachment.view(), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
                         }
                 ),
                 descriptor_set.write(
                         FilterShaderParamsDescriptorLayout::OutFilteredAO,
-                        vk::DescriptorImageInfo{.imageView = ao_output.view, .imageLayout = vk::ImageLayout::eGeneral}
+                        vk::DescriptorImageInfo{.imageView = ao_output.view(), .imageLayout = vk::ImageLayout::eGeneral}
                 ),
             },
             {}

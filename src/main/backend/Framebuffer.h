@@ -1,86 +1,10 @@
 #pragma once
 
-#include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 #include <vulkan/vulkan.hpp>
 
 #include "../util/static_vector.h"
-#include "ImageResource.h"
+#include "Image.h"
 
-/// <summary>
-/// Represents an image attachment, which is a combination of a vk::Image and a vk::ImageView.
-/// </summary>
-struct Attachment : ImageResource {
-    vk::Image image = {};
-    vk::ImageView view = {};
-    vk::Format format = {};
-    vk::Extent2D extents = {};
-    vk::ImageSubresourceRange range = {};
-
-    /// <summary>
-    /// Inserts an image memory barrier for the attachment.
-    /// </summary>
-    /// <param name="cmd_buf">The command buffer to record the barrier to.</param>
-    /// <param name="begin">The resource access state at the beginning of the barrier.</param>
-    /// <param name="end">The resource access state at the end of the barrier.</param>
-    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) const;
-
-    /// <summary>
-    /// Inserts an image memory barrier for the attachment, transitioning from the previous state to a new one.
-    /// </summary>
-    /// <param name="cmd_buf">The command buffer to record the barrier to.</param>
-    /// <param name="single">The new resource access state.</param>
-    void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) const;
-
-    /// <summary>
-    /// Sets the internal barrier state of the attachment.
-    /// </summary>
-    void setBarrierState(const ImageResourceAccess& last_access) const;
-
-    /// <summary>
-    /// Checks if the attachment is valid (i.e., has a valid image and view).
-    /// </summary>
-    explicit operator bool() const { return image && view; }
-};
-
-
-/// <summary>
-/// Represents an image attachment, which is a combination of a vk::Image and a vk::ImageView.
-/// </summary>
-class AttachmentImage {
-    vma::UniqueImage mImage = {};
-    vma::UniqueAllocation mImageAlloc = {};
-    vk::UniqueImageView mView = {};
-    vk::Format mFormat = {};
-    vk::Extent2D mExtent = {};
-    vk::ImageSubresourceRange mRange = {};
-
-public:
-
-    AttachmentImage() = default;
-
-    AttachmentImage(
-            vma::UniqueImage &&image,
-            vma::UniqueAllocation &&alloc,
-            vk::UniqueImageView &&image_view,
-            vk::Format format,
-            const vk::Extent2D &extent,
-            const vk::ImageSubresourceRange &range
-    );
-
-    AttachmentImage(const vma::Allocator &allocator, const vk::Device &device, vk::Format format, const vk::Extent2D& extent, vk::ImageUsageFlags usage_flags = {});
-
-    operator Attachment() const { // NOLINT(*-explicit-constructor)
-        return {.image = *mImage, .view = *mView, .format = mFormat, .extents = mExtent, .range = mRange};
-    }
-
-    [[nodiscard]] vk::Image image() const { return *mImage; }
-    [[nodiscard]] vk::ImageView view() const { return *mView; }
-
-    /// <summary>
-    /// Checks if the attachment is valid (i.e., has a valid image and view).
-    /// </summary>
-    explicit operator bool() const { return mImage && mView; }
-};
 
 /// <summary>
 /// Configuration for dynamic rendering with a framebuffer.
@@ -133,9 +57,9 @@ struct FramebufferRenderingConfig {
 /// </remarks>
 class Framebuffer {
 public:
-    util::static_vector<Attachment, 32> colorAttachments = {};
-    Attachment depthAttachment = {};
-    Attachment stencilAttachment = {};
+    util::static_vector<ImageViewPair, 32> colorAttachments = {};
+    ImageViewPair depthAttachment = {};
+    ImageViewPair stencilAttachment = {};
 
     Framebuffer() = default;
 
@@ -154,13 +78,13 @@ public:
     /// Returns the format of the depth attachment.
     /// </summary>
     /// <returns>The vk::Format of the depth attachment.</returns>
-    [[nodiscard]] vk::Format depthFormat() const;
+    [[nodiscard]] vk::Format depthFormat() const { return depthAttachment.view().info.format; }
 
     /// <summary>
     /// Returns the format of the stencil attachment.
     /// </summary>
     /// <returns>The vk::Format of the stencil attachment.</returns>
-    [[nodiscard]] vk::Format stencilFormat() const { return stencilAttachment.format; }
+    [[nodiscard]] vk::Format stencilFormat() const { return stencilAttachment.view().info.format; }
 
     /// <summary>
     /// Returns a vector of formats for all color attachments.
@@ -169,7 +93,7 @@ public:
     [[nodiscard]] util::static_vector<vk::Format, 32> colorFormats() const {
         util::static_vector<vk::Format, 32> result;
         for (const auto &attachment: colorAttachments) {
-            result.push_back(attachment.format);
+            result.push_back(attachment.view().info.format);
         }
         return result;
     }

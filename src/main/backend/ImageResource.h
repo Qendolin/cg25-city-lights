@@ -31,6 +31,9 @@ struct ImageResourceAccess {
 /// Base class for image resources that handles image memory barriers.
 /// </summary>
 class ImageResource {
+public:
+    virtual ~ImageResource() = default;
+
 protected:
     mutable ImageResourceAccess mPrevAccess = {};
 

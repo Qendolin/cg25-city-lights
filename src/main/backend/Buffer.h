@@ -7,8 +7,8 @@ struct BufferCreateInfo {
     vk::BufferUsageFlags usage = {};
     vma::AllocationCreateFlags flags = {};
     vma::MemoryUsage device = vma::MemoryUsage::eAuto;
-    vk::MemoryPropertyFlags requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal;
-    vk::MemoryPropertyFlags preferredFlags = {};
+    vk::MemoryPropertyFlags requiredProperties = vk::MemoryPropertyFlagBits::eDeviceLocal;
+    vk::MemoryPropertyFlags preferredProperties = {};
 };
 
 

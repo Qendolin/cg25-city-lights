@@ -48,7 +48,7 @@ private:
     uint32_t mResolution;
     Framebuffer mFramebuffer;
     Image mDepthImage;
-    vk::UniqueImageView mDepthImageView;
+    ImageView mDepthImageView;
 };
 
 

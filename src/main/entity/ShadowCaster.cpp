@@ -5,7 +5,7 @@
 
 #include "../debug/Annotation.h"
 
-inline glm::vec3 pickSafeUpVector(const glm::vec3& direction, glm::vec3 up = {0.0f, 1.0f, 0.0f}) {
+inline glm::vec3 pickSafeUpVector(const glm::vec3 &direction, glm::vec3 up = {0.0f, 1.0f, 0.0f}) {
     float dot = glm::dot(direction, up);
     if (dot < -0.99 || dot > 0.99) {
         // direction is too close to up vector, pick another one
@@ -24,27 +24,20 @@ ShadowCaster::ShadowCaster(const vk::Device &device, const vma::Allocator &alloc
     : mResolution(resolution) {
     mDepthImage = Image::create(
             allocator,
-            {
+            ImageCreateInfo{
                 .format = DepthFormat,
-                .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
-                .type = vk::ImageType::e2D,
+                .aspects = vk::ImageAspectFlagBits::eDepth,
                 .width = resolution,
                 .height = resolution,
-                .mipLevels = 1,
+                .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
             }
     );
-    util::setDebugName(device, *mDepthImage, "shadow_depth_image");
-    mDepthImageView = mDepthImage.createDefaultView(device);
+    util::setDebugName(device, static_cast<vk::Image>(mDepthImage), "shadow_depth_image");
+    mDepthImageView = ImageView::create(device, mDepthImage);
 
-    util::setDebugName(device, *mDepthImageView, "shadow_depth_image_view");
+    util::setDebugName(device, static_cast<vk::ImageView>(mDepthImageView), "shadow_depth_image_view");
     mFramebuffer = Framebuffer{vk::Extent2D{resolution, resolution}};
-    mFramebuffer.depthAttachment = {
-        .image = *mDepthImage,
-        .view = *mDepthImageView,
-        .format = mDepthImage.info.format,
-        .extents = {mDepthImage.info.width, mDepthImage.info.height},
-        .range = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-    };
+    mFramebuffer.depthAttachment = ImageViewPair(mDepthImage, mDepthImageView);
 }
 
 SimpleShadowCaster::SimpleShadowCaster(
@@ -126,9 +119,9 @@ void ShadowCascade::update(float frustum_fov, float frustum_aspect, glm::mat4 vi
         float split = calculateSplitDistance(lambda, near_clip, far_clip, clip_range, f);
 
         glm::vec3 frustum_corners[] = {
-            glm::vec3(-1.0f, 1.0f, 0.0f),  glm::vec3(1.0f, 1.0f, 0.0f),  glm::vec3(1.0f, -1.0f, 0.0f),
+            glm::vec3(-1.0f, 1.0f, 0.0f),  glm::vec3(1.0f, 1.0f, 0.0f),   glm::vec3(1.0f, -1.0f, 0.0f),
             glm::vec3(-1.0f, -1.0f, 0.0f), glm::vec3(-1.0f, 1.0f, 1.0f),  glm::vec3(1.0f, 1.0f, 1.0f),
-            glm::vec3(1.0f, -1.0f, 1.0f),   glm::vec3(-1.0f, -1.0f, 1.0f),
+            glm::vec3(1.0f, -1.0f, 1.0f),  glm::vec3(-1.0f, -1.0f, 1.0f),
         };
 
         // Project frustum corners into world space
@@ -158,16 +151,12 @@ void ShadowCascade::update(float frustum_fov, float frustum_aspect, glm::mat4 vi
         radius = std::ceil(radius * 16.0f) / 16.0f;
 
         // Texel alignment
-        glm::mat4 light_view_mat = createTexelAlignedViewMatrix(
-                light_dir, mCascades[i].resolution(), radius, frustum_center
-        );
+        glm::mat4 light_view_mat = createTexelAlignedViewMatrix(light_dir, mCascades[i].resolution(), radius, frustum_center);
 
         // swap near and far plane for reverse z
         glm::vec3 max_extents = glm::vec3(radius);
         glm::vec3 min_extents = -max_extents;
-        glm::mat4 light_ortho_mat = glm::ortho(
-                min_extents.x, max_extents.x, min_extents.y, max_extents.y, 1000.0f, -1000.0f
-        );
+        glm::mat4 light_ortho_mat = glm::ortho(min_extents.x, max_extents.x, min_extents.y, max_extents.y, 1000.0f, -1000.0f);
 
         mCascades[i].distance = split * clip_range * 2.0f;
         mCascades[i].viewMatrix = light_view_mat;

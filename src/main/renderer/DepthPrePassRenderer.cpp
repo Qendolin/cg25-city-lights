@@ -49,7 +49,7 @@ void DepthPrePassRenderer::execute(
 
     dbg_cmd_label_region_culling.swap("Rendering");
 
-    fb.depthAttachment.barrier(
+    fb.depthAttachment.image().barrier(
             cmd_buf, ImageResourceAccess::DepthAttachmentEarlyOps, ImageResourceAccess::DepthAttachmentLateOps
     );
 

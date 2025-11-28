@@ -17,8 +17,8 @@ Buffer Buffer::create(const vma::Allocator &allocator, const BufferCreateInfo &c
             {
                 .flags = create_info.flags,
                 .usage = create_info.device,
-                .requiredFlags = create_info.requiredFlags,
-                .preferredFlags = create_info.preferredFlags,
+                .requiredFlags = create_info.requiredProperties,
+                .preferredFlags = create_info.preferredProperties,
             }
     );
     return Buffer(std::move(buffer), std::move(alloc), create_info.size);

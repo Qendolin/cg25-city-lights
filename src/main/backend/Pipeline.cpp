@@ -13,7 +13,7 @@ SpecializationConstantsBuilder& SpecializationConstantsBuilder::add(uint32_t id,
         throw std::runtime_error("data size exceeds capacity");
     }
     memcpy(mData.get() + mOffset, data, size);
-    mEntries.emplace_back(id, mOffset, size);
+    mEntries.emplace_back(id, static_cast<uint32_t>(mOffset), size);
     mOffset += size;
     mOffset = util::alignOffset(mOffset, 4);
     return *this;

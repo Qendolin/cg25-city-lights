@@ -52,10 +52,10 @@ class RenderSystem {
     ShaderLoader mShaderLoader;
 
     Framebuffer mHdrFramebuffer;
-    AttachmentImage mHdrColorAttachment;
-    AttachmentImage mHdrDepthAttachment;
-    AttachmentImage mSsaoIntermediaryAttachment;
-    AttachmentImage mSsaoResultAttachment;
+    ImageWithView mHdrColorAttachment;
+    ImageWithView mHdrDepthAttachment;
+    ImageWithView mSsaoIntermediaryImage;
+    ImageWithView mSsaoResultImage;
 
     std::unique_ptr<ImGuiBackend> mImguiBackend;
 

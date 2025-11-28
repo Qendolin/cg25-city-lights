@@ -30,7 +30,7 @@ namespace scene {
 
         vk::UniqueSampler sampler;
         std::vector<Image> images;
-        std::vector<vk::UniqueImageView> views;
+        std::vector<ImageView> views;
 
         vma::UniqueBuffer positions;
         vma::UniqueAllocation positionsAlloc;

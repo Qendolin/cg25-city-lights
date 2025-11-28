@@ -2,22 +2,6 @@
 
 #include <vulkan/utility/vk_format_utils.h>
 
-#include "../util/Logger.h"
-
-void Attachment::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) const {
-    ImageResource::barrier(image, range, cmd_buf, begin, end);
-}
-
-void Attachment::barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) const {
-    barrier(cmd_buf, single, single);
-}
-
-void Attachment::setBarrierState(const ImageResourceAccess &last_access) const {
-    mPrevAccess = last_access;
-}
-
-vk::Format Framebuffer::depthFormat() const { return depthAttachment.format; }
-
 vk::Viewport Framebuffer::viewport(bool flip_y) const {
     if (flip_y) {
         return vk::Viewport{
@@ -32,67 +16,6 @@ vk::Viewport Framebuffer::viewport(bool flip_y) const {
         return vk::Viewport{0.0f, 0.0f, static_cast<float>(mArea.extent.width), static_cast<float>(mArea.extent.height),
                             0.0f, 1.0f};
     }
-}
-
-AttachmentImage::AttachmentImage(
-        vma::UniqueImage &&image,
-        vma::UniqueAllocation &&alloc,
-        vk::UniqueImageView &&image_view,
-        vk::Format format,
-        const vk::Extent2D &extent,
-        const vk::ImageSubresourceRange &range
-)
-    : mImage(std::move(image)),
-      mImageAlloc(std::move(alloc)),
-      mView(std::move(image_view)),
-      mFormat(format),
-      mExtent(extent),
-      mRange(range) {}
-
-
-AttachmentImage::AttachmentImage(const vma::Allocator &allocator, const vk::Device &device, vk::Format format, const vk::Extent2D& extent, vk::ImageUsageFlags usage_flags) : mFormat(format), mExtent(extent) {
-    vk::ImageAspectFlags aspect_flags;
-
-    if (vkuFormatIsColor(VkFormat(format))) {
-        aspect_flags = vk::ImageAspectFlagBits::eColor;
-        usage_flags |= vk::ImageUsageFlagBits::eColorAttachment;
-    } else if (vkuFormatIsDepthOnly(VkFormat(format))) {
-        aspect_flags = vk::ImageAspectFlagBits::eDepth;
-        usage_flags |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
-    } else if (vkuFormatIsDepthAndStencil(VkFormat(format))) {
-        aspect_flags = vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
-        usage_flags |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
-    } else if (vkuFormatIsStencilOnly(VkFormat(format))) {
-        aspect_flags = vk::ImageAspectFlagBits::eStencil;
-        usage_flags |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
-    } else {
-        Logger::fatal(std::format("Unsupported format: {}", vk::to_string(format)));
-    }
-
-    std::tie(mImage, mImageAlloc) = allocator.createImageUnique(
-            {
-                .imageType = vk::ImageType::e2D,
-                .format = format,
-                .extent = vk::Extent3D{.width = extent.width, .height = extent.height, .depth = 1},
-                .mipLevels = 1,
-                .arrayLayers = 1,
-                .samples = vk::SampleCountFlagBits::e1,
-                .tiling = vk::ImageTiling::eOptimal,
-                .usage = usage_flags,
-                .initialLayout = vk::ImageLayout::eUndefined,
-            },
-            {
-                .usage = vma::MemoryUsage::eAuto,
-                .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
-            }
-    );
-    mRange = {.aspectMask = aspect_flags, .levelCount = 1, .layerCount = 1};
-    mView = device.createImageViewUnique({
-        .image = *mImage,
-        .viewType = vk::ImageViewType::e2D,
-        .format = format,
-        .subresourceRange = mRange,
-    });
 }
 
 vk::RenderingInfo Framebuffer::renderingInfo(const FramebufferRenderingConfig &config) const {
@@ -111,7 +34,7 @@ vk::RenderingInfo Framebuffer::renderingInfo(const FramebufferRenderingConfig &c
             auto storeOp = i < config.colorStoreOps.size() ? config.colorStoreOps[i] : vk::AttachmentStoreOp::eStore;
             if (attachment) {
                 mColorAttachmentInfos[i] = {
-                    .imageView = attachment.view,
+                    .imageView = attachment.view(),
                     .imageLayout = vk::ImageLayout::eAttachmentOptimal,
                     .loadOp = loadOp,
                     .storeOp = storeOp,
@@ -127,7 +50,7 @@ vk::RenderingInfo Framebuffer::renderingInfo(const FramebufferRenderingConfig &c
 
     if (depthAttachment && config.enableDepthAttachment) {
         mDepthAttachmentInfo = {
-            .imageView = depthAttachment.view,
+            .imageView = depthAttachment.view(),
             .imageLayout = vk::ImageLayout::eAttachmentOptimal,
             .resolveMode = {},
             .resolveImageView = {},
@@ -141,7 +64,7 @@ vk::RenderingInfo Framebuffer::renderingInfo(const FramebufferRenderingConfig &c
 
     if (stencilAttachment && config.enableDepthAttachment) {
         mStencilAttachmentInfo = {
-            .imageView = stencilAttachment.view,
+            .imageView = stencilAttachment.view(),
             .imageLayout = vk::ImageLayout::eAttachmentOptimal,
             .resolveMode = {},
             .resolveImageView = {},

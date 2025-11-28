@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include "../glfw/Window.h"
+#include "Image.h"
 
 namespace glfw {
     class Window;
@@ -104,39 +105,39 @@ public:
     /// Gets the currently active color image.
     /// </summary>
     /// <returns>The active color image.</returns>
-    [[nodiscard]] vk::Image colorImage() const { return mSwapchainImages.at(mActiveImageIndex); }
+    [[nodiscard]] const UnmanagedImage& colorImage() const { return mSwapchainImages.at(mActiveImageIndex); }
 
     /// <summary>
     /// Gets the color image at the specified index.
     /// </summary>
     /// <param name="i">The index of the image.</param>
     /// <returns>The color image.</returns>
-    [[nodiscard]] vk::Image colorImage(int i) const { return mSwapchainImages.at(i); }
+    [[nodiscard]] const UnmanagedImage& colorImage(int i) const { return mSwapchainImages.at(i); }
 
     /// <summary>
     /// Gets the linear image view for the currently active color image.
     /// </summary>
     /// <returns>The active linear image view.</returns>
-    [[nodiscard]] vk::ImageView colorViewLinear() const { return *mSwapchainImageViewsUnorm.at(mActiveImageIndex); }
+    [[nodiscard]] const ImageViewBase& colorViewLinear() const { return mSwapchainImageViewsUnorm.at(mActiveImageIndex); }
 
     /// <summary>
     /// Gets the linear image view for the color image at the specified index.
     /// </summary>
     /// <param name="i">The index of the image.</param>
     /// <returns>The linear image view.</returns>
-    [[nodiscard]] vk::ImageView colorViewLinear(int i) const { return *mSwapchainImageViewsUnorm.at(i); }
+    [[nodiscard]] const ImageViewBase& colorViewLinear(int i) const { return mSwapchainImageViewsUnorm.at(i); }
 
     /// <summary>
     /// Gets the depth image.
     /// </summary>
     /// <returns>The depth image.</returns>
-    [[nodiscard]] vk::Image depthImage() const { return *mDepthImage; }
+    [[nodiscard]] const ImageBase& depthImage() const { return mDepthImage; }
 
     /// <summary>
     /// Gets the depth image view.
     /// </summary>
     /// <returns>The depth image view.</returns>
-    [[nodiscard]] vk::ImageView depthView() const { return *mDepthImageView; }
+    [[nodiscard]] const ImageViewBase& depthView() const { return mDepthImageView; }
 
     /// <summary>
     /// Creates the swapchain.
@@ -179,12 +180,11 @@ private:
 
     vk::Extent2D mSurfaceExtents = {};
     vk::UniqueSwapchainKHR mSwapchain;
-    std::vector<vk::Image> mSwapchainImages;
-    std::vector<vk::UniqueImageView> mSwapchainImageViewsUnorm;
+    std::vector<UnmanagedImage> mSwapchainImages;
+    std::vector<ImageView> mSwapchainImageViewsUnorm;
 
-    vma::UniqueImage mDepthImage;
-    vma::UniqueAllocation mDepthImageAllocation;
-    vk::UniqueImageView mDepthImageView;
+    Image mDepthImage;
+    ImageView mDepthImageView;
     const vk::Format mDepthFormat = vk::Format::eD32Sfloat;
 
     uint32_t mActiveImageIndex = 0;

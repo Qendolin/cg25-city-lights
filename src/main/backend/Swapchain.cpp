@@ -8,13 +8,15 @@
 #include "../util/globals.h"
 
 Swapchain::Swapchain(
-    const vk::Device &device,
-    const vk::PhysicalDevice &physical_device,
-    const vk::SurfaceKHR &surface,
-    const glfw::Window &window,
-    const vma::Allocator &allocator
+        const vk::Device &device,
+        const vk::PhysicalDevice &physical_device,
+        const vk::SurfaceKHR &surface,
+        const glfw::Window &window,
+        const vma::Allocator &allocator
 )
-    : mDevice(device), mPhysicalDevice(physical_device), mSurface(surface), mWindow(window), mAllocator(allocator) { create(); }
+    : mDevice(device), mPhysicalDevice(physical_device), mSurface(surface), mWindow(window), mAllocator(allocator) {
+    create();
+}
 
 void Swapchain::create() {
     auto surface_formats = mPhysicalDevice.getSurfaceFormatsKHR(mSurface);
@@ -54,8 +56,8 @@ void Swapchain::create() {
     // different present modes can have specific image count requirements
     auto surface_capabilities =
             mPhysicalDevice
-            .getSurfaceCapabilities2KHR(surface_capabilities_query.get<vk::PhysicalDeviceSurfaceInfo2KHR>())
-            .surfaceCapabilities;
+                    .getSurfaceCapabilities2KHR(surface_capabilities_query.get<vk::PhysicalDeviceSurfaceInfo2KHR>())
+                    .surfaceCapabilities;
 
     // +1 avoids stalls when cpu and gpu are fast and waiting on the monitor
     uint32_t swapchain_image_count = util::MaxFramesInFlight + 1;
@@ -68,10 +70,10 @@ void Swapchain::create() {
 
     mSurfaceExtents = mWindow.getFramebufferSize();
     mSurfaceExtents.width = std::clamp(
-        mSurfaceExtents.width, surface_capabilities.minImageExtent.width, surface_capabilities.maxImageExtent.width
+            mSurfaceExtents.width, surface_capabilities.minImageExtent.width, surface_capabilities.maxImageExtent.width
     );
     mSurfaceExtents.height = std::clamp(
-        mSurfaceExtents.height, surface_capabilities.minImageExtent.height, surface_capabilities.maxImageExtent.height
+            mSurfaceExtents.height, surface_capabilities.minImageExtent.height, surface_capabilities.maxImageExtent.height
     );
 
     // need to be destroyed before swapchain is
@@ -93,51 +95,40 @@ void Swapchain::create() {
         .oldSwapchain = *mSwapchain,
     });
 
-    mSwapchainImages = mDevice.getSwapchainImagesKHR(*mSwapchain);
-
-    for (const auto &swapchain_image: mSwapchainImages) {
-        util::setDebugName(mDevice, swapchain_image, "swapchain_image");
-
-        vk::ImageViewCreateInfo image_view_create_info = {
-            .image = swapchain_image,
-            .viewType = vk::ImageViewType::e2D,
-            .format = mSurfaceFormat.format,
-            .components = vk::ComponentMapping{},
-            .subresourceRange =
-            {
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            },
-        };
-        const auto& view = mSwapchainImageViewsUnorm.emplace_back(mDevice.createImageViewUnique(image_view_create_info));
-        util::setDebugName(mDevice, *view, "swapchain_image_view");
+    for (const auto &image: mDevice.getSwapchainImagesKHR(*mSwapchain)) {
+        mSwapchainImages.emplace_back(
+                image,
+                ImageInfo{
+                    .format = mSurfaceFormat.format,
+                    .aspects = vk::ImageAspectFlagBits::eColor,
+                    .width = mSurfaceExtents.width,
+                    .height = mSurfaceExtents.height,
+                }
+        );
     }
 
-    std::tie(mDepthImage, mDepthImageAllocation) = mAllocator.createImageUnique(
-        vk::ImageCreateInfo{
-            .imageType = vk::ImageType::e2D,
-            .format = vk::Format::eD32Sfloat,
-            .extent = {.width = mSurfaceExtents.width, .height = mSurfaceExtents.height, .depth = 1},
-            .mipLevels = 1,
-            .arrayLayers = 1,
-            .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
-        },
-        {
-            .usage = vma::MemoryUsage::eAutoPreferDevice,
-            .requiredFlags = vk::MemoryPropertyFlagBits::eDeviceLocal,
-        });
-    util::setDebugName(mDevice, *mDepthImage, "swapchain_depth_image");
+    for (const auto &swapchain_image: mSwapchainImages) {
+        util::setDebugName(mDevice, static_cast<vk::Image>(swapchain_image), "swapchain_image");
+        const auto &view =
+                mSwapchainImageViewsUnorm.emplace_back(ImageView::create(mDevice, swapchain_image));
+        util::setDebugName(mDevice, static_cast<vk::ImageView>(view), "swapchain_image_view");
+    }
 
-    mDepthImageView = mDevice.createImageViewUnique({
-        .image = *mDepthImage,
-        .viewType = vk::ImageViewType::e2D,
-        .format = vk::Format::eD32Sfloat,
-        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1},
-    });
-    util::setDebugName(mDevice, *mDepthImageView, "swapchain_depth_image_view");
+    mDepthImage = Image::create(
+            mAllocator,
+            ImageCreateInfo{
+                .format = mDepthFormat,
+                .aspects = vk::ImageAspectFlagBits::eDepth,
+                .width = mSurfaceExtents.width,
+                .height = mSurfaceExtents.height,
+                .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
+                .device = vma::MemoryUsage::eAutoPreferDevice,
+            }
+    );
+    util::setDebugName(mDevice, static_cast<vk::Image>(mDepthImage), "swapchain_depth_image");
+
+    mDepthImageView = ImageView::create(mDevice, mDepthImage);
+    util::setDebugName(mDevice, static_cast<vk::ImageView>(mDepthImageView), "swapchain_depth_image_view");
 
     mInvalid = false;
 }

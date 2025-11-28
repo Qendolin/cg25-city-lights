@@ -42,13 +42,15 @@ Cubemap::Cubemap(
 
     StagingBuffer stagingBuffer = {allocator, device, *transferCommandPool};
     vk::Buffer stagedBuffer = stagingBuffer.stage(pixelData);
-
-    ImageCreateInfo imageCreateInfo = ImageCreateInfo::from(plainImages[0]);
-    imageCreateInfo.usage = vk::ImageUsageFlagBits::eSampled;
-    imageCreateInfo.mipLevels = 1;
-    imageCreateInfo.arrayLayers = FACES_COUNT;
-    imageCreateInfo.flags = vk::ImageCreateFlagBits::eCubeCompatible;
-
+    ImageCreateInfo imageCreateInfo = {
+        .format = plainImages[0].format,
+        .aspects = vk::ImageAspectFlagBits::eColor,
+        .width = plainImages[0].width,
+        .height = plainImages[0].height,
+        .layers = FACES_COUNT,
+        .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+        .flags = vk::ImageCreateFlagBits::eCubeCompatible,
+    };
 
     image = Image::create(stagingBuffer.allocator(), imageCreateInfo);
     image.load(stagingBuffer.commands(), 0, {}, stagedBuffer);
@@ -75,17 +77,9 @@ Cubemap::Cubemap(
     while (device.waitForFences(*graphicsQueueFence, true, UINT64_MAX) == vk::Result::eTimeout) {
     }
 
-    vk::ImageViewCreateInfo viewInfo{};
-    viewInfo.image = *image;
-    viewInfo.viewType = vk::ImageViewType::eCube;
-    viewInfo.format = FORMAT;
-    viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = FACES_COUNT;
-
-    view = device.createImageViewUnique(viewInfo);
+    ImageViewInfo viewInfo = ImageViewInfo::from(image.info);
+    viewInfo.type = vk::ImageViewType::eCube;
+    view = ImageView::create(device, image, viewInfo);
 }
 
 std::vector<uint32_t> Cubemap::getPixelData(const std::array<PlainImageDataU32, FACES_COUNT> &plainImages) {

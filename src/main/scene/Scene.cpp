@@ -106,22 +106,27 @@ namespace scene {
         result.images.reserve(scene_data.images.size());
         result.views.reserve(scene_data.images.size());
         // since some images will be skipped, the indices need to be mapped
-        std::vector<size_t> image_index;
+        std::vector<uint32_t> image_index;
         for (const auto &image_data: scene_data.images) {
             // image isn't used by any material
             if (image_data.format == vk::Format::eUndefined) {
                 image_index.emplace_back(-1);
                 continue;
             }
-            size_t index = result.images.size();
+            uint32_t index = static_cast<uint32_t>(result.images.size());
             image_index.emplace_back(index);
 
-            auto create_info = ImageCreateInfo::from(image_data);
-            create_info.usage |= vk::ImageUsageFlagBits::eSampled;
-
+            ImageCreateInfo create_info = {
+                .format = image_data.format,
+                .aspects = vk::ImageAspectFlagBits::eColor,
+                .width = image_data.width,
+                .height = image_data.height,
+                .levels = UINT32_MAX,
+                .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst,
+            };
             Image &image = result.images.emplace_back();
             image = Image::create(staging.allocator(), create_info);
-            util::setDebugName(mDevice, *image, "scene_image");
+            util::setDebugName(mDevice, *image.image, "scene_image");
 
             vk::Buffer staged_buffer = staging.stage(image_data.pixels);
             image.load(staging.commands(), 0, {}, staged_buffer);
@@ -129,17 +134,17 @@ namespace scene {
             image.generateMipmaps(graphics_cmds);
             image.barrier(graphics_cmds, ImageResourceAccess::FragmentShaderReadOptimal);
 
-            vk::UniqueImageView &view = result.views.emplace_back();
-            view = image.createDefaultView(mDevice);
-            util::setDebugName(mDevice, *view, "scene_image_view");
+            ImageView &view = result.views.emplace_back();
+            view = ImageView::create(mDevice, image);
+            util::setDebugName(mDevice, *view.view, "scene_image_view");
 
             mDevice.updateDescriptorSets(
                     {result.sceneDescriptor.write(
                             SceneDescriptorLayout::ImageSamplers,
                             vk::DescriptorImageInfo{
-                                .sampler = *result.sampler, .imageView = *view, .imageLayout = vk::ImageLayout::eReadOnlyOptimal
+                                .sampler = *result.sampler, .imageView = view, .imageLayout = vk::ImageLayout::eReadOnlyOptimal
                             },
-                            static_cast<uint32_t>(index)
+                            index
                     )},
                     {}
             );
@@ -187,7 +192,7 @@ namespace scene {
                 node_instance_map[i] = UINT32_MAX;
                 continue;
             }
-            node_instance_map[i] = instance_blocks.size();
+            node_instance_map[i] = static_cast<glm::uint>(instance_blocks.size());
             instance_blocks.emplace_back() = {.transform = node.transform};
         }
         std::tie(result.instances, result.instancesAlloc) =

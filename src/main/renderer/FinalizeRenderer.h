@@ -4,7 +4,8 @@
 #include "../debug/Annotation.h"
 #include "../debug/Settings.h"
 
-struct Attachment;
+
+struct ImageViewPairBase;
 class ShaderLoader;
 namespace vk {
     class Device;
@@ -37,8 +38,8 @@ public:
             const vk::Device &device,
             const DescriptorAllocator &descriptor_allocator,
             const vk::CommandBuffer &cmd_buf,
-            const Attachment &hdr_attachment,
-            const Attachment &sdr_attachment,
+            const ImageViewPairBase &hdr_attachment,
+            const ImageViewPairBase &sdr_attachment,
             const Settings::AgXParams &agx_params
     );
 

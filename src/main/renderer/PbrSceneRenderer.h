@@ -8,7 +8,7 @@
 #include "FrustumCuller.h"
 
 
-struct Attachment;
+struct ImageViewPairBase;
 class CascadedShadowCaster;
 class FrustumCuller;
 class ShadowCaster;
@@ -97,7 +97,7 @@ public:
             const FrustumCuller &frustum_culler,
             const DirectionalLight &sun_light,
             std::span<const CascadedShadowCaster> sun_shadow_cascades,
-            const Attachment& ao_attachment,
+            const ImageViewPairBase& ao_result,
             const Settings& settings
     );
 

@@ -133,35 +133,34 @@ using PlainImageDataU32 = PlainImageData<uint32_t>;
 using PlainImageDataF = PlainImageData<float>;
 
 
+/// <summary>
+/// Defines the physical properties (dimensions, format, layers) of a Vulkan image resource.
+/// </summary>
 struct ImageInfo {
-    /// <summary>The Vulkan format of the image.</summary>
     vk::Format format = vk::Format::eUndefined;
-    /// <summary>The aspect flags of the image (e.g., color, depth, stencil).</summary>
     vk::ImageAspectFlags aspects = {};
-    /// <summary>The type of the image (e.g., 1D, 2D, 3D).</summary>
     vk::ImageType type = vk::ImageType::e2D;
     uint32_t width = 1;
     uint32_t height = 1;
     uint32_t depth = 1;
-    /// <summary>The number of mipmap levels.</summary>
     uint32_t levels = 1;
-    /// <summary>The number of layers in the image array.</summary>
     uint32_t layers = 1;
 
     static vk::ImageAspectFlags getAspectsFromFormat(const vk::Format &format);
     static vk::ImageUsageFlags getAttachmentUsageFromFormat(const vk::Format &format);
 
-    constexpr [[nodiscard]] vk::ImageSubresourceRange resourceRange() const {
+    [[nodiscard]] constexpr vk::ImageSubresourceRange resourceRange() const {
         return {.aspectMask = aspects, .levelCount = levels, .layerCount = layers};
     }
 
-    constexpr [[nodiscard]] vk::Extent3D extents() const { return {width, height, depth}; }
+    [[nodiscard]] constexpr vk::Extent3D extents() const { return {width, height, depth}; }
 };
 
+/// <summary>
+/// Defines how a physical image should be interpreted by shaders (subresource range, view type).
+/// </summary>
 struct ImageViewInfo {
-    /// <summary>The Vulkan format of the image.</summary>
     vk::Format format = vk::Format::eUndefined;
-    /// <summary>The type of the image (e.g., 1D, 2D, 3D).</summary>
     vk::ImageViewType type = vk::ImageViewType::e2D;
     uint32_t width = 1;
     uint32_t height = 1;
@@ -170,37 +169,35 @@ struct ImageViewInfo {
 
     static ImageViewInfo from(const ImageInfo &info);
 
-    constexpr [[nodiscard]] vk::Extent3D extents() const { return {width, height, depth}; }
+    [[nodiscard]] constexpr vk::Extent3D extents() const { return {width, height, depth}; }
 };
 
 
 /// <summary>
-/// A struct holding the creation parameters for a Vulkan image.
+/// Configuration for creating a new image via VMA.
+/// Includes memory usage flags and automatic mip-level calculation settings.
 /// </summary>
 struct ImageCreateInfo {
-    /// <summary>The Vulkan format of the image.</summary>
     vk::Format format = vk::Format::eUndefined;
-    /// <summary>The aspect flags of the image (e.g., color, depth, stencil).</summary>
     vk::ImageAspectFlags aspects = {};
-    /// <summary>The type of the image (e.g., 1D, 2D, 3D).</summary>
     vk::ImageType type = vk::ImageType::e2D;
     uint32_t width = 1;
     uint32_t height = 1;
     uint32_t depth = 1;
-    /// <summary>The number of mipmap levels.</summary>
+
+    /// <summary>Set to UINT32_MAX to automatically calculate the maximum number of mip levels based on extents.</summary>
     uint32_t levels = 1;
-    /// <summary>The number of layers in the image array.</summary>
     uint32_t layers = 1;
 
-    /// <summary>Specifies the intended usage of the image.</summary>
     vk::ImageUsageFlags usage = {};
-    /// <summary>Specifies the flags of the image.</summary>
     vk::ImageCreateFlags flags = {};
     vma::MemoryUsage device = vma::MemoryUsage::eAuto;
     vk::MemoryPropertyFlags requiredProperties = vk::MemoryPropertyFlagBits::eDeviceLocal;
     vk::MemoryPropertyFlags preferredProperties = {};
 
-    constexpr operator ImageInfo() const { return {format, aspects, type, width, height, depth, levels, layers}; }
+    constexpr operator ImageInfo() const { // NOLINT(*-explicit-constructor)
+        return {format, aspects, type, width, height, depth, levels, layers};
+    }
 
     static vk::ImageAspectFlags getAspectsFromFormat(const vk::Format &format) {
         return ImageInfo::getAspectsFromFormat(format);
@@ -209,87 +206,84 @@ struct ImageCreateInfo {
         return ImageInfo::getAttachmentUsageFromFormat(format);
     }
 
-    constexpr [[nodiscard]] vk::ImageSubresourceRange resourceRange() const {
-        return {.aspectMask = aspects, .levelCount = levels, .layerCount = layers};
+    [[nodiscard]] constexpr vk::ImageSubresourceRange resourceRange() const {
+        return {.aspectMask = aspects, .baseMipLevel = 0, .levelCount = levels, .baseArrayLayer = 0, .layerCount = layers};
     }
 
-    constexpr [[nodiscard]] vk::Extent3D extents() const { return {width, height, depth}; }
+    [[nodiscard]] constexpr vk::Extent3D extents() const { return {width, height, depth}; }
 };
 
+/// <summary>
+/// Logic layer for Image operations.
+/// Provides methods for barriers, layout transitions, and staging copies regardless of ownership or memory backing.
+/// </summary>
 struct ImageBase : protected ImageResource {
     ImageInfo info = {};
 
     ImageBase() = default;
-    ImageBase(const ImageInfo &info) : info(info) {}
+    explicit ImageBase(const ImageInfo &info) : info(info) {} // NOLINT(*-explicit-constructor)
 
     /// <summary>
-    /// Inserts an image memory barrier for this image.
+    /// Records a pipeline barrier for layout transitions and synchronization.
     /// </summary>
-    /// <param name="cmd_buf">The command buffer to record the barrier into.</param>
-    /// <param name="begin">The resource access state before the barrier.</param>
-    /// <param name="end">The resource access state after the barrier.</param>
     void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) const {
         ImageResource::barrier(vk::Image(*this), getResourceRange(), cmd_buf, begin, end);
     }
 
     /// <summary>
-    /// Inserts an image memory barrier, transitioning the image to a single state.
+    /// Records a barrier where the previous and next access states are identical (e.g. for WAR hazards).
     /// </summary>
-    /// <param name="cmd_buf">The command buffer to record the barrier into.</param>
-    /// <param name="single">The resource access state to transition to.</param>
     void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &single) const {
         barrier(cmd_buf, single, single);
     }
 
     /// <summary>
-    /// Transfers ownership of the image between queue families.
-    /// It does NOT perform any memory barriers or layout transitions. Execution ordering must be handled with a semaphore.
+    /// Transfers queue family ownership.
+    /// <para>Requires a semaphore to synchronize execution order between the source and destination queues.</para>
     /// </summary>
-    /// <param name="src_cmd_buf">The command buffer in the source queue to record the barrier into.</param>
-    /// <param name="dst_cmd_buf">The command buffer in the destination queue to record the barrier into.</param>
-    /// <param name="src_queue">The index of the source queue family.</param>
-    /// <param name="dst_queue">The index of the destination queue family.</param>
     void transfer(vk::CommandBuffer src_cmd_buf, vk::CommandBuffer dst_cmd_buf, uint32_t src_queue, uint32_t dst_queue) const {
         ImageResource::transfer(vk::Image(*this), getResourceRange(), src_cmd_buf, dst_cmd_buf, src_queue, dst_queue);
     }
 
     /// <summary>
-    /// Loads data into a specific mipmap level of the image from a buffer.
+    /// Copies buffer data into the image. Assumes the image is in a TransferDstOptimal layout.
     /// </summary>
-    /// <param name="cmd_buf">The command buffer to record the copy command to.</param>
-    /// <param name="level">The mipmap level to load data into.</param>
-    /// <param name="region">The region of the image to update.</param>
-    /// <param name="data">The buffer containing the data to load.</param>
     void load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data);
 
     /// <summary>
-    /// Generates mipmaps for the image. The image must have been created with all mip levels.
-    /// The image must be in a transfer-friendly layout.
+    /// Generates full mipmaps using `vkCmdBlitImage`.
+    /// The image layout will be transitioned to `TransferSrcOptimal` for the last mip level upon completion.
     /// </summary>
-    /// <param name="cmd_buf">The command buffer to record the blit commands to.</param>
     void generateMipmaps(const vk::CommandBuffer &cmd_buf);
 
     [[nodiscard]] vk::ImageSubresourceRange getResourceRange() const {
         return {.aspectMask = info.aspects, .levelCount = info.levels, .layerCount = info.layers};
     }
 
-    virtual operator vk::Image() const = 0;
+    virtual operator vk::Image() const = 0; // NOLINT(*-explicit-constructor)
     explicit virtual operator bool() const = 0;
 };
 
+/// <summary>
+/// Abstract base for any object capable of acting as a Vulkan Image View.
+/// </summary>
 struct ImageViewBase {
     ImageViewInfo info = {};
 
     ImageViewBase() = default;
     virtual ~ImageViewBase() = default;
 
-    ImageViewBase(const ImageViewInfo &info) : info(info) {}
+    explicit ImageViewBase(const ImageViewInfo &info) : info(info) {}
 
-    virtual operator vk::ImageView() const = 0;
+    virtual operator vk::ImageView() const = 0; // NOLINT(*-explicit-constructor)
     explicit virtual operator bool() const { return static_cast<vk::ImageView>(*this); }
 };
 
 
+/// <summary>
+/// An RAII wrapper that owns a `vk::UniqueImageView`.
+/// Use this when you own the lifecycle of the view.
+/// </summary>
 struct ImageView : ImageViewBase {
     vk::UniqueImageView view = {};
 
@@ -298,6 +292,9 @@ struct ImageView : ImageViewBase {
 
     ImageView(vk::UniqueImageView &&view, const ImageViewInfo &info) : ImageViewBase(info), view(std::move(view)) {}
 
+    /// <summary>
+    /// Creates a view for the given image resource.
+    /// </summary>
     static ImageView create(const vk::Device &device, const vk::Image &image, const ImageViewInfo &info);
 
     static ImageView create(const vk::Device &device, const vk::Image &image, const ImageInfo &info) {
@@ -314,42 +311,37 @@ struct ImageView : ImageViewBase {
     ImageView(ImageView &&other) noexcept = default;
     ImageView &operator=(ImageView &&other) noexcept = default;
 
-    operator vk::ImageView() const override { return *view; }
+    operator vk::ImageView() const override { return *view; } // NOLINT(*-explicit-constructor)
 };
 
-struct UnmanagedImageView : ImageViewBase {
+/// <summary>
+/// A lightweight, copyable wrapper for a raw vk::ImageView.
+/// Does not own the view or track state.
+/// </summary>
+struct ImageViewRef : ImageViewBase {
     vk::ImageView view = {};
 
-    UnmanagedImageView() = default;
-    ~UnmanagedImageView() override = default;
+    ImageViewRef() = default;
+    ~ImageViewRef() override = default;
 
-    UnmanagedImageView(const vk::ImageView &view, const ImageViewInfo &info) : ImageViewBase(info), view(view) {}
+    ImageViewRef(const vk::ImageView &view, const ImageViewInfo &info) : ImageViewBase(info), view(view) {}
 
-    explicit UnmanagedImageView(const ImageViewBase &view) : ImageViewBase(view), view(view) {}
+    explicit ImageViewRef(const ImageViewBase &view) : ImageViewBase(view), view(view) {}
 
-    operator vk::ImageView() const override { return view; }
+    operator vk::ImageView() const override { return view; } // NOLINT(*-explicit-constructor)
 };
 
 
 /// <summary>
-/// Represents a GPU texture image, which is a wrapper around a Vulkan image and its memory allocation.
-/// This class is a move-only type.
+/// An RAII wrapper representing a dedicated GPU image allocation.
+/// Manages the `vma::Allocation` and `vk::Image` lifecycles.
 /// </summary>
 struct Image : ImageBase {
     vma::UniqueImage image = {};
     vma::UniqueAllocation allocation = {};
 
-    /// <summary>
-    /// Creates an empty, invalid Image object.
-    /// </summary>
     Image() = default;
 
-    /// <summary>
-    /// Constructs an Image from an existing Vulkan image and allocation.
-    /// </summary>
-    /// <param name="image">A VMA unique image handle.</param>
-    /// <param name="allocation">A VMA unique allocation handle.</param>
-    /// <param name="info">The meta info for the image.</param>
     Image(vma::UniqueImage &&image, vma::UniqueAllocation &&allocation, const ImageInfo &info)
         : ImageBase(info), image(std::move(image)), allocation(std::move(allocation)) {}
 
@@ -361,15 +353,23 @@ struct Image : ImageBase {
     Image(Image &&other) noexcept = default;
     Image &operator=(Image &&other) noexcept = default;
 
-    operator vk::Image() const override { return *image; }
+    operator vk::Image() const override { return *image; } // NOLINT(*-explicit-constructor)
     explicit operator bool() const override { return *image; }
 
     /// <summary>
-    /// Creates a new, empty image.
+    /// Allocates GPU memory and creates a Vulkan image.
+    /// <para>
+    /// If `create_info.levels` is UINT32_MAX, mip levels are automatically calculated.
+    /// Always forces `eTransferSrc | eTransferDst` usage to support `load()` and `generateMipmaps()`.
+    /// </para>
     /// </summary>
     static Image create(const vma::Allocator &allocator, const ImageCreateInfo &create_info);
 };
 
+/// <summary>
+/// A convenience wrapper that owns both an Image and a matching default ImageView.
+/// Simplifies the common case of "Creating a Texture" where the image and view lifetimes are identical.
+/// </summary>
 struct ImageWithView : Image, ImageView {
     ImageWithView() = default;
 
@@ -394,10 +394,13 @@ struct ImageWithView : Image, ImageView {
 
     ~ImageWithView() override = default;
 
-    static ImageWithView create(const vk::Device &device, const vma::Allocator &allocator, const ImageCreateInfo &createInfo) {
-        return create(device, allocator, createInfo, ImageViewInfo::from(createInfo));
-    }
-
+    /// <summary>
+    /// Allocates an Image (via VMA) and immediately creates a corresponding ImageView.
+    /// <para>
+    /// If the level count of `viewCreateInfo` is set to `UINT32_MAX`,
+    /// it will be automatically resolved to the image's actual calculated mip level count.
+    /// </para>
+    /// </summary>
     static ImageWithView create(
             const vk::Device &device,
             const vma::Allocator &allocator,
@@ -405,80 +408,106 @@ struct ImageWithView : Image, ImageView {
             const ImageViewInfo &viewCreateInfo
     );
 
-    operator TransientImageViewPair() const;
+    static ImageWithView create(const vk::Device &device, const vma::Allocator &allocator, const ImageCreateInfo &createInfo) {
+        return create(device, allocator, createInfo, ImageViewInfo::from(createInfo));
+    }
+
+    operator TransientImageViewPair() const; // NOLINT(*-explicit-constructor)
     explicit operator bool() const override { return image && view; }
 };
 
+/// <summary>
+/// Wraps a raw vk::Image to provide barrier tracking logic without owning the memory.
+/// <para>
+/// This class is Move-Only to ensure the internal barrier state is not duplicated.
+/// Use this to import Swapchain images or external resources.
+/// </para>
+/// </summary>
 struct UnmanagedImage : ImageBase {
     vk::Image image;
 
-    /// <summary>
-    /// Creates an empty, invalid Image object.
-    /// </summary>
     UnmanagedImage() = default;
 
-    /// <summary>
-    /// Constructs an UnmanagedImage from an existing Vulkan image.
-    /// </summary>
     UnmanagedImage(const vk::Image &image, const ImageInfo &info) : ImageBase(info), image(image) {}
 
-    explicit UnmanagedImage(const ImageBase &image) : ImageBase(image), image(image) {}
+    UnmanagedImage(UnmanagedImage &&other) noexcept;
+    UnmanagedImage &operator=(UnmanagedImage &&other) noexcept;
 
+    UnmanagedImage(const UnmanagedImage &other) = delete;
+    UnmanagedImage &operator=(const UnmanagedImage &other) = delete;
+
+    /// <summary>
+    /// Manually updates the internal barrier state.
+    /// Useful when the image layout was modified by an external system (e.g. RenderPass implicit transitions).
+    /// </summary>
     void setBarrierState(const ImageResourceAccess &last_access) const { mPrevAccess = last_access; }
 
-    operator vk::Image() const override { return image; }
+    operator vk::Image() const override { return image; } // NOLINT(*-explicit-constructor)
     explicit operator bool() const override { return image; }
 };
 
-struct UnmanagedImageWithView : UnmanagedImage, UnmanagedImageView {
-    UnmanagedImageWithView() = default;
+/// <summary>
+/// A non-owning wrapper for both a raw Image and a raw ImageView.
+/// Move-Only because the underlying UnmanagedImage tracks state.
+/// </summary>
+struct UnmanagedImageWithViewRef : UnmanagedImage, ImageViewRef {
+    UnmanagedImageWithViewRef() = default;
 
-    UnmanagedImageWithView(const vk::Image &image, const ImageInfo &info, const vk::ImageView &view, const ImageViewInfo &viewInfo)
-        : UnmanagedImage(image, info), UnmanagedImageView(view, viewInfo) {}
+    UnmanagedImageWithViewRef(const vk::Image &image, const ImageInfo &info, const vk::ImageView &view, const ImageViewInfo &viewInfo)
+        : UnmanagedImage(image, info), ImageViewRef(view, viewInfo) {}
 
-    UnmanagedImageWithView(const UnmanagedImage &image, const UnmanagedImageView &view)
-        : UnmanagedImage(image), UnmanagedImageView(view) {}
-    UnmanagedImageWithView(const UnmanagedImage &image, const vk::ImageView &view, const ImageViewInfo &info)
-        : UnmanagedImage(image), UnmanagedImageView(view, info) {}
+    UnmanagedImageWithViewRef(UnmanagedImage &&image, const ImageViewRef &view)
+        : UnmanagedImage(std::move(image)), ImageViewRef(view) {}
+    UnmanagedImageWithViewRef(UnmanagedImage &&image, const vk::ImageView &view, const ImageViewInfo &info)
+        : UnmanagedImage(std::move(image)), ImageViewRef(view, info) {}
 
-    operator TransientImageViewPair() const;
+    UnmanagedImageWithViewRef(UnmanagedImageWithViewRef &&) noexcept = default;
+    UnmanagedImageWithViewRef &operator=(UnmanagedImageWithViewRef &&) noexcept = default;
+
+    operator TransientImageViewPair() const; // NOLINT(*-explicit-constructor)
     explicit operator bool() const override { return image && view; }
 };
 
-struct UnmanagedImageWithManagedView : UnmanagedImage, ImageView {
-    UnmanagedImageWithManagedView() = default;
+/// <summary>
+/// A hybrid structure: Unmanaged Image (Swapchain) + Owned ImageView (RAII).
+/// Common for Swapchains where you receive the image but must create your own views.
+/// </summary>
+struct UnmanagedImageWithView : UnmanagedImage, ImageView {
+    UnmanagedImageWithView() = default;
 
-    UnmanagedImageWithManagedView(
-            const vk::Image &image, const ImageInfo &imageInfo, vk::UniqueImageView &&view, const ImageViewInfo &viewInfo
-    )
+    UnmanagedImageWithView(const vk::Image &image, const ImageInfo &imageInfo, vk::UniqueImageView &&view, const ImageViewInfo &viewInfo)
         : UnmanagedImage(image, imageInfo), ImageView(std::move(view), viewInfo) {}
 
-    UnmanagedImageWithManagedView(const UnmanagedImage &image, vk::UniqueImageView &&view, const ImageViewInfo &viewInfo)
-        : UnmanagedImage(image), ImageView(std::move(view), viewInfo) {}
+    UnmanagedImageWithView(UnmanagedImage &&image, vk::UniqueImageView &&view, const ImageViewInfo &viewInfo)
+        : UnmanagedImage(std::move(image)), ImageView(std::move(view), viewInfo) {}
 
-    UnmanagedImageWithManagedView(const UnmanagedImageWithManagedView &other) = delete;
-    UnmanagedImageWithManagedView &operator=(const UnmanagedImageWithManagedView &other) = delete;
+    UnmanagedImageWithView(const UnmanagedImageWithView &other) = delete;
+    UnmanagedImageWithView &operator=(const UnmanagedImageWithView &other) = delete;
 
-    UnmanagedImageWithManagedView(UnmanagedImageWithManagedView &&other) noexcept = default;
-    UnmanagedImageWithManagedView &operator=(UnmanagedImageWithManagedView &&other) noexcept = default;
+    UnmanagedImageWithView(UnmanagedImageWithView &&other) noexcept = default;
+    UnmanagedImageWithView &operator=(UnmanagedImageWithView &&other) noexcept = default;
 
-    operator TransientImageViewPair() const;
+    operator TransientImageViewPair() const; // NOLINT(*-explicit-constructor)
     explicit operator bool() const override { return image && view; }
 };
 
 struct ImageViewPairBase {
     virtual ~ImageViewPairBase() = default;
 
-    virtual const ImageBase &image() const = 0;
-    virtual const ImageViewBase &view() const = 0;
+    [[nodiscard]] virtual const ImageBase &image() const = 0;
+    [[nodiscard]] virtual const ImageViewBase &view() const = 0;
 
-    operator vk::Image() const { return image(); }
-    operator vk::ImageView() const { return view(); }
-    operator const ImageBase &() const { return image(); }
-    operator const ImageViewBase &() const { return view(); }
+    operator vk::Image() const { return image(); } // NOLINT(*-explicit-constructor)
+    operator vk::ImageView() const { return view(); } // NOLINT(*-explicit-constructor)
+    operator const ImageBase &() const { return image(); } // NOLINT(*-explicit-constructor)
+    operator const ImageViewBase &() const { return view(); } // NOLINT(*-explicit-constructor)
     virtual explicit operator bool() const = 0;
 };
 
+/// <summary>
+/// A persistent container that points to an existing Image and View instance.
+/// Holds pointers, so the referenced objects must outlive this pair.
+/// </summary>
 class ImageViewPair : public ImageViewPairBase {
     const ImageBase *mImage = nullptr;
     const ImageViewBase *mView = nullptr;
@@ -486,8 +515,10 @@ class ImageViewPair : public ImageViewPairBase {
 public:
     ImageViewPair() = default;
     explicit ImageViewPair(const ImageWithView &image_with_view) : mImage(&image_with_view), mView(&image_with_view) {}
-    explicit ImageViewPair(const UnmanagedImageWithView &image_with_view) : mImage(&image_with_view), mView(&image_with_view) {}
-    explicit ImageViewPair(const UnmanagedImageWithManagedView &image_with_view) : mImage(&image_with_view), mView(&image_with_view) {}
+    explicit ImageViewPair(const UnmanagedImageWithViewRef &image_with_view)
+        : mImage(&image_with_view), mView(&image_with_view) {}
+    explicit ImageViewPair(const UnmanagedImageWithView &image_with_view)
+        : mImage(&image_with_view), mView(&image_with_view) {}
     ImageViewPair(const ImageBase &image, const ImageViewBase &view) : mImage(&image), mView(&view) {}
 
     // No temporaries
@@ -495,17 +526,16 @@ public:
     ImageViewPair(const ImageBase &image, ImageViewBase &&view) = delete;
     ImageViewPair(ImageBase &&image, ImageViewBase &&view) = delete;
 
-    const ImageBase &image() const override { return *mImage; }
-    const ImageViewBase &view() const override { return *mView; }
+    [[nodiscard]] const ImageBase &image() const override { return *mImage; }
+    [[nodiscard]] const ImageViewBase &view() const override { return *mView; }
 
-    explicit operator bool() const override {
-        return mImage && *mImage && mView && *mView;
-    }
+    explicit operator bool() const override { return mImage && *mImage && mView && *mView; }
 };
 
 
 /// <summary>
-/// A temporary reference to an image and its view.
+/// A lightweight temporary reference to an image and its view.
+/// Designed for passing combined resources to functions (e.g. render targets) without transferring ownership.
 /// </summary>
 class TransientImageViewPair : public ImageViewPairBase {
     const ImageBase &mImage;
@@ -519,10 +549,8 @@ public:
     TransientImageViewPair &operator=(const TransientImageViewPair &) = delete;
     TransientImageViewPair &operator=(TransientImageViewPair &&) = delete;
 
-    const ImageBase &image() const override { return mImage; }
-    const ImageViewBase &view() const override { return mView; }
+    [[nodiscard]] const ImageBase &image() const override { return mImage; }
+    [[nodiscard]] const ImageViewBase &view() const override { return mView; }
 
-    explicit operator bool() const override {
-        return mImage && mView;
-    }
+    explicit operator bool() const override { return mImage && mView; }
 };

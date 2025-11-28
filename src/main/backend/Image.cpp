@@ -226,51 +226,6 @@ void PlainImageData<T>::copyPixels(const T *src, uint32_t src_channels, T *dst, 
     jmp[index](src, dst, elements);
 }
 
-Image Image::create(const vma::Allocator &allocator, const ImageCreateInfo &create_info_) {
-    ImageCreateInfo ci = create_info_;
-    if (ci.levels == UINT32_MAX) {
-        ci.levels = static_cast<uint32_t>(std::floor(std::log2(std::max(ci.width, ci.height)))) + 1;
-    }
-
-    auto [image, allocation] = allocator.createImageUnique(
-            vk::ImageCreateInfo{
-                .flags = ci.flags,
-                .imageType = ci.type,
-                .format = ci.format,
-                .extent = {.width = ci.width, .height = ci.height, .depth = ci.depth},
-                .mipLevels = ci.levels,
-                .arrayLayers = ci.layers,
-                .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | ci.usage,
-            },
-            {
-                .usage = ci.device,
-                .requiredFlags = ci.requiredProperties,
-                .preferredFlags = ci.preferredProperties,
-            }
-    );
-
-    return {std::move(image), std::move(allocation), ci};
-}
-
-ImageWithView ImageWithView::create(
-        const vk::Device &device,
-        const vma::Allocator &allocator,
-        const ImageCreateInfo &imageCreateInfo,
-        const ImageViewInfo &viewCreateInfo
-) {
-    auto &&image = Image::create(allocator, imageCreateInfo);
-    auto &&view = device.createImageViewUnique({
-        .image = image,
-        .viewType = static_cast<vk::ImageViewType>(viewCreateInfo.type),
-        .format = viewCreateInfo.format,
-        .subresourceRange = viewCreateInfo.resourceRange,
-    });
-    return ImageWithView(std::move(image), std::move(view), viewCreateInfo);
-}
-
-ImageWithView::operator TransientImageViewPair() const { return TransientImageViewPair(*this, *this); }
-UnmanagedImageWithView::operator TransientImageViewPair() const { return TransientImageViewPair(*this, *this); }
-UnmanagedImageWithManagedView::operator TransientImageViewPair() const { return TransientImageViewPair(*this, *this); }
 
 vk::ImageAspectFlags ImageInfo::getAspectsFromFormat(const vk::Format &format) {
     switch (format) {
@@ -293,6 +248,7 @@ vk::ImageAspectFlags ImageInfo::getAspectsFromFormat(const vk::Format &format) {
     }
 }
 
+
 vk::ImageUsageFlags ImageInfo::getAttachmentUsageFromFormat(const vk::Format &format) {
     if (vkuFormatIsColor(static_cast<VkFormat>(format))) {
         return vk::ImageUsageFlagBits::eColorAttachment;
@@ -308,6 +264,43 @@ vk::ImageUsageFlags ImageInfo::getAttachmentUsageFromFormat(const vk::Format &fo
     }
     Logger::fatal(std::format("Unsupported format: {}", vk::to_string(format)));
 }
+
+ImageWithView ImageWithView::create(
+        const vk::Device &device,
+        const vma::Allocator &allocator,
+        const ImageCreateInfo &imageCreateInfo,
+        const ImageViewInfo &viewCreateInfo_
+) {
+    auto &&image = Image::create(allocator, imageCreateInfo);
+    ImageViewInfo viewCreateInfo = viewCreateInfo_;
+    if (viewCreateInfo.resourceRange.levelCount == UINT32_MAX) {
+        viewCreateInfo.resourceRange.levelCount = image.info.levels;
+    }
+    auto &&view = device.createImageViewUnique({
+        .image = image,
+        .viewType = viewCreateInfo.type,
+        .format = viewCreateInfo.format,
+        .subresourceRange = viewCreateInfo.resourceRange,
+    });
+
+    return {std::move(image), std::move(view), viewCreateInfo};
+}
+
+ImageWithView::operator TransientImageViewPair() const { return {*this, *this}; }
+UnmanagedImageWithViewRef::operator TransientImageViewPair() const { return {*this, *this}; }
+UnmanagedImageWithView::operator TransientImageViewPair() const { return {*this, *this}; }
+
+UnmanagedImage::UnmanagedImage(UnmanagedImage &&other) noexcept
+    : ImageBase(std::move(other)), image(std::exchange(other.image, VK_NULL_HANDLE)) {}
+
+UnmanagedImage &UnmanagedImage::operator=(UnmanagedImage &&other) noexcept {
+    if (this == &other)
+        return *this;
+    ImageBase::operator=(std::move(other));
+    image = std::exchange(other.image, VK_NULL_HANDLE);
+    return *this;
+}
+
 ImageViewInfo ImageViewInfo::from(const ImageInfo &info) {
     return {
         .format = info.format,
@@ -345,7 +338,7 @@ void ImageBase::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
         .image = vk::Image(*this),
         .subresourceRange =
                 {
-                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .aspectMask = info.aspects,
                     .baseMipLevel = 0,
                     .levelCount = 1,
                     .baseArrayLayer = 0,
@@ -377,7 +370,7 @@ void ImageBase::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
         vk::ImageBlit blit = {
             .srcSubresource =
                     {
-                        .aspectMask = vk::ImageAspectFlagBits::eColor,
+                        .aspectMask = info.aspects,
                         .mipLevel = lvl - 1,
                         .baseArrayLayer = 0,
                         .layerCount = info.layers,
@@ -385,7 +378,7 @@ void ImageBase::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
             .srcOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{level_width, level_height, 1}},
             .dstSubresource =
                     {
-                        .aspectMask = vk::ImageAspectFlagBits::eColor,
+                        .aspectMask = info.aspects,
                         .mipLevel = lvl,
                         .baseArrayLayer = 0,
                         .layerCount = info.layers,
@@ -421,6 +414,34 @@ void ImageBase::generateMipmaps(const vk::CommandBuffer &cmd_buf) {
         .layout = vk::ImageLayout::eTransferSrcOptimal
     };
 }
+
+
+Image Image::create(const vma::Allocator &allocator, const ImageCreateInfo &create_info_) {
+    ImageCreateInfo ci = create_info_;
+    if (ci.levels == UINT32_MAX) {
+        ci.levels = static_cast<uint32_t>(std::floor(std::log2(std::max(ci.width, ci.height)))) + 1;
+    }
+
+    auto [image, allocation] = allocator.createImageUnique(
+            vk::ImageCreateInfo{
+                .flags = ci.flags,
+                .imageType = ci.type,
+                .format = ci.format,
+                .extent = {.width = ci.width, .height = ci.height, .depth = ci.depth},
+                .mipLevels = ci.levels,
+                .arrayLayers = ci.layers,
+                .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | ci.usage,
+            },
+            {
+                .usage = ci.device,
+                .requiredFlags = ci.requiredProperties,
+                .preferredFlags = ci.preferredProperties,
+            }
+    );
+
+    return {std::move(image), std::move(allocation), ci};
+}
+
 ImageView ImageView::create(const vk::Device &device, const vk::Image &image, const ImageViewInfo &info) {
     return ImageView(
             device.createImageViewUnique({

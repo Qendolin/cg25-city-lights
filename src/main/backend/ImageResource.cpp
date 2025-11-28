@@ -70,8 +70,19 @@ constexpr ImageResourceAccess ImageResourceAccess::DepthAttachmentLateOps = {
 };
 
 constexpr ImageResourceAccess ImageResourceAccess::PresentSrc = {
-    .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput, .access = vk::AccessFlagBits2::eMemoryRead, .layout = vk::ImageLayout::ePresentSrcKHR
+    .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+    .access = vk::AccessFlagBits2::eMemoryRead,
+    .layout = vk::ImageLayout::ePresentSrcKHR
 };
+
+ImageResource::ImageResource(ImageResource &&other) noexcept : mPrevAccess(std::exchange(other.mPrevAccess, {})) {}
+
+ImageResource &ImageResource::operator=(ImageResource &&other) noexcept {
+    if (this == &other)
+        return *this;
+    mPrevAccess = std::exchange(other.mPrevAccess, {});
+    return *this;
+}
 
 void ImageResource::barrier(
         vk::Image image,

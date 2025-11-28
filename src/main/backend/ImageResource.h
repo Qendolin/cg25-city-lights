@@ -32,7 +32,11 @@ struct ImageResourceAccess {
 /// </summary>
 class ImageResource {
 public:
+    ImageResource() = default;
     virtual ~ImageResource() = default;
+
+    ImageResource(const ImageResource &other) = delete;
+    ImageResource &operator=(const ImageResource &other) = delete;
 
 protected:
     mutable ImageResourceAccess mPrevAccess = {};
@@ -71,4 +75,7 @@ protected:
             uint32_t src_queue,
             uint32_t dst_queue
     ) const;
+
+    ImageResource(ImageResource &&other) noexcept;
+    ImageResource &operator=(ImageResource &&other) noexcept;
 };

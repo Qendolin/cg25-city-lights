@@ -223,6 +223,9 @@ struct ImageBase : protected ImageResource {
     ImageBase() = default;
     explicit ImageBase(const ImageInfo &info) : info(info) {} // NOLINT(*-explicit-constructor)
 
+    ImageBase(ImageBase &&other) noexcept = default;
+    ImageBase &operator=(ImageBase &&other) noexcept = default;
+
     /// <summary>
     /// Records a pipeline barrier for layout transitions and synchronization.
     /// </summary>

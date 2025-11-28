@@ -415,6 +415,12 @@ namespace gltf {
             Logger::fatal(std::format("Mesh '{}' has primitive without index accessor", mesh_name));
 
         const fastgltf::Accessor &index_accessor = asset.accessors[primitive.indicesAccessor.value()];
+        const fastgltf::ComponentType type = index_accessor.componentType;
+
+        if (type != fastgltf::ComponentType::UnsignedInt && type != fastgltf::ComponentType::UnsignedShort) {
+            Logger::warning(std::format("Mesh '{}' has indices which aren't unsigned shorts or unsigned ints", mesh_name));
+            return 0;
+        }
 
         if (index_accessor.componentType == fastgltf::ComponentType::UnsignedInt)
             appendFromAccessor(scene_data.index_data, asset, index_accessor);
@@ -426,8 +432,7 @@ namespace gltf {
             fastgltf::iterateAccessorWithIndex<std::uint32_t>(asset, index_accessor, [&](std::uint32_t index, size_t i) {
                 scene_data.index_data[old_size + i] = index;
             });
-        } else
-            Logger::fatal(std::format("Mesh '{}' has indices which aren't unsigned shorts or unsigned ints", mesh_name));
+        }
 
         scene_data.index_count += index_accessor.count;
         return index_accessor.count;

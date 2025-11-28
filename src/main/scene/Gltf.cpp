@@ -4,7 +4,6 @@
 #include <fastgltf/glm_element_traits.hpp>
 #include <fastgltf/math.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <map>
 #include <stb_image.h>
 #include <utility>
 
@@ -24,6 +23,52 @@ namespace gltf {
     Scene::Scene() = default;
     Scene::~Scene() = default;
 
+    Loader::Loader() { mParser = std::make_unique<fastgltf::Parser>(fastgltf::Extensions::KHR_lights_punctual); }
+    Loader::~Loader() = default;
+
+    Loader::Loader(Loader &&other) noexcept : mParser(std::move(other.mParser)) {}
+    Loader &Loader::operator=(Loader &&other) noexcept {
+        if (this == &other)
+            return *this;
+        mParser = std::move(other.mParser);
+        return *this;
+    }
+
+    Scene Loader::load(const std::filesystem::path &path) const {
+        fastgltf::Asset asset = assetFromPath(path);
+        Scene scene_data;
+        // Since multiple nodes/primitives can share same mesh data it's required to load in separate passes
+        std::vector<PrimitiveInfo> primitive_infos;
+        std::vector<size_t> mesh_primitive_table; // Maps mesh index to primitive info start index
+
+        loadImages(asset, scene_data);
+        loadMeshData(asset, scene_data, primitive_infos, mesh_primitive_table);
+        loadMaterials(asset, scene_data);
+        loadNodes(asset, primitive_infos, mesh_primitive_table, scene_data);
+
+        // Sort by material for rendering efficiency
+        std::ranges::sort(scene_data.sections, [](const auto &lhs, const auto &rhs) {
+            return lhs.material < rhs.material;
+        });
+
+        scene_data.index_count = scene_data.index_data.size() / sizeof(uint32_t);
+        scene_data.vertex_count = scene_data.vertex_position_data.size() / sizeof(glm::vec3);
+
+        return scene_data;
+    }
+
+    void Loader::loadNodes(
+            fastgltf::Asset &asset,
+            const std::vector<PrimitiveInfo> &primitive_infos,
+            std::vector<std::size_t> mesh_primitive_table,
+            Scene &scene_data
+    ) {
+        fastgltf::iterateSceneNodes(asset, 0, fastgltf::math::fmat4x4(), [&](fastgltf::Node &node, fastgltf::math::fmat4x4 matrix) {
+            glm::mat4 transform = glm::make_mat4x4(&matrix.col(0)[0]);
+            loadNode(asset, scene_data, primitive_infos, mesh_primitive_table, node, transform);
+        });
+    }
+
     void Loader::loadMeshData(
             const fastgltf::Asset &asset,
             Scene &scene_data,
@@ -32,87 +77,27 @@ namespace gltf {
     ) {
         uint32_t vertex_offset = 0;
         uint32_t index_offset = 0;
-        for (const auto &mesh: asset.meshes) {
+
+        for (const fastgltf::Mesh &mesh: asset.meshes) {
             mesh_primitive_table.emplace_back(primitive_infos.size());
+            const std::string mesh_name = std::string(mesh.name);
 
-            auto &scene_mesh = scene_data.meshes.emplace_back() = {
-                .name = std::string(mesh.name),
-            };
+            gltf::Mesh &scene_mesh = scene_data.meshes.emplace_back();
+            scene_mesh.name = mesh_name;
 
-            for (const auto &primitive: mesh.primitives) {
-                if (primitive.type != fastgltf::PrimitiveType::Triangles) {
-                    Logger::fatal(std::format("Mesh '{}' has primitive with non triangle type", mesh.name));
-                }
-
-                if (!primitive.indicesAccessor.has_value()) {
-                    Logger::fatal(std::format("Mesh '{}' has primitive without index accessor", mesh.name));
-                }
-
-                auto position_attr = primitive.findAttribute("POSITION");
-                if (position_attr == primitive.attributes.cend()) {
-                    Logger::fatal(std::format("Mesh '{}' has primitive that's missing a POSITION attribute", mesh.name));
-                }
-                const auto &position_accessor = asset.accessors[position_attr->accessorIndex];
-
-                auto normal_attr = primitive.findAttribute("NORMAL");
-                if (normal_attr == primitive.attributes.cend()) {
-                    Logger::fatal(std::format("Mesh '{}' has primitive that's missing a NORMAL attribute", mesh.name));
-                }
-                const auto &normal_accessor = asset.accessors[normal_attr->accessorIndex];
-
-                auto tangent_attr = primitive.findAttribute("TANGENT");
-                if (tangent_attr == primitive.attributes.cend()) {
-                    Logger::fatal(std::format("Mesh '{}' has primitive that's missing a TANGENT attribute", mesh.name));
-                }
-                const auto &tangent_accessor = asset.accessors[tangent_attr->accessorIndex];
-
-                auto texcoord_attr = primitive.findAttribute("TEXCOORD_0");
-                if (texcoord_attr == primitive.attributes.cend()) {
-                    Logger::fatal(std::format("Mesh '{}' has primitive that's missing a TEXCOORD_0 attribute", mesh.name));
-                }
-                const auto &texcoord_accessor = asset.accessors[texcoord_attr->accessorIndex];
-
-                if (!primitive.indicesAccessor.has_value()) {
-                    Logger::fatal(std::format("Mesh '{}' has primitive that's missing an index accessor", mesh.name));
-                }
-                const auto &index_accessor = asset.accessors[primitive.indicesAccessor.value()];
-
-                appendFromAccessor(scene_data.vertex_position_data, asset, position_accessor);
-                appendFromAccessor(scene_data.vertex_normal_data, asset, normal_accessor);
-                appendFromAccessor(scene_data.vertex_tangent_data, asset, tangent_accessor);
-                appendFromAccessor(scene_data.vertex_texcoord_data, asset, texcoord_accessor);
-                if (index_accessor.componentType == fastgltf::ComponentType::UnsignedInt) {
-                    appendFromAccessor(scene_data.index_data, asset, index_accessor);
-                } else if (index_accessor.componentType == fastgltf::ComponentType::UnsignedShort) {
-                    size_t old_size = scene_data.index_data.size();
-                    scene_data.index_data.resize(old_size + index_accessor.count);
-                    fastgltf::iterateAccessorWithIndex<std::uint32_t>(
-                            asset, index_accessor,
-                            [&](std::uint16_t index, size_t i) { scene_data.index_data[old_size + i] = index; }
-                    );
-                } else {
-                    Logger::check(
-                            false,
-                            std::format("Mesh '{}' has indices which aren't unsigned shorts or unsigned ints", mesh.name)
-                    );
-                }
-                scene_data.index_count += index_accessor.count;
-
-                util::BoundingBox &bounds = scene_data.bounds.emplace_back() = {};
-                for (const glm::vec3 &p: fastgltf::iterateAccessor<glm::vec3>(asset, position_accessor)) {
-                    bounds.extend(p);
-                }
-                scene_mesh.bounds.extend(bounds);
+            for (const fastgltf::Primitive &primitive: mesh.primitives) {
+                PrimitiveCounts primitive_counts = loadPrimitive(asset, primitive, mesh_name, scene_data, scene_mesh);
 
                 primitive_infos.emplace_back() = {
                     .indexOffset = index_offset,
-                    .indexCount = static_cast<uint32_t>(index_accessor.count),
+                    .indexCount = primitive_counts.index_count,
                     .vertexOffset = static_cast<int32_t>(vertex_offset),
                     .material = static_cast<uint32_t>(primitive.materialIndex.value_or(UINT32_MAX)),
                     .bounds = static_cast<uint32_t>(scene_data.bounds.size() - 1),
                 };
-                index_offset += static_cast<uint32_t>(index_accessor.count);
-                vertex_offset += static_cast<uint32_t>(position_accessor.count);
+
+                index_offset += primitive_counts.index_count;
+                vertex_offset += primitive_counts.vertex_count;
             }
         }
     }
@@ -142,105 +127,143 @@ namespace gltf {
         std::map<std::pair<int32_t, int32_t>, int32_t> orm_cache_map;
         std::map<int32_t, int32_t> normal_cache_map;
 
-        // FIXME: The image code is way too complex and scuffed
-
         for (const auto &gltf_mat: asset.materials) {
-            Material &mat = scene_data.materials.emplace_back();
-            mat.albedoFactor = glm::vec4(
-                    gltf_mat.pbrData.baseColorFactor.x(), gltf_mat.pbrData.baseColorFactor.y(),
-                    gltf_mat.pbrData.baseColorFactor.z(), gltf_mat.pbrData.baseColorFactor.w()
+            Material mat = initMaterialWithFactors(gltf_mat);
+            mat.albedoTexture = loadMaterialAlbedoTexture(asset, gltf_mat, scene_data);
+            mat.ormTexture = loadMaterialOrmTexture(asset, gltf_mat, scene_data, orm_cache_map);
+            mat.normalTexture = loadMaterialNormalTexture(asset, gltf_mat, scene_data, normal_cache_map);
+            scene_data.materials.push_back(mat);
+        }
+    }
+
+    Material Loader::initMaterialWithFactors(const fastgltf::Material &gltf_mat) {
+        Material mat{};
+
+        mat.albedoFactor = glm::vec4(
+                gltf_mat.pbrData.baseColorFactor.x(), gltf_mat.pbrData.baseColorFactor.y(),
+                gltf_mat.pbrData.baseColorFactor.z(), gltf_mat.pbrData.baseColorFactor.w()
+        );
+        mat.metalnessFactor = gltf_mat.pbrData.metallicFactor;
+        mat.roughnessFactor = gltf_mat.pbrData.roughnessFactor;
+        if (gltf_mat.normalTexture.has_value())
+            mat.normalFactor = gltf_mat.normalTexture->scale;
+
+        return mat;
+    }
+
+    int32_t Loader::loadMaterialAlbedoTexture(const fastgltf::Asset &asset, const fastgltf::Material &gltf_mat, Scene &scene_data) {
+        int32_t texture_index = -1;
+
+        if (gltf_mat.pbrData.baseColorTexture.has_value()) {
+            texture_index = static_cast<int32_t>(
+                    asset.textures[gltf_mat.pbrData.baseColorTexture.value().textureIndex].imageIndex.value()
             );
-            mat.metalnessFactor = gltf_mat.pbrData.metallicFactor;
-            mat.roughnessFactor = gltf_mat.pbrData.roughnessFactor;
-            mat.normalFactor = 1.0;
-            if (gltf_mat.normalTexture.has_value())
-                mat.normalFactor = gltf_mat.normalTexture->scale;
+            auto &image = scene_data.images[texture_index];
+            if (image.format == vk::Format::eUndefined) // claim image in this format
+                image.format = vk::Format::eR8G8B8A8Srgb;
+            Logger::check(image.format == vk::Format::eR8G8B8A8Srgb, "Format of albedo texture must be R8G8B8A8_SRGB");
+        }
 
-            if (gltf_mat.pbrData.baseColorTexture.has_value()) {
-                mat.albedoTexture = static_cast<int32_t>(
-                        asset.textures[gltf_mat.pbrData.baseColorTexture.value().textureIndex].imageIndex.value()
-                );
-                auto &image = scene_data.images[mat.albedoTexture];
-                if (image.format == vk::Format::eUndefined) // claim image in this format
-                    image.format = vk::Format::eR8G8B8A8Srgb;
-                Logger::check(image.format == vk::Format::eR8G8B8A8Srgb, "Format of albedo texture must be R8G8B8A8_SRGB");
-            }
+        return texture_index;
+    }
 
-            std::pair orm_cache_key = {-1, -1};
-            PlainImageDataU8 *o_image = nullptr;
-            PlainImageDataU8 *rm_image = nullptr;
-            if (gltf_mat.occlusionTexture.has_value()) {
-                auto index = static_cast<int32_t>(
-                        asset.textures[gltf_mat.occlusionTexture.value().textureIndex].imageIndex.value()
-                );
-                o_image = &scene_data.images[index];
-                orm_cache_key.first = index;
-            }
+    int32_t Loader::loadMaterialOrmTexture(
+            const fastgltf::Asset &asset,
+            const fastgltf::Material &gltf_mat,
+            Scene &scene_data,
+            std::map<std::pair<int32_t, int32_t>, int32_t> &orm_cache_map
+    ) {
+        auto getImageIndex = [&](const fastgltf::TextureInfo &texInfo) -> int32_t {
+            const size_t texIndex = texInfo.textureIndex;
+            const size_t imageIndex = asset.textures[texIndex].imageIndex.value();
+            return static_cast<int32_t>(imageIndex);
+        };
 
-            if (gltf_mat.pbrData.metallicRoughnessTexture.has_value()) {
-                auto index = static_cast<int32_t>(
-                        asset.textures[gltf_mat.pbrData.metallicRoughnessTexture.value().textureIndex].imageIndex.value()
-                );
-                rm_image = &scene_data.images[index];
-                orm_cache_key.second = index;
-            }
+        if (!gltf_mat.occlusionTexture.has_value() && !gltf_mat.pbrData.metallicRoughnessTexture.has_value())
+            return -1;
 
-            // ORM texture merging logic
-            if (o_image != nullptr && rm_image != nullptr && o_image == rm_image) {
-                mat.ormTexture = static_cast<int32_t>(
-                        asset.textures[gltf_mat.occlusionTexture.value().textureIndex].imageIndex.value()
-                );
-                auto &image = scene_data.images[mat.ormTexture];
-                if (image.format == vk::Format::eUndefined) // claim image in this format
-                    image.format = vk::Format::eR8G8B8A8Unorm;
-                Logger::check(image.format == vk::Format::eR8G8B8A8Unorm, "Format of orm texture must be R8G8B8A8_UNORM");
-            } else if (o_image || rm_image) {
-                if (o_image && rm_image) {
-                    Logger::check(
-                            rm_image->width == o_image->width && rm_image->height == o_image->height,
-                            "Occlusion texture size doesn't match roughness-metalness texture size"
-                    );
-                }
+        std::pair<int32_t, int32_t> orm_cache_key = {-1, -1};
+        PlainImageDataU8 *o_image = nullptr;
+        PlainImageDataU8 *rm_image = nullptr;
 
-                if (orm_cache_map.contains(orm_cache_key)) {
-                    mat.ormTexture = orm_cache_map.at(orm_cache_key);
-                } else {
-                    PlainImageDataU8 *o_or_rm_image = o_image ? o_image : rm_image;
-                    mat.ormTexture = static_cast<int32_t>(scene_data.images.size());
-                    auto orm_image = PlainImageDataU8::create(
-                            vk::Format::eR8G8B8A8Unorm, o_or_rm_image->width, o_or_rm_image->height
-                    );
+        if (gltf_mat.occlusionTexture.has_value()) {
+            int32_t index = getImageIndex(gltf_mat.occlusionTexture.value());
+            o_image = &scene_data.images[index];
+            orm_cache_key.first = index;
+        }
 
-                    if (o_image) {
-                        o_image->copyChannels(orm_image, {0});
-                    }
-                    if (rm_image) {
-                        rm_image->copyChannels(orm_image, {1, 2});
-                    } else {
-                        orm_image.fill({1, 2}, {0xff, 0xff});
-                    }
-                    orm_cache_map[orm_cache_key] = mat.ormTexture;
-                    // pushing vector invalidates pointers, so push last
-                    scene_data.images.emplace_back(std::move(orm_image));
-                }
-            }
+        if (gltf_mat.pbrData.metallicRoughnessTexture.has_value()) {
+            int32_t index = getImageIndex(gltf_mat.pbrData.metallicRoughnessTexture.value());
+            rm_image = &scene_data.images[index];
+            orm_cache_key.second = index;
+        }
 
-            if (gltf_mat.normalTexture.has_value()) {
-                auto index = static_cast<int32_t>(
-                        asset.textures[gltf_mat.normalTexture.value().textureIndex].imageIndex.value()
-                );
-                if (normal_cache_map.contains(index)) {
-                    mat.normalTexture = normal_cache_map.at(index);
-                } else {
-                    const auto &src_image = scene_data.images[index];
-                    auto normal = PlainImageDataU8::create(vk::Format::eR8G8Unorm, src_image.width, src_image.height);
-                    src_image.copyChannels(normal, {0, 1});
-                    mat.normalTexture = static_cast<int32_t>(scene_data.images.size());
-                    scene_data.images.emplace_back(std::move(normal));
-                    normal_cache_map[index] = mat.normalTexture;
-                }
+        // ORM texture merging
+
+        if (o_image && rm_image && o_image == rm_image) {
+            int32_t texture_index = getImageIndex(gltf_mat.occlusionTexture.value());
+            auto &image = scene_data.images[texture_index];
+
+            if (image.format == vk::Format::eUndefined)
+                image.format = vk::Format::eR8G8B8A8Unorm;
+
+            Logger::check(image.format == vk::Format::eR8G8B8A8Unorm, "Format of orm texture must be R8G8B8A8_UNORM");
+            return texture_index;
+        }
+
+        if (o_image && rm_image && (rm_image->width != o_image->width || rm_image->height != o_image->height))
+            Logger::fatal("Occlusion and roughness-metalness texture sizes don't match");
+
+        if (auto it = orm_cache_map.find(orm_cache_key); it != orm_cache_map.end())
+            return it->second;
+
+        PlainImageDataU8 *o_or_rm_image = o_image ? o_image : rm_image;
+        int32_t texture_index = static_cast<int32_t>(scene_data.images.size());
+
+        if (!o_or_rm_image)
+            return -1; // Keep analyzer happy
+        
+        PlainImageDataU8 orm_image =
+                PlainImageDataU8::create(vk::Format::eR8G8B8A8Unorm, o_or_rm_image->width, o_or_rm_image->height);
+
+        if (o_image)
+            o_image->copyChannels(orm_image, {0});
+
+        if (rm_image)
+            rm_image->copyChannels(orm_image, {1, 2});
+        else
+            orm_image.fill({1, 2}, {0xff, 0xff});
+
+        orm_cache_map[orm_cache_key] = texture_index;
+        scene_data.images.push_back(std::move(orm_image));
+
+        return texture_index;
+    }
+
+    int32_t Loader::loadMaterialNormalTexture(
+            const fastgltf::Asset &asset,
+            const fastgltf::Material &gltf_mat,
+            Scene &scene_data,
+            std::map<int32_t, int32_t> &normal_cache_map
+    ) {
+        int32_t texture_index = -1;
+
+        if (gltf_mat.normalTexture.has_value()) {
+            auto index =
+                    static_cast<int32_t>(asset.textures[gltf_mat.normalTexture.value().textureIndex].imageIndex.value());
+            if (normal_cache_map.contains(index)) {
+                texture_index = normal_cache_map.at(index);
+            } else {
+                const auto &src_image = scene_data.images[index];
+                auto normal = PlainImageDataU8::create(vk::Format::eR8G8Unorm, src_image.width, src_image.height);
+                src_image.copyChannels(normal, {0, 1});
+                texture_index = static_cast<int32_t>(scene_data.images.size());
+                scene_data.images.emplace_back(std::move(normal));
+                normal_cache_map[index] = texture_index;
             }
         }
+
+        return texture_index;
     }
 
     void Loader::loadLight(
@@ -278,8 +301,10 @@ namespace gltf {
                     .color = {light.color.x(), light.color.y(), light.color.z()},
                     .power = light.intensity / 683.0f,
                 };
-                scene_light.outerConeAngle = glm::degrees(light.outerConeAngle.value_or(glm::radians(scene_light.outerConeAngle)));
-                scene_light.innerConeAngle = glm::degrees(light.innerConeAngle.value_or(glm::radians(scene_light.innerConeAngle)));
+                scene_light.outerConeAngle =
+                        glm::degrees(light.outerConeAngle.value_or(glm::radians(scene_light.outerConeAngle)));
+                scene_light.innerConeAngle =
+                        glm::degrees(light.innerConeAngle.value_or(glm::radians(scene_light.innerConeAngle)));
                 break;
             }
         }
@@ -303,15 +328,14 @@ namespace gltf {
 
         if (scene_node.mesh == UINT32_MAX) {
             // Non mesh node
-            if (node.lightIndex.has_value()) {
+            if (node.lightIndex.has_value())
                 loadLight(asset, scene_data, node, transform, scene_node);
-            }
             return;
         }
 
         const fastgltf::Mesh &mesh = asset.meshes[scene_node.mesh];
 
-        for (size_t i = 0; i < mesh.primitives.size(); i++) {
+        for (std::size_t i{0}; i < mesh.primitives.size(); ++i) {
             const PrimitiveInfo &primitive_info = primitive_infos[mesh_primitive_table[scene_node.mesh] + i];
 
             scene_data.sections.emplace_back() = {
@@ -325,54 +349,88 @@ namespace gltf {
         }
     }
 
-    Loader::Loader() { mParser = std::make_unique<fastgltf::Parser>(fastgltf::Extensions::KHR_lights_punctual); }
-    Loader::~Loader() = default;
+    Loader::PrimitiveCounts Loader::loadPrimitive(
+            const fastgltf::Asset &asset,
+            const fastgltf::Primitive &primitive,
+            std::string_view mesh_name,
+            Scene &scene_data,
+            gltf::Mesh &scene_mesh
+    ) {
+        if (primitive.type != fastgltf::PrimitiveType::Triangles)
+            Logger::fatal(std::format("Mesh '{}' has primitive with non triangle type", mesh_name));
 
-    Scene Loader::load(const std::filesystem::path &path) const {
-        auto data = fastgltf::GltfDataBuffer::FromPath(path);
-        if (auto error = data.error(); error != fastgltf::Error::None) {
-            Logger::fatal(std::format("Failed to load GLTF: {}", fastgltf::getErrorName(error)));
-        }
+        uint32_t index_count = appendMeshPrimitiveIndices(asset, primitive, mesh_name, scene_data);
 
-        auto asset = mParser->loadGltf(data.get(), path.parent_path(), fastgltf::Options::None);
-        if (auto error = asset.error(); error != fastgltf::Error::None) {
-            Logger::fatal(std::format("Failed to load GLTF: {}", fastgltf::getErrorName(error)));
-        }
+        const fastgltf::Accessor &position_accessor = getAttributeAccessor(asset, primitive, "POSITION", mesh_name);
+        const fastgltf::Accessor &normal_accessor = getAttributeAccessor(asset, primitive, "NORMAL", mesh_name);
+        const fastgltf::Accessor &tangent_accessor = getAttributeAccessor(asset, primitive, "TANGENT", mesh_name);
+        const fastgltf::Accessor &texcoord_accessor = getAttributeAccessor(asset, primitive, "TEXCOORD_0", mesh_name);
 
-        Scene scene_data;
+        appendFromAccessor(scene_data.vertex_position_data, asset, position_accessor);
+        appendFromAccessor(scene_data.vertex_normal_data, asset, normal_accessor);
+        appendFromAccessor(scene_data.vertex_tangent_data, asset, tangent_accessor);
+        appendFromAccessor(scene_data.vertex_texcoord_data, asset, texcoord_accessor);
 
-        loadImages(asset.get(), scene_data);
+        util::BoundingBox &bounds = scene_data.bounds.emplace_back() = {};
+        for (const glm::vec3 &p: fastgltf::iterateAccessor<glm::vec3>(asset, position_accessor))
+            bounds.extend(p);
 
-        // Since multiple nodes / primitives can share the same mesh data it's required to load it in separate passes
-        std::vector<PrimitiveInfo> primitive_infos;
-        std::vector<size_t> mesh_primitive_table; // maps mesh index to primitive info start index
-        loadMeshData(asset.get(), scene_data, primitive_infos, mesh_primitive_table);
-        loadMaterials(asset.get(), scene_data);
-        fastgltf::iterateSceneNodes(
-                asset.get(), 0, fastgltf::math::fmat4x4(),
-                [&](fastgltf::Node &node, fastgltf::math::fmat4x4 matrix) {
-                    glm::mat4 transform = glm::make_mat4x4(&matrix.col(0)[0]);
-                    loadNode(asset.get(), scene_data, primitive_infos, mesh_primitive_table, node, transform);
-                }
-        );
+        scene_mesh.bounds.extend(bounds);
 
-        // Sort by material for rendering efficiency
-        std::ranges::sort(scene_data.sections, [](const auto &lhs, const auto &rhs) {
-            return lhs.material < rhs.material;
-        });
-
-        scene_data.index_count = scene_data.index_data.size() / sizeof(uint32_t);
-        scene_data.vertex_count = scene_data.vertex_position_data.size() / sizeof(glm::vec3);
-
-        return scene_data;
+        return {index_count, static_cast<uint32_t>(position_accessor.count)};
     }
 
-    Loader::Loader(Loader &&other) noexcept : mParser(std::move(other.mParser)) {}
-    Loader &Loader::operator=(Loader &&other) noexcept {
-        if (this == &other)
-            return *this;
-        mParser = std::move(other.mParser);
-        return *this;
+    fastgltf::Asset Loader::assetFromPath(const std::filesystem::path &path) const {
+        auto data = fastgltf::GltfDataBuffer::FromPath(path);
+
+        if (auto error = data.error(); error != fastgltf::Error::None)
+            Logger::fatal(std::format("Failed to load GLTF: {}", fastgltf::getErrorName(error)));
+
+        auto asset = mParser->loadGltf(data.get(), path.parent_path(), fastgltf::Options::None);
+
+        if (auto error = asset.error(); error != fastgltf::Error::None)
+            Logger::fatal(std::format("Failed to load GLTF: {}", fastgltf::getErrorName(error)));
+
+        return *std::move(asset);
+    }
+
+    const fastgltf::Accessor &Loader::getAttributeAccessor(
+            const fastgltf::Asset &asset,
+            const fastgltf::Primitive &primitive,
+            std::string_view attribute_name,
+            std::string_view mesh_name
+    ) {
+        const auto it = primitive.findAttribute(attribute_name);
+
+        if (it == primitive.attributes.cend())
+            Logger::fatal(std::format("Mesh '{}' has primitive that's missing a '{}' attribute", mesh_name, attribute_name));
+
+        return asset.accessors[it->accessorIndex];
+    }
+
+    uint32_t Loader::appendMeshPrimitiveIndices(
+            const fastgltf::Asset &asset, const fastgltf::Primitive &primitive, std::string_view mesh_name, gltf::Scene &scene_data
+    ) {
+        if (!primitive.indicesAccessor.has_value())
+            Logger::fatal(std::format("Mesh '{}' has primitive without index accessor", mesh_name));
+
+        const fastgltf::Accessor &index_accessor = asset.accessors[primitive.indicesAccessor.value()];
+
+        if (index_accessor.componentType == fastgltf::ComponentType::UnsignedInt)
+            appendFromAccessor(scene_data.index_data, asset, index_accessor);
+        else if (index_accessor.componentType == fastgltf::ComponentType::UnsignedShort) {
+            const size_t old_size = scene_data.index_data.size();
+
+            scene_data.index_data.resize(old_size + index_accessor.count);
+
+            fastgltf::iterateAccessorWithIndex<std::uint32_t>(asset, index_accessor, [&](std::uint32_t index, size_t i) {
+                scene_data.index_data[old_size + i] = index;
+            });
+        } else
+            Logger::fatal(std::format("Mesh '{}' has indices which aren't unsigned shorts or unsigned ints", mesh_name));
+
+        scene_data.index_count += index_accessor.count;
+        return index_accessor.count;
     }
 
 } // namespace gltf

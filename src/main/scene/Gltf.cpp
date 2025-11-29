@@ -106,6 +106,8 @@ namespace gltf {
                     .bounds = static_cast<uint32_t>(scene_data.bounds.size() - 1),
                 };
 
+                Logger::check(primitive.materialIndex.has_value(), std::format("Mesh {} has no material", mesh_name));
+
                 index_offset += primitive_counts.index_count;
                 vertex_offset += primitive_counts.vertex_count;
             }
@@ -517,7 +519,7 @@ namespace gltf {
 
     fastgltf::Asset Loader::assetFromPath(const std::filesystem::path &path) const {
         auto data = fastgltf::GltfDataBuffer::FromPath(path);
-        
+
         if (data.error() != fastgltf::Error::None)
             Logger::fatal(std::format("Failed to load GLTF: {}", fastgltf::getErrorName(data.error())));
 

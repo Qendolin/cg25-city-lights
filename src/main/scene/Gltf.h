@@ -100,11 +100,16 @@ namespace gltf {
         /// <param name="scene_data">The scene data to populate.</param>
         static void loadMaterials(const fastgltf::Asset &asset, Scene &scene_data);
 
+        static void loadAnimations(
+                const fastgltf::Asset &asset, Scene &scene_data, std::map<std::size_t, std::size_t> &gltf_node_idx_to_anim_idx
+        );
+
         // TODO: Summary
         static void loadNodes(
                 fastgltf::Asset &asset,
                 const std::vector<PrimitiveInfo> &primitive_infos,
-                std::vector<std::size_t> mesh_primitive_table,
+                const std::vector<std::size_t> &mesh_primitive_table,
+                const std::map<std::size_t, std::size_t> &gltf_node_idx_to_anim_idx,
                 Scene &scene_data
         );
 
@@ -129,13 +134,15 @@ namespace gltf {
         /// <param name="mesh_primitive_table">A table mapping mesh index to the start of its primitives in primitive_infos.</param>
         /// <param name="node">The node to load.</param>
         /// <param name="transform">The transformation matrix of the node.</param>
+        /// TODO
         static void loadNode(
                 const fastgltf::Asset &asset,
-                Scene &scene_data,
+                const fastgltf::Node &node,
                 const std::vector<PrimitiveInfo> &primitive_infos,
                 const std::vector<size_t> &mesh_primitive_table,
-                const fastgltf::Node &node,
-                const glm::mat4 &transform
+                const glm::mat4 transform,
+                const std::uint32_t animation_index,
+                Scene &scene_data
         );
 
         static PrimitiveCounts loadPrimitive(
@@ -144,6 +151,15 @@ namespace gltf {
                 std::string_view mesh_name,
                 Scene &scene_data,
                 gltf::Mesh &scene_mesh
+        );
+
+        template<typename T>
+        static void loadAnimationChannel(
+                const fastgltf::Asset &asset,
+                const fastgltf::Animation &animation,
+                const fastgltf::AnimationChannel &channel,
+                std::vector<float> &time_stamps,
+                std::vector<T> &values
         );
 
         static Material initMaterialWithFactors(const fastgltf::Material &gltf_mat);
@@ -165,7 +181,7 @@ namespace gltf {
                 Scene &scene_data,
                 std::map<int32_t, int32_t> &normal_cache_map
         );
-        
+
         fastgltf::Asset assetFromPath(const std::filesystem::path &path) const;
 
         static const fastgltf::Accessor &getAttributeAccessor(

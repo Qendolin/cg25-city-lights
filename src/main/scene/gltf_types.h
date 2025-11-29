@@ -3,6 +3,7 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
 #include <vector>
+#include <map>
 
 #include "../util/math.h"
 
@@ -52,6 +53,9 @@ namespace gltf {
         /// The index of the directional light for this node or UINT32_MAX if none.
         /// </summary>
         uint32_t directionalLight = UINT32_MAX;
+
+        // New
+        uint32_t animation = UINT32_MAX;
     };
 
     /// <summary>
@@ -117,6 +121,13 @@ namespace gltf {
         /// The normal map scale factor.
         /// </summary>
         float normalFactor = 1.0;
+    };
+
+    struct Animation {
+        std::vector<float> translation_times;
+        std::vector<float> rotation_times;
+        std::vector<glm::vec3> translations;
+        std::vector<glm::vec4> rotations;
     };
 
     /// <summary>
@@ -193,5 +204,9 @@ namespace gltf {
         /// A list of all directional lights in the scene.
         /// </summary>
         std::vector<DirectionalLight> directionalLights;
+
+
+        // New
+        std::vector<Animation> animations;
     };
 } // namespace gltf

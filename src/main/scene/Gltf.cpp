@@ -39,12 +39,14 @@ namespace gltf {
         Scene scene_data;
         // Since multiple nodes/primitives can share same mesh data it's required to load in separate passes
         std::vector<PrimitiveInfo> primitive_infos;
-        std::vector<size_t> mesh_primitive_table; // Maps mesh index to primitive info start index
+        std::vector<std::size_t> mesh_primitive_table; // Maps mesh index to primitive info start index
+        std::map<std::size_t, std::size_t> gltf_node_idx_to_anim_idx; // Maps gltf node index to animation
 
         loadImages(asset, scene_data);
         loadMeshData(asset, scene_data, primitive_infos, mesh_primitive_table);
         loadMaterials(asset, scene_data);
-        loadNodes(asset, primitive_infos, mesh_primitive_table, scene_data);
+        loadAnimations(asset, scene_data, gltf_node_idx_to_anim_idx);
+        loadNodes(asset, primitive_infos, mesh_primitive_table, gltf_node_idx_to_anim_idx, scene_data);
 
         // Sort by material for rendering efficiency
         std::ranges::sort(scene_data.sections, [](const auto &lhs, const auto &rhs) {
@@ -60,12 +62,20 @@ namespace gltf {
     void Loader::loadNodes(
             fastgltf::Asset &asset,
             const std::vector<PrimitiveInfo> &primitive_infos,
-            std::vector<std::size_t> mesh_primitive_table,
+            const std::vector<std::size_t> &mesh_primitive_table,
+            const std::map<std::size_t, std::size_t> &gltf_node_idx_to_anim_idx,
             Scene &scene_data
     ) {
         fastgltf::iterateSceneNodes(asset, 0, fastgltf::math::fmat4x4(), [&](fastgltf::Node &node, fastgltf::math::fmat4x4 matrix) {
-            glm::mat4 transform = glm::make_mat4x4(&matrix.col(0)[0]);
-            loadNode(asset, scene_data, primitive_infos, mesh_primitive_table, node, transform);
+            const glm::mat4 transform = glm::make_mat4x4(&matrix.col(0)[0]);
+            const std::size_t gltf_node_index = static_cast<std::size_t>(&node - asset.nodes.data());
+            std::uint32_t animation_index = UINT32_MAX;
+
+            if (auto it = gltf_node_idx_to_anim_idx.find(gltf_node_index); it != gltf_node_idx_to_anim_idx.end()) {
+                animation_index = static_cast<std::uint32_t>(it->second);
+            }
+
+            loadNode(asset, node, primitive_infos, mesh_primitive_table, transform, animation_index, scene_data);
         });
     }
 
@@ -104,7 +114,7 @@ namespace gltf {
 
     void Loader::loadImages(const fastgltf::Asset &asset, Scene &scene_data) {
         fastgltf::DefaultBufferDataAdapter adapter = {};
-        for (const auto &image: asset.images) {
+        for (const fastgltf::Image &image: asset.images) {
             Logger::check(
                     std::holds_alternative<fastgltf::sources::BufferView>(image.data),
                     "Image data source must be a buffer view"
@@ -127,7 +137,7 @@ namespace gltf {
         std::map<std::pair<int32_t, int32_t>, int32_t> orm_cache_map;
         std::map<int32_t, int32_t> normal_cache_map;
 
-        for (const auto &gltf_mat: asset.materials) {
+        for (const fastgltf::Material &gltf_mat: asset.materials) {
             Material mat = initMaterialWithFactors(gltf_mat);
             mat.albedoTexture = loadMaterialAlbedoTexture(asset, gltf_mat, scene_data);
             mat.ormTexture = loadMaterialOrmTexture(asset, gltf_mat, scene_data, orm_cache_map);
@@ -136,140 +146,93 @@ namespace gltf {
         }
     }
 
-    Material Loader::initMaterialWithFactors(const fastgltf::Material &gltf_mat) {
-        Material mat{};
-
-        mat.albedoFactor = glm::vec4(
-                gltf_mat.pbrData.baseColorFactor.x(), gltf_mat.pbrData.baseColorFactor.y(),
-                gltf_mat.pbrData.baseColorFactor.z(), gltf_mat.pbrData.baseColorFactor.w()
-        );
-        mat.metalnessFactor = gltf_mat.pbrData.metallicFactor;
-        mat.roughnessFactor = gltf_mat.pbrData.roughnessFactor;
-        if (gltf_mat.normalTexture.has_value())
-            mat.normalFactor = gltf_mat.normalTexture->scale;
-
-        return mat;
-    }
-
-    int32_t Loader::loadMaterialAlbedoTexture(const fastgltf::Asset &asset, const fastgltf::Material &gltf_mat, Scene &scene_data) {
-        int32_t texture_index = -1;
-
-        if (gltf_mat.pbrData.baseColorTexture.has_value()) {
-            texture_index = static_cast<int32_t>(
-                    asset.textures[gltf_mat.pbrData.baseColorTexture.value().textureIndex].imageIndex.value()
-            );
-            auto &image = scene_data.images[texture_index];
-            if (image.format == vk::Format::eUndefined) // claim image in this format
-                image.format = vk::Format::eR8G8B8A8Srgb;
-            Logger::check(image.format == vk::Format::eR8G8B8A8Srgb, "Format of albedo texture must be R8G8B8A8_SRGB");
-        }
-
-        return texture_index;
-    }
-
-    int32_t Loader::loadMaterialOrmTexture(
-            const fastgltf::Asset &asset,
-            const fastgltf::Material &gltf_mat,
-            Scene &scene_data,
-            std::map<std::pair<int32_t, int32_t>, int32_t> &orm_cache_map
+    void Loader::loadAnimations(
+            const fastgltf::Asset &asset, Scene &scene_data, std::map<std::size_t, std::size_t> &gltf_node_idx_to_anim_idx
     ) {
-        auto getImageIndex = [&](const fastgltf::TextureInfo &texInfo) -> int32_t {
-            const size_t texIndex = texInfo.textureIndex;
-            const size_t imageIndex = asset.textures[texIndex].imageIndex.value();
-            return static_cast<int32_t>(imageIndex);
-        };
+        for (const fastgltf::Animation &gltf_anim: asset.animations) {
+            Animation animation{};
 
-        if (!gltf_mat.occlusionTexture.has_value() && !gltf_mat.pbrData.metallicRoughnessTexture.has_value())
-            return -1;
+            if (gltf_anim.channels.empty()) {
+                Logger::warning("Ignoring animation because it contains no channel");
+                continue;
+            }
 
-        std::pair<int32_t, int32_t> orm_cache_key = {-1, -1};
-        PlainImageDataU8 *o_image = nullptr;
-        PlainImageDataU8 *rm_image = nullptr;
+            if (!gltf_anim.channels[0].nodeIndex.has_value()) {
+                Logger::warning("Ignoring animation because it is not associated with any node");
+                continue;
+            }
 
-        if (gltf_mat.occlusionTexture.has_value()) {
-            int32_t index = getImageIndex(gltf_mat.occlusionTexture.value());
-            o_image = &scene_data.images[index];
-            orm_cache_key.first = index;
-        }
+            std::size_t node_index = gltf_anim.channels[0].nodeIndex.value();
 
-        if (gltf_mat.pbrData.metallicRoughnessTexture.has_value()) {
-            int32_t index = getImageIndex(gltf_mat.pbrData.metallicRoughnessTexture.value());
-            rm_image = &scene_data.images[index];
-            orm_cache_key.second = index;
-        }
+            for (const fastgltf::AnimationChannel &channel: gltf_anim.channels) {
+                const fastgltf::AnimationPath animPath = channel.path;
 
-        // ORM texture merging
+                if (animPath == fastgltf::AnimationPath::Translation)
+                    loadAnimationChannel(asset, gltf_anim, channel, animation.translation_times, animation.translations);
+                else if (animPath == fastgltf::AnimationPath::Rotation)
+                    loadAnimationChannel(asset, gltf_anim, channel, animation.rotation_times, animation.rotations);
+                else
+                    Logger::debug(std::format("Ignoring unsupported weight/scale animation channel of node {}", node_index));
+            }
 
-        if (o_image && rm_image && o_image == rm_image) {
-            int32_t texture_index = getImageIndex(gltf_mat.occlusionTexture.value());
-            auto &image = scene_data.images[texture_index];
+            const std::size_t translation_count = animation.translations.size();
+            const std::size_t translation_time_count = animation.translation_times.size();
+            const std::size_t rotation_count = animation.rotations.size();
+            const std::size_t rotation_time_count = animation.rotation_times.size();
 
-            if (image.format == vk::Format::eUndefined)
-                image.format = vk::Format::eR8G8B8A8Unorm;
+            if (translation_time_count != translation_count) {
+                Logger::warning(std::format(
+                        "Ignoring translation animation of node {} because there are {} time stamps but {} values",
+                        node_index, translation_time_count, translation_count
+                ));
+                animation.translation_times.clear();
+                animation.translations.clear();
+            }
 
-            Logger::check(image.format == vk::Format::eR8G8B8A8Unorm, "Format of orm texture must be R8G8B8A8_UNORM");
-            return texture_index;
-        }
 
-        if (o_image && rm_image && (rm_image->width != o_image->width || rm_image->height != o_image->height))
-            Logger::fatal("Occlusion and roughness-metalness texture sizes don't match");
+            if (rotation_time_count != rotation_count) {
+                Logger::warning(std::format(
+                        "Ignoring rotation animation of node {} because there are {} time stamps but {} values",
+                        node_index, rotation_time_count, rotation_count
+                ));
+                animation.rotation_times.clear();
+                animation.rotations.clear();
+            }
 
-        if (auto it = orm_cache_map.find(orm_cache_key); it != orm_cache_map.end())
-            return it->second;
+            gltf_node_idx_to_anim_idx[node_index] = scene_data.animations.size();
+            scene_data.animations.push_back(animation);
 
-        PlainImageDataU8 *o_or_rm_image = o_image ? o_image : rm_image;
-        int32_t texture_index = static_cast<int32_t>(scene_data.images.size());
+            // DEBUG - TEMP
+            Logger::debug(std::format("Animation of node {}:", node_index));
 
-        if (!o_or_rm_image)
-            return -1; // Keep analyzer happy
-        
-        PlainImageDataU8 orm_image =
-                PlainImageDataU8::create(vk::Format::eR8G8B8A8Unorm, o_or_rm_image->width, o_or_rm_image->height);
+            if (translation_count)
+                Logger::debug("<Frame Time>: <Translation>:");
 
-        if (o_image)
-            o_image->copyChannels(orm_image, {0});
+            for (std::size_t i{0}; i < translation_count; ++i) {
+                const glm::vec3 &translation = animation.translations[i];
+                Logger::debug(std::format(
+                        "{}: ({: .4f}, {: .4f}, {: .4f})", animation.translation_times[i], translation.x, translation.y,
+                        translation.z
+                ));
+            }
 
-        if (rm_image)
-            rm_image->copyChannels(orm_image, {1, 2});
-        else
-            orm_image.fill({1, 2}, {0xff, 0xff});
+            if (rotation_count)
+                Logger::debug("<Frame Time>: <Rotation>:");
 
-        orm_cache_map[orm_cache_key] = texture_index;
-        scene_data.images.push_back(std::move(orm_image));
-
-        return texture_index;
-    }
-
-    int32_t Loader::loadMaterialNormalTexture(
-            const fastgltf::Asset &asset,
-            const fastgltf::Material &gltf_mat,
-            Scene &scene_data,
-            std::map<int32_t, int32_t> &normal_cache_map
-    ) {
-        int32_t texture_index = -1;
-
-        if (gltf_mat.normalTexture.has_value()) {
-            auto index =
-                    static_cast<int32_t>(asset.textures[gltf_mat.normalTexture.value().textureIndex].imageIndex.value());
-            if (normal_cache_map.contains(index)) {
-                texture_index = normal_cache_map.at(index);
-            } else {
-                const auto &src_image = scene_data.images[index];
-                auto normal = PlainImageDataU8::create(vk::Format::eR8G8Unorm, src_image.width, src_image.height);
-                src_image.copyChannels(normal, {0, 1});
-                texture_index = static_cast<int32_t>(scene_data.images.size());
-                scene_data.images.emplace_back(std::move(normal));
-                normal_cache_map[index] = texture_index;
+            for (std::size_t i{0}; i < rotation_count; ++i) {
+                const glm::vec4 &rotation = animation.rotations[i];
+                Logger::debug(std::format(
+                        "{}: ({: .4f}, {: .4f}, {: .4f}, {: .4f})", animation.rotation_times[i], rotation.x, rotation.y,
+                        rotation.z, rotation.w
+                ));
             }
         }
-
-        return texture_index;
     }
 
     void Loader::loadLight(
             const fastgltf::Asset &asset, Scene &scene_data, const fastgltf::Node &node, const glm::mat4 &transform, Node &scene_node
     ) {
-        const auto &light = asset.lights[node.lightIndex.value()];
+        const fastgltf::Light &light = asset.lights[node.lightIndex.value()];
         glm::vec3 position = glm::vec3(transform[3]);
         glm::vec3 forward = glm::normalize(-glm::vec3(transform[2]));
         switch (light.type) {
@@ -294,7 +257,7 @@ namespace gltf {
             }
             case fastgltf::LightType::Spot: {
                 scene_node.spotLight = static_cast<uint32_t>(scene_data.spotLights.size());
-                auto &scene_light = scene_data.spotLights.emplace_back() = {
+                SpotLight &scene_light = scene_data.spotLights.emplace_back() = {
                     .position = position,
                     .theta = glm::degrees(glm::atan(forward.y, glm::sqrt(forward.x * forward.x + forward.z * forward.z))),
                     .phi = glm::degrees(glm::atan(forward.x, forward.z)),
@@ -312,18 +275,19 @@ namespace gltf {
 
     void Loader::loadNode(
             const fastgltf::Asset &asset,
-            Scene &scene_data,
+            const fastgltf::Node &node,
             const std::vector<PrimitiveInfo> &primitive_infos,
             const std::vector<size_t> &mesh_primitive_table,
-            const fastgltf::Node &node,
-            const glm::mat4 &transform
+            const glm::mat4 transform,
+            const std::uint32_t animation_index,
+            Scene &scene_data
     ) {
-
         size_t node_index = scene_data.nodes.size();
-        auto &scene_node = scene_data.nodes.emplace_back() = {
+        gltf::Node &scene_node = scene_data.nodes.emplace_back() = {
             .name = std::string(node.name),
             .transform = transform,
             .mesh = static_cast<uint32_t>(node.meshIndex.value_or(UINT32_MAX)),
+            .animation = animation_index,
         };
 
         if (scene_node.mesh == UINT32_MAX) {
@@ -380,16 +344,187 @@ namespace gltf {
         return {index_count, static_cast<uint32_t>(position_accessor.count)};
     }
 
+    template<typename T>
+    void Loader::loadAnimationChannel(
+            const fastgltf::Asset &asset,
+            const fastgltf::Animation &animation,
+            const fastgltf::AnimationChannel &channel,
+            std::vector<float> &time_stamps,
+            std::vector<T> &values
+    ) {
+        const std::size_t node_index = channel.nodeIndex.value();
+        const fastgltf::AnimationSampler &sampler = animation.samplers[channel.samplerIndex];
+        const fastgltf::Accessor &time_accessor = asset.accessors[sampler.inputAccessor];
+        const fastgltf::Accessor &value_accessor = asset.accessors[sampler.outputAccessor];
+        const fastgltf::AnimationInterpolation interpolation = sampler.interpolation;
+
+        if (time_accessor.type != fastgltf::AccessorType::Scalar) {
+            Logger::warning(
+                    std::format("Ignoring animation channel of node {} because timestamps aren't scalar values", node_index)
+            );
+            return;
+        }
+
+        time_stamps.clear();
+        values.clear();
+
+        appendFromAccessor(time_stamps, asset, time_accessor);
+
+        std::vector<T> raw;
+        appendFromAccessor(raw, asset, value_accessor);
+
+        if (interpolation == fastgltf::AnimationInterpolation::CubicSpline) {
+            assert(raw.size() == time_stamps.size() * 3);
+
+            for (std::size_t k{0}; k < time_stamps.size(); ++k)
+                values.push_back(raw[k * 3 + 1]);
+        } else {
+            assert(raw.size() == time_stamps.size());
+
+            for (std::size_t k{0}; k < time_stamps.size(); ++k)
+                values.push_back(raw[k]);
+        }
+    }
+
+    Material Loader::initMaterialWithFactors(const fastgltf::Material &gltf_mat) {
+        Material mat{};
+
+        mat.albedoFactor = glm::vec4(
+                gltf_mat.pbrData.baseColorFactor.x(), gltf_mat.pbrData.baseColorFactor.y(),
+                gltf_mat.pbrData.baseColorFactor.z(), gltf_mat.pbrData.baseColorFactor.w()
+        );
+        mat.metalnessFactor = gltf_mat.pbrData.metallicFactor;
+        mat.roughnessFactor = gltf_mat.pbrData.roughnessFactor;
+        if (gltf_mat.normalTexture.has_value())
+            mat.normalFactor = gltf_mat.normalTexture->scale;
+
+        return mat;
+    }
+
+    int32_t Loader::loadMaterialAlbedoTexture(const fastgltf::Asset &asset, const fastgltf::Material &gltf_mat, Scene &scene_data) {
+        int32_t texture_index = -1;
+
+        if (gltf_mat.pbrData.baseColorTexture.has_value()) {
+            texture_index = static_cast<int32_t>(
+                    asset.textures[gltf_mat.pbrData.baseColorTexture.value().textureIndex].imageIndex.value()
+            );
+            PlainImageDataU8 &image = scene_data.images[texture_index];
+            if (image.format == vk::Format::eUndefined) // claim image in this format
+                image.format = vk::Format::eR8G8B8A8Srgb;
+            Logger::check(image.format == vk::Format::eR8G8B8A8Srgb, "Format of albedo texture must be R8G8B8A8_SRGB");
+        }
+
+        return texture_index;
+    }
+
+    int32_t Loader::loadMaterialOrmTexture(
+            const fastgltf::Asset &asset,
+            const fastgltf::Material &gltf_mat,
+            Scene &scene_data,
+            std::map<std::pair<int32_t, int32_t>, int32_t> &orm_cache_map
+    ) {
+        auto getImageIndex = [&](const fastgltf::TextureInfo &texInfo) -> int32_t {
+            const size_t texIndex = texInfo.textureIndex;
+            const size_t imageIndex = asset.textures[texIndex].imageIndex.value();
+            return static_cast<int32_t>(imageIndex);
+        };
+
+        if (!gltf_mat.occlusionTexture.has_value() && !gltf_mat.pbrData.metallicRoughnessTexture.has_value())
+            return -1;
+
+        std::pair<int32_t, int32_t> orm_cache_key = {-1, -1};
+        PlainImageDataU8 *o_image = nullptr;
+        PlainImageDataU8 *rm_image = nullptr;
+
+        if (gltf_mat.occlusionTexture.has_value()) {
+            int32_t index = getImageIndex(gltf_mat.occlusionTexture.value());
+            o_image = &scene_data.images[index];
+            orm_cache_key.first = index;
+        }
+
+        if (gltf_mat.pbrData.metallicRoughnessTexture.has_value()) {
+            int32_t index = getImageIndex(gltf_mat.pbrData.metallicRoughnessTexture.value());
+            rm_image = &scene_data.images[index];
+            orm_cache_key.second = index;
+        }
+
+        // ORM texture merging
+
+        if (o_image && rm_image && o_image == rm_image) {
+            int32_t texture_index = getImageIndex(gltf_mat.occlusionTexture.value());
+            PlainImageDataU8 &image = scene_data.images[texture_index];
+
+            if (image.format == vk::Format::eUndefined)
+                image.format = vk::Format::eR8G8B8A8Unorm;
+
+            Logger::check(image.format == vk::Format::eR8G8B8A8Unorm, "Format of orm texture must be R8G8B8A8_UNORM");
+            return texture_index;
+        }
+
+        if (o_image && rm_image && (rm_image->width != o_image->width || rm_image->height != o_image->height))
+            Logger::fatal("Occlusion and roughness-metalness texture sizes don't match");
+
+        if (auto it = orm_cache_map.find(orm_cache_key); it != orm_cache_map.end())
+            return it->second;
+
+        PlainImageDataU8 *o_or_rm_image = o_image ? o_image : rm_image;
+        int32_t texture_index = static_cast<int32_t>(scene_data.images.size());
+
+        if (!o_or_rm_image)
+            return -1; // Keep analyzer happy
+
+        PlainImageDataU8 orm_image =
+                PlainImageDataU8::create(vk::Format::eR8G8B8A8Unorm, o_or_rm_image->width, o_or_rm_image->height);
+
+        if (o_image)
+            o_image->copyChannels(orm_image, {0});
+
+        if (rm_image)
+            rm_image->copyChannels(orm_image, {1, 2});
+        else
+            orm_image.fill({1, 2}, {0xff, 0xff});
+
+        orm_cache_map[orm_cache_key] = texture_index;
+        scene_data.images.push_back(std::move(orm_image));
+
+        return texture_index;
+    }
+
+    int32_t Loader::loadMaterialNormalTexture(
+            const fastgltf::Asset &asset,
+            const fastgltf::Material &gltf_mat,
+            Scene &scene_data,
+            std::map<int32_t, int32_t> &normal_cache_map
+    ) {
+        int32_t texture_index = -1;
+
+        if (gltf_mat.normalTexture.has_value()) {
+            int32_t index = asset.textures[gltf_mat.normalTexture.value().textureIndex].imageIndex.value();
+            if (normal_cache_map.contains(index)) {
+                texture_index = normal_cache_map.at(index);
+            } else {
+                const PlainImageDataU8 &src_image = scene_data.images[index];
+                PlainImageDataU8 normal = PlainImageDataU8::create(vk::Format::eR8G8Unorm, src_image.width, src_image.height);
+                src_image.copyChannels(normal, {0, 1});
+                texture_index = static_cast<int32_t>(scene_data.images.size());
+                scene_data.images.emplace_back(std::move(normal));
+                normal_cache_map[index] = texture_index;
+            }
+        }
+
+        return texture_index;
+    }
+
     fastgltf::Asset Loader::assetFromPath(const std::filesystem::path &path) const {
         auto data = fastgltf::GltfDataBuffer::FromPath(path);
-
-        if (auto error = data.error(); error != fastgltf::Error::None)
-            Logger::fatal(std::format("Failed to load GLTF: {}", fastgltf::getErrorName(error)));
+        
+        if (data.error() != fastgltf::Error::None)
+            Logger::fatal(std::format("Failed to load GLTF: {}", fastgltf::getErrorName(data.error())));
 
         auto asset = mParser->loadGltf(data.get(), path.parent_path(), fastgltf::Options::None);
 
-        if (auto error = asset.error(); error != fastgltf::Error::None)
-            Logger::fatal(std::format("Failed to load GLTF: {}", fastgltf::getErrorName(error)));
+        if (asset.error() != fastgltf::Error::None)
+            Logger::fatal(std::format("Failed to load GLTF: {}", fastgltf::getErrorName(asset.error())));
 
         return *std::move(asset);
     }

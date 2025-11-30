@@ -65,11 +65,6 @@ namespace scene {
         uint32_t drawCommandCount = 0;
         vma::UniqueBuffer drawCommands;
         vma::UniqueAllocation drawCommandsAlloc;
-
-        /// <summary>
-        /// A helper function to write the scene's descriptor set.
-        /// </summary>
-        void writeDescriptorSet(const vk::Device &device, const DescriptorSet &descriptor) const;
     };
 
     struct Instance {
@@ -87,8 +82,18 @@ namespace scene {
         util::BoundingBox bounds;
     };
 
+    struct InstanceAnimation {
+        std::vector<float> translation_timestamps;
+        std::vector<float> rotation_timestamps;
+        std::vector<glm::vec3> translations;
+        std::vector<glm::vec4> rotations;
+    };
+
     struct CpuData {
         std::vector<Instance> instances;
+        // New, TODO: Summary
+        std::vector<std::size_t> animated_instances;
+        std::vector<InstanceAnimation> instance_animations;
     };
 
     class Scene {

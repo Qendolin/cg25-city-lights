@@ -1,5 +1,7 @@
 #include "Scene.h"
 
+#include <algorithm>
+
 #include "../backend/StagingBuffer.h"
 #include "../debug/Annotation.h"
 #include "Gltf.h"
@@ -29,23 +31,54 @@ namespace scene {
           mGraphicsQueue(graphicsQueue) {}
 
     Scene Loader::load(const std::filesystem::path &path) const {
-        auto gltf_scene = mLoader->load(path);
-        auto cpu_data = createCpuData(gltf_scene);
-        auto gpu_data = createGpuData(gltf_scene);
+        gltf::Scene gltf_scene = mLoader->load(path);
+        CpuData cpu_data = createCpuData(gltf_scene);
+        GpuData gpu_data = createGpuData(gltf_scene);
 
         return {std::move(cpu_data), std::move(gpu_data)};
     }
 
     CpuData Loader::createCpuData(const gltf::Scene &scene_data) const {
         CpuData result;
+        const std::size_t node_count = scene_data.nodes.size();
+        const std::size_t animated_node_count = std::ranges::count_if(scene_data.nodes, [](const gltf::Node &node) {
+            return node.animation != UINT32_MAX;
+        });
+        const std::size_t static_node_count = node_count - animated_node_count;
 
-        result.instances.reserve(scene_data.nodes.size());
-        for (const auto &node: scene_data.nodes) {
+        result.instances.resize(node_count);
+        result.animated_instances.reserve(animated_node_count);
+        result.instance_animations.reserve(animated_node_count);
+
+        std::size_t next_static_inst_idx{0};
+        std::size_t next_animated_inst_idx{static_node_count};
+
+        for (const gltf::Node &node: scene_data.nodes) {
             util::BoundingBox bounds = {};
-            if (node.mesh != UINT32_MAX) {
+            if (node.mesh != UINT32_MAX)
                 bounds = scene_data.meshes[node.mesh].bounds;
+
+            std::size_t instance_idx;
+
+            if (node.animation == UINT32_MAX)
+                instance_idx = next_static_inst_idx++;
+            else {
+                instance_idx = next_animated_inst_idx++;
+                result.animated_instances.push_back(instance_idx);
+
+                const gltf::Animation &gltf_anim = scene_data.animations[node.animation];
+
+                InstanceAnimation instance_anim{
+                    gltf_anim.translation_timestamps,
+                    gltf_anim.rotation_timestamps,
+                    gltf_anim.translations,
+                    gltf_anim.rotations,
+                };
+
+                result.instance_animations.push_back(std::move(instance_anim));
             }
-            result.instances.emplace_back() = {
+
+            result.instances[instance_idx] = {
                 .name = node.name,
                 .transform = node.transform,
                 .bounds = bounds,
@@ -122,7 +155,8 @@ namespace scene {
                 .width = image_data.width,
                 .height = image_data.height,
                 .levels = UINT32_MAX,
-                .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst,
+                .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc |
+                         vk::ImageUsageFlagBits::eTransferDst,
             };
             Image &image = result.images.emplace_back();
             image = Image::create(staging.allocator(), create_info);
@@ -187,7 +221,7 @@ namespace scene {
         // maps node index to instance index
         std::vector<glm::uint> node_instance_map(scene_data.nodes.size());
         for (size_t i = 0; i < scene_data.nodes.size(); i++) {
-            const auto& node = scene_data.nodes[i];
+            const auto &node = scene_data.nodes[i];
             if (node.mesh == UINT32_MAX) {
                 node_instance_map[i] = UINT32_MAX;
                 continue;

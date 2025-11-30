@@ -170,34 +170,34 @@ namespace gltf {
                 const fastgltf::AnimationPath animPath = channel.path;
 
                 if (animPath == fastgltf::AnimationPath::Translation)
-                    loadAnimationChannel(asset, gltf_anim, channel, animation.translation_times, animation.translations);
+                    loadAnimationChannel(asset, gltf_anim, channel, animation.translation_timestamps, animation.translations);
                 else if (animPath == fastgltf::AnimationPath::Rotation)
-                    loadAnimationChannel(asset, gltf_anim, channel, animation.rotation_times, animation.rotations);
+                    loadAnimationChannel(asset, gltf_anim, channel, animation.rotation_timestamps, animation.rotations);
                 else
                     Logger::debug(std::format("Ignoring unsupported weight/scale animation channel of node {}", node_index));
             }
 
             const std::size_t translation_count = animation.translations.size();
-            const std::size_t translation_time_count = animation.translation_times.size();
+            const std::size_t translation_ts_count = animation.translation_timestamps.size();
             const std::size_t rotation_count = animation.rotations.size();
-            const std::size_t rotation_time_count = animation.rotation_times.size();
+            const std::size_t rotation_ts_count = animation.rotation_timestamps.size();
 
-            if (translation_time_count != translation_count) {
+            if (translation_ts_count != translation_count) {
                 Logger::warning(std::format(
                         "Ignoring translation animation of node {} because there are {} time stamps but {} values",
-                        node_index, translation_time_count, translation_count
+                        node_index, translation_ts_count, translation_count
                 ));
-                animation.translation_times.clear();
+                animation.translation_timestamps.clear();
                 animation.translations.clear();
             }
 
 
-            if (rotation_time_count != rotation_count) {
+            if (rotation_ts_count != rotation_count) {
                 Logger::warning(std::format(
                         "Ignoring rotation animation of node {} because there are {} time stamps but {} values",
-                        node_index, rotation_time_count, rotation_count
+                        node_index, rotation_ts_count, rotation_count
                 ));
-                animation.rotation_times.clear();
+                animation.rotation_timestamps.clear();
                 animation.rotations.clear();
             }
 
@@ -213,8 +213,8 @@ namespace gltf {
             for (std::size_t i{0}; i < translation_count; ++i) {
                 const glm::vec3 &translation = animation.translations[i];
                 Logger::debug(std::format(
-                        "{}: ({: .4f}, {: .4f}, {: .4f})", animation.translation_times[i], translation.x, translation.y,
-                        translation.z
+                        "{}: ({: .4f}, {: .4f}, {: .4f})", animation.translation_timestamps[i], translation.x,
+                        translation.y, translation.z
                 ));
             }
 
@@ -224,8 +224,8 @@ namespace gltf {
             for (std::size_t i{0}; i < rotation_count; ++i) {
                 const glm::vec4 &rotation = animation.rotations[i];
                 Logger::debug(std::format(
-                        "{}: ({: .4f}, {: .4f}, {: .4f}, {: .4f})", animation.rotation_times[i], rotation.x, rotation.y,
-                        rotation.z, rotation.w
+                        "{}: ({: .4f}, {: .4f}, {: .4f}, {: .4f})", animation.rotation_timestamps[i], rotation.x,
+                        rotation.y, rotation.z, rotation.w
                 ));
             }
         }

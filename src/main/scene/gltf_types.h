@@ -54,7 +54,7 @@ namespace gltf {
         /// </summary>
         uint32_t directionalLight = UINT32_MAX;
 
-        // New
+        // New, TODO: Summary
         uint32_t animation = UINT32_MAX;
     };
 
@@ -124,8 +124,8 @@ namespace gltf {
     };
 
     struct Animation {
-        std::vector<float> translation_times;
-        std::vector<float> rotation_times;
+        std::vector<float> translation_timestamps;
+        std::vector<float> rotation_timestamps;
         std::vector<glm::vec3> translations;
         std::vector<glm::vec4> rotations;
     };
@@ -205,8 +205,7 @@ namespace gltf {
         /// </summary>
         std::vector<DirectionalLight> directionalLights;
 
-
-        // New
+        // New, TODO: summary
         std::vector<Animation> animations;
     };
 } // namespace gltf

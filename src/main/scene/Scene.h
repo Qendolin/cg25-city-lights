@@ -1,11 +1,9 @@
 #pragma once
 
-#include <filesystem>
 #include <glm/glm.hpp>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
 #include "../backend/Descriptors.h"
-#include "../backend/DeviceQueue.h"
 #include "../backend/Image.h"
 #include "../entity/Light.h"
 #include "../util/math.h"
@@ -98,15 +96,15 @@ namespace scene {
 
     class Scene {
     public:
-        Scene(); // needed to make the fucking compiler happy
-        Scene(CpuData &&cpu_data, GpuData &&gpu_data);
+        Scene() = default;
+        Scene(CpuData &&cpu_data, GpuData &&gpu_data) : mCpuData(std::move(cpu_data)), mGpuData(std::move(gpu_data)) {}
+
+        ~Scene() = default;
 
         Scene(const Scene &other) = delete;
         Scene(Scene &&other) noexcept = default;
         Scene &operator=(const Scene &other) = delete;
         Scene &operator=(Scene &&other) noexcept = default;
-
-        ~Scene();
 
         [[nodiscard]] const CpuData &cpu() const { return mCpuData; }
         [[nodiscard]] const GpuData &gpu() const { return mGpuData; }
@@ -114,36 +112,5 @@ namespace scene {
     private:
         CpuData mCpuData;
         GpuData mGpuData;
-    };
-
-
-    class Loader {
-    public:
-        Loader(
-                const gltf::Loader *loader,
-                const vma::Allocator &allocator,
-                const vk::Device &device,
-                const vk::PhysicalDevice &physical_device,
-                const DeviceQueue &transferQueue,
-                const DeviceQueue &graphicsQueue
-        );
-
-        /// <summary>
-        /// Loads a scene from the given path.
-        /// </summary>
-        /// <param name="path">The path to the glTF file.</param>
-        [[nodiscard]] Scene load(const std::filesystem::path &path) const;
-
-    private:
-        [[nodiscard]] CpuData createCpuData(const gltf::Scene &scene_data) const;
-
-        [[nodiscard]] GpuData createGpuData(const gltf::Scene &scene_data) const;
-
-        const gltf::Loader *mLoader;
-        vma::Allocator mAllocator;
-        vk::Device mDevice;
-        vk::PhysicalDevice mPhysicalDevice;
-        DeviceQueue mTransferQueue;
-        DeviceQueue mGraphicsQueue;
     };
 } // namespace scene

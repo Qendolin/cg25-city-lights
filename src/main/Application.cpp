@@ -19,6 +19,7 @@
 #include "imgui/ImGui.h"
 #include "scene/Gltf.h"
 #include "scene/Scene.h"
+#include "scene/Loader.h"
 #include "util/Logger.h"
 
 Application::Application() = default;

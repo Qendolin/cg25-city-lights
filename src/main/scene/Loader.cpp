@@ -1,4 +1,4 @@
-#include "Scene.h"
+#include "Loader.h"
 
 #include <algorithm>
 
@@ -8,13 +8,6 @@
 #include "gpu_types.h"
 
 namespace scene {
-
-    Scene::Scene() = default;
-    Scene::Scene(CpuData &&cpu_data, GpuData &&gpu_data)
-        : mCpuData(std::move(cpu_data)), mGpuData(std::move(gpu_data)) {}
-
-    Scene::~Scene() = default;
-
     Loader::Loader(
             const gltf::Loader *loader,
             const vma::Allocator &allocator,

@@ -29,13 +29,6 @@ namespace blob {
 };
 class Cubemap;
 
-struct BlobMesherConfig {
-    float intervalStart;
-    float intervalEnd;
-    int resolution;
-    float isoValue;
-};
-
 class Application {
     static constexpr int BLOB_RESOLUTION = 50;
 

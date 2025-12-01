@@ -2,6 +2,7 @@
 
 #include "../backend/StagingBuffer.h"
 #include "../debug/Annotation.h"
+#include "../image/ImageCpuLoader.h"
 #include "Gltf.h"
 #include "gpu_types.h"
 
@@ -15,6 +16,7 @@ namespace scene {
 
     Loader::Loader(
             const gltf::Loader *loader,
+            ImageGpuUploader *image_uploader,
             const vma::Allocator &allocator,
             const vk::Device &device,
             const vk::PhysicalDevice &physical_device,
@@ -22,6 +24,7 @@ namespace scene {
             const DeviceQueue &graphicsQueue
     )
         : mLoader(loader),
+          mImageUploader(image_uploader),
           mAllocator(allocator),
           mDevice(device),
           mPhysicalDevice(physical_device),
@@ -56,19 +59,11 @@ namespace scene {
     }
 
     GpuData Loader::createGpuData(const gltf::Scene &scene_data) const {
-        auto graphics_cmd_pool = mDevice.createCommandPoolUnique(
-                {.flags = vk::CommandPoolCreateFlagBits::eTransient, .queueFamilyIndex = mGraphicsQueue}
-        );
         auto transfer_cmd_pool = mDevice.createCommandPoolUnique(
                 {.flags = vk::CommandPoolCreateFlagBits::eTransient, .queueFamilyIndex = mTransferQueue}
         );
 
-        auto graphics_cmds =
-                mDevice.allocateCommandBuffers({.commandPool = *graphics_cmd_pool, .commandBufferCount = 1}).at(0);
-        graphics_cmds.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-
         GpuData result;
-        StagingBuffer staging = {mAllocator, mDevice, *transfer_cmd_pool};
 
         {
             result.sceneDescriptorLayout = SceneDescriptorLayout(mDevice);
@@ -107,32 +102,42 @@ namespace scene {
         result.views.reserve(scene_data.images.size());
         // since some images will be skipped, the indices need to be mapped
         std::vector<uint32_t> image_index;
-        for (const auto &image_data: scene_data.images) {
-            // image isn't used by any material
-            if (image_data.format == vk::Format::eUndefined) {
-                image_index.emplace_back(-1);
-                continue;
-            }
+        for (auto &[source, type, task]: scene_data.images) {
             uint32_t index = static_cast<uint32_t>(result.images.size());
+
+            vk::Format format;
+            switch (type) {
+                case gltf::ImageType::Undefined:
+                    image_index.emplace_back(-1);
+                    continue;
+                case gltf::ImageType::Albedo:
+                    format = vk::Format::eR8G8B8A8Unorm;
+                    break;
+                case gltf::ImageType::Normal:
+                    format = vk::Format::eR8G8Snorm;
+                    break;
+                case gltf::ImageType::OcclusionMetalnessRoughness:
+                    format = vk::Format::eR8G8B8A8Unorm;
+                    break;
+            }
+
             image_index.emplace_back(index);
 
             ImageCreateInfo create_info = {
-                .format = image_data.format,
+                .format = format,
                 .aspects = vk::ImageAspectFlagBits::eColor,
-                .width = image_data.width,
-                .height = image_data.height,
+                .width = source.width,
+                .height = source.height,
                 .levels = UINT32_MAX,
                 .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst,
             };
             Image &image = result.images.emplace_back();
-            image = Image::create(staging.allocator(), create_info);
-            util::setDebugName(mDevice, *image.image, "scene_image");
+            image = Image::create(mAllocator, create_info);
+            mImageUploader->initialize(&image, ImageResourceAccess::FragmentShaderReadOptimal);
 
-            vk::Buffer staged_buffer = staging.stage(image_data.pixels);
-            image.load(staging.commands(), 0, {}, staged_buffer);
-            image.transfer(staging.commands(), graphics_cmds, mTransferQueue, mGraphicsQueue);
-            image.generateMipmaps(graphics_cmds);
-            image.barrier(graphics_cmds, ImageResourceAccess::FragmentShaderReadOptimal);
+            task.then([i = &image, this](const ImageData &image_data) {
+                mImageUploader->upload(i, image_data, {.generateMipmaps = true});
+            });
 
             ImageView &view = result.views.emplace_back();
             view = ImageView::create(mDevice, image);
@@ -150,19 +155,7 @@ namespace scene {
             );
         }
 
-        graphics_cmds.end();
-
-        auto graphics_queue_fence = mDevice.createFenceUnique({});
-        auto image_transfer_semaphore = mDevice.createSemaphoreUnique({});
-        staging.submit(mTransferQueue, vk::SubmitInfo().setSignalSemaphores(*image_transfer_semaphore));
-        vk::PipelineStageFlags semaphore_stage_mask = vk::PipelineStageFlagBits::eTopOfPipe;
-        mGraphicsQueue.queue.submit(
-                {vk::SubmitInfo()
-                         .setWaitSemaphores(*image_transfer_semaphore)
-                         .setCommandBuffers(graphics_cmds)
-                         .setWaitDstStageMask(semaphore_stage_mask)},
-                *graphics_queue_fence
-        );
+        StagingBuffer staging = {mAllocator, mDevice, *transfer_cmd_pool};
 
         std::tie(result.positions, result.positionsAlloc) =
                 staging.upload(scene_data.vertex_position_data, vk::BufferUsageFlagBits::eVertexBuffer);
@@ -310,9 +303,6 @@ namespace scene {
         );
 
         staging.submit(mTransferQueue);
-
-        while (mDevice.waitForFences(*graphics_queue_fence, true, UINT64_MAX) == vk::Result::eTimeout) {
-        }
 
         return result;
     }

@@ -230,7 +230,7 @@ struct ImageBase : protected ImageResource {
     /// Records a pipeline barrier for layout transitions and synchronization.
     /// </summary>
     void barrier(const vk::CommandBuffer &cmd_buf, const ImageResourceAccess &begin, const ImageResourceAccess &end) const {
-        ImageResource::barrier(vk::Image(*this), getResourceRange(), cmd_buf, begin, end);
+        ImageResource::barrier(*this, getResourceRange(), cmd_buf, begin, end);
     }
 
     /// <summary>
@@ -245,13 +245,21 @@ struct ImageBase : protected ImageResource {
     /// <para>Requires a semaphore to synchronize execution order between the source and destination queues.</para>
     /// </summary>
     void transfer(vk::CommandBuffer src_cmd_buf, vk::CommandBuffer dst_cmd_buf, uint32_t src_queue, uint32_t dst_queue) const {
-        ImageResource::transfer(vk::Image(*this), getResourceRange(), src_cmd_buf, dst_cmd_buf, src_queue, dst_queue);
+        ImageResource::transfer(*this, getResourceRange(), src_cmd_buf, dst_cmd_buf, src_queue, dst_queue);
     }
 
     /// <summary>
-    /// Copies buffer data into the image. Assumes the image is in a TransferDstOptimal layout.
+    /// Loads data into all layers of a specific mipmap level.
     /// </summary>
-    void load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data);
+    /// <param name="offset">Offset into the source buffer.</param>
+    void load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data, vk::DeviceSize offset = 0);
+
+    /// <summary>
+    /// Loads data into a specific layer and mipmap level.
+    /// </summary>
+    /// <param name="layer">The array layer index to load into.</param>
+    /// <param name="offset">Offset into the source buffer.</param>
+    void load(const vk::CommandBuffer &cmd_buf, uint32_t level, uint32_t layer, vk::Extent3D region, const vk::Buffer &data, vk::DeviceSize offset = 0);
 
     /// <summary>
     /// Generates full mipmaps using `vkCmdBlitImage`.
@@ -262,6 +270,11 @@ struct ImageBase : protected ImageResource {
     [[nodiscard]] vk::ImageSubresourceRange getResourceRange() const {
         return {.aspectMask = info.aspects, .levelCount = info.levels, .layerCount = info.layers};
     }
+
+    /// <summary>
+    /// Returns the last access state intended for this image.
+    /// </summary>
+    [[nodiscard]] ImageResourceAccess getBarrierState() const { return mPrevAccess; }
 
     virtual operator vk::Image() const = 0; // NOLINT(*-explicit-constructor)
     explicit virtual operator bool() const = 0;
@@ -367,6 +380,10 @@ struct Image : ImageBase {
     /// </para>
     /// </summary>
     static Image create(const vma::Allocator &allocator, const ImageCreateInfo &create_info);
+};
+
+struct ImageRef {
+
 };
 
 /// <summary>

@@ -4,6 +4,8 @@
 #include <glm/vec4.hpp>
 #include <vector>
 
+#include "../image/ImageCpuLoader.h"
+#include "../image/ImageTypes.h"
 #include "../util/math.h"
 
 
@@ -118,6 +120,17 @@ namespace gltf {
         /// </summary>
         float normalFactor = 1.0;
     };
+    ;
+
+    enum class ImageType {
+        Undefined, Albedo, Normal, OcclusionMetalnessRoughness
+    };
+
+    struct ImageFuture {
+        ImageSourceInfo info;
+        ImageType type = ImageType::Undefined;
+        ImageCpuLoader::Task task;
+    };
 
     /// <summary>
     /// Holds all the data for a loaded scene.
@@ -180,7 +193,7 @@ namespace gltf {
         /// <summary>
         /// A list of all images in the scene.
         /// </summary>
-        std::vector<PlainImageData<uint8_t>> images;
+        std::vector<ImageFuture> images;
         /// <summary>
         /// A list of all point lights in the scene.
         /// </summary>

@@ -100,16 +100,19 @@ void Application::init() {
 
     settingsGui = std::make_unique<SettingsGui>();
 
-    gltf::Loader gltf_loader = {};
+    gltf::Loader gltf_loader(&renderSystem->imageLoader());
     scene::Loader scene_loader = {
-        &gltf_loader,           context->allocator(), context->device(), context->physicalDevice(),
-        context->transferQueue, context->mainQueue,
+        &gltf_loader,       &renderSystem->imageUploader(), context->allocator(),
+        context->device(),  context->physicalDevice(),      context->transferQueue,
+        context->mainQueue,
     };
 
     scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/CityTest.glb")));
     sunShadowCascade = std::make_unique<ShadowCascade>(
             context->device(), context->allocator(), settings.shadowCascade.resolution, Settings::SHADOW_CASCADE_COUNT
     );
+
+    renderSystem->imageUploader().flushInit();
 
     camera = std::make_unique<Camera>(glm::radians(90.0f), 0.001f, glm::vec3{0, 1, 5}, glm::vec3{});
     debugFrameTimes = std::make_unique<FrameTimes>();

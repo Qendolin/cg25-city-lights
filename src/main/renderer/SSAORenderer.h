@@ -7,6 +7,9 @@
 #include "../backend/Pipeline.h"
 #include "../debug/Annotation.h"
 
+
+class ImageCpuLoader;
+class ImageGpuUploader;
 struct DeviceQueue;
 class ShaderLoader;
 class SSAORenderer {
@@ -64,7 +67,7 @@ public:
     float filterSharpness = 50.0;
 
     ~SSAORenderer();
-    SSAORenderer(const vk::Device &device, const vma::Allocator &allocator, const DeviceQueue &graphicsQueue);
+    explicit SSAORenderer(const vk::Device &device);
 
     void filterPass(
             const vk::Device &device,
@@ -76,9 +79,7 @@ public:
             const FilterShaderPushConstants &filter_params
     );
 
-    void recreate(const vk::Device &device, const ShaderLoader &shader_loader, int slices, int samples) {
-        createPipeline(device, shader_loader, slices, samples);
-    }
+    void recreate(const vk::Device &device, const vma::Allocator& allocator, const ShaderLoader &shader_loader, ImageCpuLoader &image_loader, ImageGpuUploader& image_uploader, int slices, int samples);
 
     void execute(
             const vk::Device &device,
@@ -100,7 +101,7 @@ private:
 
     vk::UniqueSampler mDepthSampler;
     vk::UniqueSampler mNoiseSampler;
-    ImageWithView mNoise;
+    std::unique_ptr<ImageWithView> mNoise;
 
     ConfiguredComputePipeline mSamplerPipeline;
     SamplerShaderParamsDescriptorLayout mSamplerShaderParamsDescriptorLayout;

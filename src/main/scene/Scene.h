@@ -8,6 +8,7 @@
 #include "../backend/DeviceQueue.h"
 #include "../backend/Image.h"
 #include "../entity/Light.h"
+#include "../image/ImageGpuUploader.h"
 #include "../util/math.h"
 #include "gpu_types.h"
 
@@ -116,6 +117,7 @@ namespace scene {
     public:
         Loader(
                 const gltf::Loader *loader,
+                ImageGpuUploader *image_uploader,
                 const vma::Allocator &allocator,
                 const vk::Device &device,
                 const vk::PhysicalDevice &physical_device,
@@ -135,6 +137,7 @@ namespace scene {
         [[nodiscard]] GpuData createGpuData(const gltf::Scene &scene_data) const;
 
         const gltf::Loader *mLoader;
+        ImageGpuUploader *mImageUploader;
         vma::Allocator mAllocator;
         vk::Device mDevice;
         vk::PhysicalDevice mPhysicalDevice;

@@ -16,10 +16,18 @@ public:
     /// <param name="cmd_pool">The command pool to allocate command buffers from. It should be for a transfer queue.</param>
     StagingBuffer(const vma::Allocator &allocator, const vk::Device &device, const vk::CommandPool &cmd_pool);
 
+    StagingBuffer() = default;
+
     /// <summary>
     /// Destroys the staging buffer and frees all associated resources.
     /// </summary>
     ~StagingBuffer();
+
+    StagingBuffer(const StagingBuffer &other) = delete;
+    StagingBuffer &operator=(const StagingBuffer &other) = delete;
+
+    StagingBuffer(StagingBuffer &&other) noexcept;
+    StagingBuffer &operator=(StagingBuffer &&other) noexcept;
 
     /// <summary>
     /// Creates a new buffer on the GPU and uploads a contiguous range of data to it.
@@ -76,6 +84,14 @@ public:
     vk::Buffer stage(const void *data, size_t size);
 
     /// <summary>
+    /// Allocates a new staging buffer of the given size and returns it along with the mapped pointer.
+    /// Use this to write data directly to the staging buffer without an intermediate copy.
+    /// </summary>
+    /// <param name="size">The size to allocate in bytes.</param>
+    /// <returns>A pair containing the VkBuffer handle and the raw mapped pointer.</returns>
+    std::pair<vk::Buffer, void *> stage(size_t size);
+
+    /// <summary>
     /// Stages a contiguous range of data for uploading to a destination buffer on the GPU.
     /// </summary>
     /// <typeparam name="R">The type of the range.</typeparam>
@@ -90,28 +106,36 @@ public:
     }
 
     /// <summary>
-    /// Submits all staged uploads to the GPU.
+    /// Submits all staged uploads to the GPU and waits for completion.
     /// </summary>
     /// <param name="queue">The Vulkan queue to submit to. It should be a transfer queue.</param>
-    void submit(const vk::Queue &queue, const vk::SubmitInfo& = {});
+    void submit(const vk::Queue &queue, const vk::SubmitInfo & = {});
+
+    /// <summary>
+    /// Submits all staged uploads to the GPU. After `submitUnsynchronized`, the staging buffer must not be used while resources are still in use.
+    /// </summary>
+    /// <param name="queue">The Vulkan queue to submit to. It should be a transfer queue.</param>
+    void submitUnsynchronized(const vk::Queue &queue, const vk::SubmitInfo & = {});
+
+    /// <summary>
+    /// After calling `submitUnsynchronized` this makes the staging buffer ready for further action. This
+    /// function must only be called once the submitted resources are not in use by the GPU anymore.
+    /// </summary>
+    void beginUnsynchronized();
 
     /// <summary>
     /// Returns the command buffer used for staging operations. Only transfer commands may be permitted.
     /// </summary>
-    [[nodiscard]] vk::CommandBuffer commands() const {
-        return mCommands;
-    }
+    [[nodiscard]] vk::CommandBuffer commands() const { return mCommands; }
 
-    [[nodiscard]] vma::Allocator allocator() const {
-        return mAllocator;
-    }
+    [[nodiscard]] vma::Allocator allocator() const { return mAllocator; }
 
 private:
     void createCommandBuffer();
 
-    vk::Device mDevice;
-    vma::Allocator mAllocator;
-    vk::CommandPool mCommandPool;
-    vk::CommandBuffer mCommands;
+    vk::Device mDevice = {};
+    vma::Allocator mAllocator = {};
+    vk::CommandPool mCommandPool = {};
+    vk::CommandBuffer mCommands = {};
     std::vector<std::pair<vk::Buffer, vma::Allocation>> mAllocations;
 };

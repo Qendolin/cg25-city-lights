@@ -5,9 +5,11 @@
 #include <map>
 #include <string_view>
 
+#include "../image/ImageCpuLoader.h"
 #include "gltf_types.h"
 
 // https://fastgltf.readthedocs.io/v0.9.x/overview.html
+
 
 namespace fastgltf {
     class Parser;
@@ -21,11 +23,11 @@ namespace gltf {
     /// A loader for glTF 2.0 files.
     /// </summary>
     class Loader {
-    private:
         std::unique_ptr<fastgltf::Parser> mParser;
+        ImageCpuLoader *mImageLoader;
 
     public:
-        Loader();
+        explicit Loader(ImageCpuLoader *imageLoader);
         ~Loader();
 
         Loader(const Loader &other) = delete;
@@ -91,7 +93,7 @@ namespace gltf {
         /// </summary>
         /// <param name="asset">The glTF asset.</param>
         /// <param name="scene_data">The scene data to populate.</param>
-        static void loadImages(const fastgltf::Asset &asset, Scene &scene_data);
+        static void loadImages(const fastgltf::Asset &asset, Scene &scene_data, ImageCpuLoader& image_loader);
 
         /// <summary>
         /// Loads all materials from the glTF asset.
@@ -148,24 +150,6 @@ namespace gltf {
 
         static Material initMaterialWithFactors(const fastgltf::Material &gltf_mat);
 
-        static int32_t loadMaterialAlbedoTexture(
-                const fastgltf::Asset &asset, const fastgltf::Material &gltf_mat, Scene &scene_data
-        );
-
-        static int32_t loadMaterialOrmTexture(
-                const fastgltf::Asset &asset,
-                const fastgltf::Material &gltf_mat,
-                Scene &scene_data,
-                std::map<std::pair<int32_t, int32_t>, int32_t> &orm_cache_map
-        );
-
-        static int32_t loadMaterialNormalTexture(
-                const fastgltf::Asset &asset,
-                const fastgltf::Material &gltf_mat,
-                Scene &scene_data,
-                std::map<int32_t, int32_t> &normal_cache_map
-        );
-        
         fastgltf::Asset assetFromPath(const std::filesystem::path &path) const;
 
         static const fastgltf::Accessor &getAttributeAccessor(
@@ -177,6 +161,22 @@ namespace gltf {
 
         static uint32_t appendMeshPrimitiveIndices(
                 const fastgltf::Asset &asset, const fastgltf::Primitive &primitive, std::string_view mesh_name, gltf::Scene &scene_data
+        );
+
+        template <typename T>
+        static int32_t getTextureImageIndex(const fastgltf::Asset &asset, const T &texInfo) {
+            if (!texInfo.has_value())
+                return -1;
+            size_t tex_index = texInfo.value().textureIndex;
+            size_t image_index = asset.textures[tex_index].imageIndex.value();
+            return static_cast<int32_t>(image_index);
+        }
+
+        static int32_t combineOrmImages(
+                const fastgltf::Asset &asset,
+                Scene &scene_data,
+                std::map<std::pair<int32_t, int32_t>, int32_t> &cache,
+                const fastgltf::Material &gltf_mat
         );
     };
 

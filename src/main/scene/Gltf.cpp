@@ -4,6 +4,7 @@
 #include <fastgltf/glm_element_traits.hpp>
 #include <fastgltf/math.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <map>
 #include <stb_image.h>
 #include <utility>
 
@@ -23,14 +24,18 @@ namespace gltf {
     Scene::Scene() = default;
     Scene::~Scene() = default;
 
-    Loader::Loader() { mParser = std::make_unique<fastgltf::Parser>(fastgltf::Extensions::KHR_lights_punctual); }
+    Loader::Loader(ImageCpuLoader *imageLoader) : mImageLoader(imageLoader) {
+        mParser = std::make_unique<fastgltf::Parser>(fastgltf::Extensions::KHR_lights_punctual);
+    }
     Loader::~Loader() = default;
 
-    Loader::Loader(Loader &&other) noexcept : mParser(std::move(other.mParser)) {}
+    Loader::Loader(Loader &&other) noexcept
+        : mParser(std::move(other.mParser)), mImageLoader(std::move(other.mImageLoader)) {}
     Loader &Loader::operator=(Loader &&other) noexcept {
         if (this == &other)
             return *this;
         mParser = std::move(other.mParser);
+        mImageLoader = std::move(other.mImageLoader);
         return *this;
     }
 
@@ -41,7 +46,7 @@ namespace gltf {
         std::vector<PrimitiveInfo> primitive_infos;
         std::vector<size_t> mesh_primitive_table; // Maps mesh index to primitive info start index
 
-        loadImages(asset, scene_data);
+        loadImages(asset, scene_data, *mImageLoader);
         loadMeshData(asset, scene_data, primitive_infos, mesh_primitive_table);
         loadMaterials(asset, scene_data);
         loadNodes(asset, primitive_infos, mesh_primitive_table, scene_data);
@@ -102,7 +107,7 @@ namespace gltf {
         }
     }
 
-    void Loader::loadImages(const fastgltf::Asset &asset, Scene &scene_data) {
+    void Loader::loadImages(const fastgltf::Asset &asset, Scene &scene_data, ImageCpuLoader &image_loader) {
         fastgltf::DefaultBufferDataAdapter adapter = {};
         for (const auto &image: asset.images) {
             Logger::check(
@@ -111,27 +116,124 @@ namespace gltf {
             );
             size_t buffer_view_index = std::get<fastgltf::sources::BufferView>(image.data).bufferViewIndex;
             auto src_data = adapter(asset, buffer_view_index);
-            int width, height, ch;
-            auto *data = stbi_load_from_memory(
-                    reinterpret_cast<stbi_uc const *>(src_data.data()), static_cast<int>(src_data.size_bytes()), &width,
-                    &height, &ch, 0
-            );
 
-            int target_ch = ch == 3 ? 4 : ch; // 3 channel images are extended to 4 channels
-            scene_data.images.emplace_back() = PlainImageDataU8::create(width, height, target_ch, ch, data);
+            auto source = ImageSource(src_data);
+            auto task = image_loader.loadAsync(source);
+            scene_data.images.emplace_back() = {.info = source.info, .type = ImageType::Undefined, .task = task};
         }
+    }
+
+    int32_t Loader::combineOrmImages(
+            const fastgltf::Asset &asset,
+            Scene &scene_data,
+            std::map<std::pair<int32_t, int32_t>, int32_t> &cache,
+            const fastgltf::Material &gltf_mat
+    ) {
+        int32_t mr_index = getTextureImageIndex(asset, gltf_mat.pbrData.metallicRoughnessTexture);
+        int32_t o_index = getTextureImageIndex(asset, gltf_mat.occlusionTexture);
+
+        if (mr_index < 0 && o_index < 0) {
+            return -1;
+        }
+
+        std::pair<int32_t, int32_t> cache_key = std::make_pair(mr_index, o_index);
+        if (cache.contains(cache_key)) {
+            return cache[cache_key];
+        }
+
+        auto &mr_future = scene_data.images[mr_index];
+        auto &o_future = scene_data.images[o_index];
+
+        if (mr_future.info.width != o_future.info.width || mr_future.info.height != o_future.info.height) {
+            throw std::runtime_error("Image has different size");
+        }
+
+        if (mr_future.info.componentType.size != o_future.info.componentType.size) {
+            throw std::runtime_error("Image has component size");
+        }
+
+        auto aggregate = LoadTask<ImageData>::when_all({o_future.task, mr_future.task});
+        auto merged = aggregate.then([](const std::vector<const ImageData *> &all) {
+            auto &o = *all[0];
+            auto &mr = *all[1];
+            auto omr = ImageData::create(o, ComponentType::UInt8, 4);
+            ImageData::copy(o, omr, 0, 0);
+            ImageData::copy(mr, omr, 1, 1);
+            ImageData::copy(mr, omr, 2, 2);
+            return omr;
+        });
+        ImageSourceInfo info = mr_future.info;
+        info.channels = 4;
+        scene_data.images.emplace_back() = {.info = info, .type = ImageType::OcclusionMetalnessRoughness, .task = merged};
+        return static_cast<int32_t>(scene_data.images.size() - 1);
+    }
+
+    static void assignImageType(Scene &scene_data, int32_t image_index, ImageType image_type) {
+        if (image_index < 0)
+            return;
+        auto &image = scene_data.images[image_index];
+        if (image.type != ImageType::Undefined && image.type != image_type)
+            throw std::runtime_error("Image type inconsistent");
+        image.type = ImageType::Albedo;
     }
 
     void Loader::loadMaterials(const fastgltf::Asset &asset, Scene &scene_data) {
         // Occlusion and roughness-metalness images may need to be merged. This cache is used for deduplication.
         std::map<std::pair<int32_t, int32_t>, int32_t> orm_cache_map;
         std::map<int32_t, int32_t> normal_cache_map;
+        std::map<int32_t, int32_t> albedo_cache_map;
 
         for (const auto &gltf_mat: asset.materials) {
             Material mat = initMaterialWithFactors(gltf_mat);
-            mat.albedoTexture = loadMaterialAlbedoTexture(asset, gltf_mat, scene_data);
-            mat.ormTexture = loadMaterialOrmTexture(asset, gltf_mat, scene_data, orm_cache_map);
-            mat.normalTexture = loadMaterialNormalTexture(asset, gltf_mat, scene_data, normal_cache_map);
+
+            int32_t albedo_index = getTextureImageIndex(asset, gltf_mat.pbrData.baseColorTexture);
+            if (albedo_cache_map.contains(albedo_index)) {
+                mat.albedoTexture = albedo_cache_map[albedo_index];
+            } else if (albedo_index >= 0) {
+                auto &future = scene_data.images[albedo_index];
+                auto task = future.task.then([](const ImageData &image_data) {
+                    auto rgba = ImageData::create(image_data, ComponentType::UInt8, 4);
+                    ImageData::copy(image_data, rgba, 0, 0);
+                    ImageData::copy(image_data, rgba, 1, 1);
+                    ImageData::copy(image_data, rgba, 2, 2);
+                    if (image_data.components == 4) {
+                        ImageData::copy(image_data, rgba, 3, 3);
+                    } else {
+                        ImageData::fill(rgba, 3, ComponentType::UInt8.one.data());
+                    }
+                    return rgba;
+                });
+                mat.albedoTexture = scene_data.images.size();
+                albedo_cache_map[albedo_index] = mat.albedoTexture;
+                ImageSourceInfo info = future.info;
+                info.channels = 4;
+                scene_data.images.emplace_back() = {.info = info, .type = ImageType::Albedo, .task = task};
+            }
+
+            mat.ormTexture = combineOrmImages(asset, scene_data, orm_cache_map, gltf_mat);
+
+            int32_t normal_index = getTextureImageIndex(asset, gltf_mat.normalTexture);
+            if (normal_cache_map.contains(normal_index)) {
+                mat.normalTexture = normal_cache_map[normal_index];
+            } else if (normal_index >= 0) {
+                auto &future = scene_data.images[normal_index];
+                auto task = future.task.then([](const ImageData &image_data) {
+                    auto rg = ImageData::create(image_data, ComponentType::UInt8, 2);
+                    ImageData::copy(image_data, rg, 0, 0);
+                    ImageData::copy(image_data, rg, 1, 1);
+                    return rg;
+                });
+                mat.normalTexture = scene_data.images.size();
+                albedo_cache_map[albedo_index] = mat.normalTexture;
+                ImageSourceInfo info = future.info;
+                info.channels = 2;
+                scene_data.images.emplace_back() = {.info = info, .type = ImageType::Normal, .task = task};
+            }
+
+            // assignImageType(scene_data, mat.albedoTexture, ImageType::Albedo);
+            // assignImageType(scene_data, mat.ormTexture, ImageType::OcclusionMetalnessRoughness);
+            // assignImageType(scene_data, mat.normalTexture, ImageType::Normal);
+
             scene_data.materials.push_back(mat);
         }
     }
@@ -151,126 +253,11 @@ namespace gltf {
         return mat;
     }
 
-    int32_t Loader::loadMaterialAlbedoTexture(const fastgltf::Asset &asset, const fastgltf::Material &gltf_mat, Scene &scene_data) {
-        int32_t texture_index = -1;
-
-        if (gltf_mat.pbrData.baseColorTexture.has_value()) {
-            texture_index = static_cast<int32_t>(
-                    asset.textures[gltf_mat.pbrData.baseColorTexture.value().textureIndex].imageIndex.value()
-            );
-            auto &image = scene_data.images[texture_index];
-            if (image.format == vk::Format::eUndefined) // claim image in this format
-                image.format = vk::Format::eR8G8B8A8Srgb;
-            Logger::check(image.format == vk::Format::eR8G8B8A8Srgb, "Format of albedo texture must be R8G8B8A8_SRGB");
-        }
-
-        return texture_index;
-    }
-
-    int32_t Loader::loadMaterialOrmTexture(
-            const fastgltf::Asset &asset,
-            const fastgltf::Material &gltf_mat,
-            Scene &scene_data,
-            std::map<std::pair<int32_t, int32_t>, int32_t> &orm_cache_map
-    ) {
-        auto getImageIndex = [&](const fastgltf::TextureInfo &texInfo) -> int32_t {
-            const size_t texIndex = texInfo.textureIndex;
-            const size_t imageIndex = asset.textures[texIndex].imageIndex.value();
-            return static_cast<int32_t>(imageIndex);
-        };
-
-        if (!gltf_mat.occlusionTexture.has_value() && !gltf_mat.pbrData.metallicRoughnessTexture.has_value())
-            return -1;
-
-        std::pair<int32_t, int32_t> orm_cache_key = {-1, -1};
-        PlainImageDataU8 *o_image = nullptr;
-        PlainImageDataU8 *rm_image = nullptr;
-
-        if (gltf_mat.occlusionTexture.has_value()) {
-            int32_t index = getImageIndex(gltf_mat.occlusionTexture.value());
-            o_image = &scene_data.images[index];
-            orm_cache_key.first = index;
-        }
-
-        if (gltf_mat.pbrData.metallicRoughnessTexture.has_value()) {
-            int32_t index = getImageIndex(gltf_mat.pbrData.metallicRoughnessTexture.value());
-            rm_image = &scene_data.images[index];
-            orm_cache_key.second = index;
-        }
-
-        // ORM texture merging
-
-        if (o_image && rm_image && o_image == rm_image) {
-            int32_t texture_index = getImageIndex(gltf_mat.occlusionTexture.value());
-            auto &image = scene_data.images[texture_index];
-
-            if (image.format == vk::Format::eUndefined)
-                image.format = vk::Format::eR8G8B8A8Unorm;
-
-            Logger::check(image.format == vk::Format::eR8G8B8A8Unorm, "Format of orm texture must be R8G8B8A8_UNORM");
-            return texture_index;
-        }
-
-        if (o_image && rm_image && (rm_image->width != o_image->width || rm_image->height != o_image->height))
-            Logger::fatal("Occlusion and roughness-metalness texture sizes don't match");
-
-        if (auto it = orm_cache_map.find(orm_cache_key); it != orm_cache_map.end())
-            return it->second;
-
-        PlainImageDataU8 *o_or_rm_image = o_image ? o_image : rm_image;
-        int32_t texture_index = static_cast<int32_t>(scene_data.images.size());
-
-        if (!o_or_rm_image)
-            return -1; // Keep analyzer happy
-        
-        PlainImageDataU8 orm_image =
-                PlainImageDataU8::create(vk::Format::eR8G8B8A8Unorm, o_or_rm_image->width, o_or_rm_image->height);
-
-        if (o_image)
-            o_image->copyChannels(orm_image, {0});
-
-        if (rm_image)
-            rm_image->copyChannels(orm_image, {1, 2});
-        else
-            orm_image.fill({1, 2}, {0xff, 0xff});
-
-        orm_cache_map[orm_cache_key] = texture_index;
-        scene_data.images.push_back(std::move(orm_image));
-
-        return texture_index;
-    }
-
-    int32_t Loader::loadMaterialNormalTexture(
-            const fastgltf::Asset &asset,
-            const fastgltf::Material &gltf_mat,
-            Scene &scene_data,
-            std::map<int32_t, int32_t> &normal_cache_map
-    ) {
-        int32_t texture_index = -1;
-
-        if (gltf_mat.normalTexture.has_value()) {
-            auto index =
-                    static_cast<int32_t>(asset.textures[gltf_mat.normalTexture.value().textureIndex].imageIndex.value());
-            if (normal_cache_map.contains(index)) {
-                texture_index = normal_cache_map.at(index);
-            } else {
-                const auto &src_image = scene_data.images[index];
-                auto normal = PlainImageDataU8::create(vk::Format::eR8G8Unorm, src_image.width, src_image.height);
-                src_image.copyChannels(normal, {0, 1});
-                texture_index = static_cast<int32_t>(scene_data.images.size());
-                scene_data.images.emplace_back(std::move(normal));
-                normal_cache_map[index] = texture_index;
-            }
-        }
-
-        return texture_index;
-    }
-
     void Loader::loadLight(
             const fastgltf::Asset &asset, Scene &scene_data, const fastgltf::Node &node, const glm::mat4 &transform, Node &scene_node
     ) {
         const auto &light = asset.lights[node.lightIndex.value()];
-        glm::vec3 position = glm::vec3(transform[3]);
+        glm::vec3 position = transform[3];
         glm::vec3 forward = glm::normalize(-glm::vec3(transform[2]));
         switch (light.type) {
             case fastgltf::LightType::Directional: {
@@ -435,7 +422,7 @@ namespace gltf {
         }
 
         scene_data.index_count += index_accessor.count;
-        return index_accessor.count;
+        return static_cast<uint32_t>(index_accessor.count);
     }
 
 } // namespace gltf

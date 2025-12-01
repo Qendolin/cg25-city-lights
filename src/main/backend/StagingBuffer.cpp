@@ -33,7 +33,7 @@ void StagingBuffer::upload(const void *data, size_t size, const vk::Buffer &dst)
             },
             &result_info
     );
-    mAllocations.push_back({buf, alloc});
+    mAllocations.emplace_back(buf, alloc);
 
     std::memcpy(result_info.pMappedData, data, size);
 
@@ -41,6 +41,12 @@ void StagingBuffer::upload(const void *data, size_t size, const vk::Buffer &dst)
 }
 
 vk::Buffer StagingBuffer::stage(const void *data, size_t size) {
+    auto [buf, ptr] = stage(size);
+    std::memcpy(ptr, data, size);
+    return buf;
+}
+
+std::pair<vk::Buffer, void*> StagingBuffer::stage(size_t size) {
     vma::AllocationInfo result_info;
     auto [buf, alloc] = mAllocator.createBuffer(
             {
@@ -54,11 +60,10 @@ vk::Buffer StagingBuffer::stage(const void *data, size_t size) {
             },
             &result_info
     );
-    mAllocations.push_back({buf, alloc});
 
-    std::memcpy(result_info.pMappedData, data, size);
+    mAllocations.emplace_back(buf, alloc);
 
-    return buf;
+    return { buf, result_info.pMappedData };
 }
 
 StagingBuffer::StagingBuffer(const vma::Allocator &allocator, const vk::Device &device, const vk::CommandPool &cmd_pool)
@@ -67,11 +72,31 @@ StagingBuffer::StagingBuffer(const vma::Allocator &allocator, const vk::Device &
 }
 
 StagingBuffer::~StagingBuffer() {
-    if (mAllocations.size() > 0) {
+    if (!mAllocations.empty()) {
         Logger::fatal("Staging buffer destroyed with open allocations!");
     }
-    mCommands.end();
-    mDevice.freeCommandBuffers(mCommandPool, {mCommands});
+    if (mCommands) {
+        mCommands.end();
+        mDevice.freeCommandBuffers(mCommandPool, {mCommands});
+    }
+}
+
+StagingBuffer::StagingBuffer(StagingBuffer &&other) noexcept
+    : mDevice(std::exchange(other.mDevice, {})),
+      mAllocator(std::exchange(other.mAllocator, {})),
+      mCommandPool(std::exchange(other.mCommandPool, {})),
+      mCommands(std::exchange(other.mCommands, {})),
+      mAllocations(std::move(other.mAllocations)) {}
+
+StagingBuffer &StagingBuffer::operator=(StagingBuffer &&other) noexcept {
+    if (this == &other)
+        return *this;
+    mDevice = std::exchange(other.mDevice, {});
+    mAllocator = std::exchange(other.mAllocator, {});
+    mCommandPool = std::exchange(other.mCommandPool, {});
+    mCommands = std::exchange(other.mCommands, {});
+    mAllocations = std::move(other.mAllocations);
+    return *this;
 }
 
 void StagingBuffer::submit(const vk::Queue &queue, const vk::SubmitInfo &submit_info_) {
@@ -84,6 +109,24 @@ void StagingBuffer::submit(const vk::Queue &queue, const vk::SubmitInfo &submit_
 
     while (mDevice.waitForFences(*fence, true, UINT64_MAX) == vk::Result::eTimeout) {
     }
+    mDevice.freeCommandBuffers(mCommandPool, {mCommands});
+    createCommandBuffer();
+
+    for (const auto &[buffer, alloc]: mAllocations) {
+        mAllocator.destroyBuffer(buffer, alloc);
+    }
+    mAllocations.clear();
+}
+
+void StagingBuffer::submitUnsynchronized(const vk::Queue &queue, const vk::SubmitInfo &submit_info_) {
+    mCommands.end();
+
+    vk::SubmitInfo submit_info = submit_info_;
+    submit_info.setCommandBuffers(mCommands);
+    queue.submit({submit_info});
+}
+
+void StagingBuffer::beginUnsynchronized() {
     mDevice.freeCommandBuffers(mCommandPool, {mCommands});
     createCommandBuffer();
 

@@ -16,6 +16,9 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     });
     mStaticDescriptorAllocator = UniqueDescriptorAllocator(context->device());
 
+    mImageLoader = std::make_unique<ImageCpuLoader>();
+    mImageUploader = std::make_unique<ImageGpuUploader>(context->allocator(), context->device(), context->mainQueue, context->transferQueue);
+
     mShaderLoader = ShaderLoader();
     mShaderLoader.optimize = true;
 #ifndef NDEBUG
@@ -27,7 +30,7 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mBlobRenderer = std::make_unique<BlobRenderer>(context->device());
     mSkyboxRenderer = std::make_unique<SkyboxRenderer>(context->device());
     mFrustumCuller = std::make_unique<FrustumCuller>(context->device());
-    mSSAORenderer = std::make_unique<SSAORenderer>(context->device(), context->allocator(), context->mainQueue);
+    mSSAORenderer = std::make_unique<SSAORenderer>(context->device());
     mDepthPrePassRenderer = std::make_unique<DepthPrePassRenderer>();
 }
 
@@ -106,7 +109,7 @@ void RenderSystem::recreate(const Settings &settings) {
     mBlobRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mSkyboxRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mFrustumCuller->recreate(device, mShaderLoader);
-    mSSAORenderer->recreate(device, mShaderLoader, settings.ssao.slices, settings.ssao.samples);
+    mSSAORenderer->recreate(device, mContext->allocator(), mShaderLoader, *mImageLoader, *mImageUploader, settings.ssao.slices, settings.ssao.samples);
     mDepthPrePassRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
 
     // These have to match the max frames in flight count but an be more
@@ -141,6 +144,8 @@ void RenderSystem::recreate(const Settings &settings) {
     mTransientBufferAllocators.create(swapchain.imageCount(), [&] {
         return UniqueTransientBufferAllocator(mContext->device(), mContext->allocator());
     });
+
+    mImageTransferFinishedSemaphores.create(util::MaxFramesInFlight, [&] { return device.createSemaphoreUnique({}); });
 }
 
 void RenderSystem::draw(const RenderData &rd) {
@@ -253,10 +258,14 @@ void RenderSystem::submit(const Settings &settings) {
 
     cmd_buf.end();
 
-    vk::PipelineStageFlags pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    auto& image_transfer_finished = mImageTransferFinishedSemaphores.next();
+    mImageUploader->apply({}, {}, std::array{*image_transfer_finished});
+
+    std::array< vk::PipelineStageFlags, 2> pipe_stage_flags = {vk::PipelineStageFlagBits::eTransfer,  vk::PipelineStageFlagBits::eColorAttachmentOutput};
+    std::array wait_semaphores = {*image_transfer_finished, *sync_objects.availableSemaphore};
     vk::SubmitInfo submit_info = vk::SubmitInfo()
                                          .setCommandBuffers(cmd_buf)
-                                         .setWaitSemaphores(*sync_objects.availableSemaphore)
+                                         .setWaitSemaphores(wait_semaphores)
                                          .setWaitDstStageMask(pipe_stage_flags)
                                          .setSignalSemaphores(*render_finished_semaphore);
 

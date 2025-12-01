@@ -6,6 +6,8 @@
 #include "backend/VulkanContext.h"
 #include "blob/Model.h"
 #include "entity/Cubemap.h"
+#include "image/ImageCpuLoader.h"
+#include "image/ImageGpuUploader.h"
 #include "imgui/ImGui.h"
 #include "renderer/BlobRenderer.h"
 #include "renderer/DepthPrePassRenderer.h"
@@ -42,6 +44,7 @@ class RenderSystem {
 
     util::PerFrame<FramesInFlightSyncObjects> mFramesInFlightSyncObjects;
     util::PerFrame<vk::UniqueSemaphore> mRenderFinishedSemaphores;
+    util::PerFrame<vk::UniqueSemaphore> mImageTransferFinishedSemaphores;
     util::PerFrame<vk::CommandBuffer> mCommandBuffers;
     util::PerFrame<Framebuffer> mSwapchainFramebuffers;
     util::PerFrame<UniqueDescriptorAllocator> mDescriptorAllocators;
@@ -50,6 +53,8 @@ class RenderSystem {
     // This descriptor allocator is never reset
     UniqueDescriptorAllocator mStaticDescriptorAllocator;
     ShaderLoader mShaderLoader;
+    std::unique_ptr<ImageCpuLoader> mImageLoader;
+    std::unique_ptr<ImageGpuUploader> mImageUploader;
 
     Framebuffer mHdrFramebuffer;
     ImageWithView mHdrColorAttachment;
@@ -91,4 +96,10 @@ public:
 
     [[nodiscard]] const ImGuiBackend &imGuiBackend() const { return *mImguiBackend; }
     [[nodiscard]] ImGuiBackend &imGuiBackend() { return *mImguiBackend; }
+
+    [[nodiscard]] const ImageCpuLoader& imageLoader() const { return *mImageLoader; };
+    [[nodiscard]] ImageCpuLoader& imageLoader() { return *mImageLoader; };
+    [[nodiscard]] const ImageGpuUploader& imageUploader() const { return *mImageUploader; };
+    [[nodiscard]] ImageGpuUploader& imageUploader() { return *mImageUploader; };
+
 };

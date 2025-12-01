@@ -312,18 +312,31 @@ ImageViewInfo ImageViewInfo::from(const ImageInfo &info) {
     };
 }
 
-void ImageBase::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data) {
-    if (region.width == 0)
-        region.width = info.width;
-    if (region.height == 0)
-        region.height = info.height;
-    if (region.depth == 0)
-        region.depth = info.depth;
+void ImageBase::load(const vk::CommandBuffer &cmd_buf, uint32_t level, vk::Extent3D region, const vk::Buffer &data, vk::DeviceSize offset) {
+    if (region.width == 0) region.width = info.width;
+    if (region.height == 0) region.height = info.height;
+    if (region.depth == 0) region.depth = info.depth;
 
     barrier(cmd_buf, ImageResourceAccess::TransferWrite);
 
     vk::BufferImageCopy image_copy = {
-        .imageSubresource = {.aspectMask = info.aspects, .mipLevel = level, .layerCount = info.layers},
+        .bufferOffset = offset,
+        .imageSubresource = {.aspectMask = info.aspects, .mipLevel = level, .baseArrayLayer = 0, .layerCount = info.layers},
+        .imageExtent = region,
+    };
+    cmd_buf.copyBufferToImage(data, vk::Image(*this), vk::ImageLayout::eTransferDstOptimal, image_copy);
+}
+
+void ImageBase::load(const vk::CommandBuffer &cmd_buf, uint32_t level, uint32_t layer, vk::Extent3D region, const vk::Buffer &data, vk::DeviceSize offset) {
+    if (region.width == 0) region.width = info.width;
+    if (region.height == 0) region.height = info.height;
+    if (region.depth == 0) region.depth = info.depth;
+
+    barrier(cmd_buf, ImageResourceAccess::TransferWrite);
+
+    vk::BufferImageCopy image_copy = {
+        .bufferOffset = offset,
+        .imageSubresource = {.aspectMask = info.aspects, .mipLevel = level, .baseArrayLayer = layer, .layerCount = 1},
         .imageExtent = region,
     };
     cmd_buf.copyBufferToImage(data, vk::Image(*this), vk::ImageLayout::eTransferDstOptimal, image_copy);

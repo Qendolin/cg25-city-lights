@@ -74,6 +74,8 @@ namespace util {
         /// <returns>A const reference to the object at the specified index.</returns>
         [[nodiscard]] T &get(size_t index) const { return mPool.at(index); }
 
+        [[nodiscard]] size_t size() const { return mFrames; }
+
     private:
         /// <summary>
         /// The pool of objects.

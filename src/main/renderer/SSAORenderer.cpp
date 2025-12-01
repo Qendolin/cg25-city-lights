@@ -4,11 +4,13 @@
 #include "../backend/ImageResource.h"
 #include "../backend/ShaderCompiler.h"
 #include "../backend/StagingBuffer.h"
+#include "../image/ImageCpuLoader.h"
+#include "../image/ImageGpuUploader.h"
 #include "../util/math.h"
 
 SSAORenderer::~SSAORenderer() = default;
 
-SSAORenderer::SSAORenderer(const vk::Device &device, const vma::Allocator &allocator, const DeviceQueue &graphicsQueue) {
+SSAORenderer::SSAORenderer(const vk::Device &device) {
     mSamplerShaderParamsDescriptorLayout = SamplerShaderParamsDescriptorLayout(device);
     mFilterShaderParamsDescriptorLayout = FilterShaderParamsDescriptorLayout(device);
     mDepthSampler = device.createSamplerUnique({
@@ -16,33 +18,35 @@ SSAORenderer::SSAORenderer(const vk::Device &device, const vma::Allocator &alloc
         .addressModeV = vk::SamplerAddressMode::eClampToBorder,
         .borderColor = vk::BorderColor::eFloatTransparentBlack,
     });
+}
 
-    auto cmd_pool = device.createCommandPoolUnique(
-            {.flags = vk::CommandPoolCreateFlagBits::eTransient, .queueFamilyIndex = graphicsQueue}
-    );
+void SSAORenderer::recreate(
+        const vk::Device &device,
+        const vma::Allocator &allocator,
+        const ShaderLoader &shader_loader,
+        ImageCpuLoader &image_loader,
+        ImageGpuUploader &image_uploader,
+        int slices,
+        int samples
+) {
+    createPipeline(device, shader_loader, slices, samples);
 
-    // FIXME: loading an image is way too cumbersome
-
-    StagingBuffer staging = {allocator, device, *cmd_pool};
-
-    PlainImageDataU8 noise_image_data =
-            PlainImageDataU8::create(vk::Format::eR8G8Unorm, "resources/images/gtao_blue_noise.png");
-    ImageCreateInfo create_info = {
-        .format = noise_image_data.format,
-        .aspects = vk::ImageAspectFlagBits::eColor,
-        .width = noise_image_data.width,
-        .height = noise_image_data.height,
-        .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
-    };
-    mNoise = ImageWithView::create(device, staging.allocator(), create_info);
-    util::setDebugName(device, *mNoise.image, "ssao_noise");
-    util::setDebugName(device, *mNoise.view, "ssao_noise_view");
-
-    auto staged_data = staging.stage(noise_image_data.pixels);
-    mNoise.load(staging.commands(), 0, {}, staged_data);
-    mNoise.barrier(staging.commands(), ImageResourceAccess::FragmentShaderReadOptimal);
-
-    staging.submit(graphicsQueue);
+    auto noise_img_source = ImageSource("resources/images/gtao_blue_noise.png");
+    mNoise = std::make_unique<ImageWithView>(ImageWithView::create(
+            device, allocator,
+            {
+                .format = vk::Format::eR8G8Unorm,
+                .aspects = vk::ImageAspectFlagBits::eColor,
+                .width = noise_img_source.info.width,
+                .height = noise_img_source.info.height,
+                .usage = vk::ImageUsageFlagBits::eSampled,
+            }
+    ));
+    image_uploader.initialize(mNoise.get(), ImageResourceAccess::FragmentShaderReadOptimal);
+    image_loader.loadAsync(noise_img_source)
+        .then([&image_uploader, this](const ImageData &image_data) {
+            image_uploader.upload(mNoise.get(), image_data, {});
+        });
 }
 
 void SSAORenderer::execute(
@@ -98,7 +102,7 @@ void SSAORenderer::execute(
                 ),
                 descriptor_set_sampler.write(
                         SamplerShaderParamsDescriptorLayout::InNoise,
-                        vk::DescriptorImageInfo{.imageView = mNoise, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal}
+                        vk::DescriptorImageInfo{.imageView = *mNoise, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal}
                 ),
             },
             {}
@@ -170,7 +174,6 @@ void SSAORenderer::filterPass(
     cmd_buf.pushConstants(*mFilterPipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(filter_params), &filter_params);
     cmd_buf.dispatch(util::divCeil(ao_width, 16u), util::divCeil(ao_height, 16u), 1);
 }
-
 
 void SSAORenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, int slices, int samples) {
     auto comp_sh_sampler = shader_loader.loadFromSource(device, "resources/shaders/ssao.comp");

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <vector>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
 #include "../backend/Descriptors.h"
@@ -8,7 +10,6 @@
 #include "../entity/Light.h"
 #include "../util/math.h"
 #include "gpu_types.h"
-
 
 namespace gltf {
     struct Scene;
@@ -80,17 +81,31 @@ namespace scene {
         util::BoundingBox bounds;
     };
 
+    /// <summary>
+    /// Stored the timestamps for which translation and rotation animation data exists for an
+    /// instance and the corresponding values.
+    /// </summary>
     struct InstanceAnimation {
         std::vector<float> translation_timestamps;
         std::vector<float> rotation_timestamps;
         std::vector<glm::vec3> translations;
-        std::vector<glm::vec4> rotations;
+        std::vector<glm::quat> rotations;
     };
 
     struct CpuData {
+        /// <summary>
+        /// The instances present in the scene.
+        /// </summary>
         std::vector<Instance> instances;
-        // New, TODO: Summary
+
+        /// <summary>
+        /// Maps the animation indices to the indices of instances in the instances vector.
+        /// </summary>
         std::vector<std::size_t> animated_instances;
+
+        /// <summary>
+        /// The data of n animations for the last n instances in the instances vector.
+        /// </summary>
         std::vector<InstanceAnimation> instance_animations;
     };
 

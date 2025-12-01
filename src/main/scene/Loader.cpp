@@ -32,16 +32,16 @@ namespace scene {
     }
 
     CpuData Loader::createCpuData(const gltf::Scene &scene_data) const {
-        CpuData result;
+        CpuData cpu_data;
         const std::size_t node_count = scene_data.nodes.size();
         const std::size_t animated_node_count = std::ranges::count_if(scene_data.nodes, [](const gltf::Node &node) {
             return node.animation != UINT32_MAX;
         });
         const std::size_t static_node_count = node_count - animated_node_count;
 
-        result.instances.resize(node_count);
-        result.animated_instances.reserve(animated_node_count);
-        result.instance_animations.reserve(animated_node_count);
+        cpu_data.instances.resize(node_count);
+        cpu_data.animated_instances.reserve(animated_node_count);
+        cpu_data.instance_animations.reserve(animated_node_count);
 
         std::size_t next_static_inst_idx{0};
         std::size_t next_animated_inst_idx{static_node_count};
@@ -57,28 +57,34 @@ namespace scene {
                 instance_idx = next_static_inst_idx++;
             else {
                 instance_idx = next_animated_inst_idx++;
-                result.animated_instances.push_back(instance_idx);
+                cpu_data.animated_instances.push_back(instance_idx);
 
                 const gltf::Animation &gltf_anim = scene_data.animations[node.animation];
-
+                
                 InstanceAnimation instance_anim{
-                    gltf_anim.translation_timestamps,
-                    gltf_anim.rotation_timestamps,
-                    gltf_anim.translations,
-                    gltf_anim.rotations,
+                    gltf_anim.translation_timestamps, gltf_anim.rotation_timestamps, gltf_anim.translations,
+                    [&] {
+                        std::vector<glm::quat> quats;
+                        quats.reserve(gltf_anim.rotations.size());
+                        std::ranges::transform(gltf_anim.rotations, std::back_inserter(quats), [](const glm::vec4 &v) {
+                            return glm::quat(v.w, v.x, v.y, v.z);
+                        });
+                        return quats;
+                    }()
                 };
 
-                result.instance_animations.push_back(std::move(instance_anim));
+                cpu_data.instance_animations.push_back(std::move(instance_anim));
+                cpu_data.animated_instances.push_back(instance_idx);
             }
 
-            result.instances[instance_idx] = {
+            cpu_data.instances[instance_idx] = {
                 .name = node.name,
                 .transform = node.transform,
                 .bounds = bounds,
             };
         }
 
-        return result;
+        return cpu_data;
     }
 
     GpuData Loader::createGpuData(const gltf::Scene &scene_data) const {

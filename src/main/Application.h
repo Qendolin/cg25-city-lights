@@ -4,7 +4,6 @@
 
 #include "debug/Settings.h"
 
-
 class ShadowCascade;
 class RenderSystem;
 class FinalizeRenderer;

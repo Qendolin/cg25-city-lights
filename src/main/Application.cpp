@@ -17,9 +17,10 @@
 #include "entity/ShadowCaster.h"
 #include "glfw/Input.h"
 #include "imgui/ImGui.h"
+#include "scene/AnimationSampler.h"
 #include "scene/Gltf.h"
-#include "scene/Scene.h"
 #include "scene/Loader.h"
+#include "scene/Scene.h"
 #include "util/Logger.h"
 
 Application::Application() = default;
@@ -128,6 +129,8 @@ void Application::init() {
 }
 
 void Application::run() {
+    std::vector<scene::InstanceAnimationCursor> animation_cursor_cache(scene->cpu().instance_animations.size());
+
     while (!context->window().shouldClose()) {
         renderSystem->advance(settings);
 
@@ -161,6 +164,9 @@ void Application::run() {
         });
 
         renderSystem->submit(settings);
+
+        std::vector<glm::mat4> animated_instance_transforms = scene::AnimationSampler::sampleAnimatedInstanceTransforms(
+                scene->cpu(), static_cast<float>(input->time()) - 4.f, animation_cursor_cache
+        );
     }
-    context->device().waitIdle();
 }

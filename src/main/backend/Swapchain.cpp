@@ -76,8 +76,9 @@ void Swapchain::create() {
             mSurfaceExtents.height, surface_capabilities.minImageExtent.height, surface_capabilities.maxImageExtent.height
     );
 
-    // need to be destroyed before swapchain is
+    // Need to be cleared before swapchain is created
     mSwapchainImageViewsUnorm.clear();
+    mSwapchainImages.clear();
 
     mSwapchain = mDevice.createSwapchainKHRUnique({
         .surface = mSurface,

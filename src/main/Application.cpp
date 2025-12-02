@@ -108,7 +108,7 @@ void Application::init() {
         context->transferQueue, context->mainQueue,
     };
 
-    scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/LightTest.glb")));
+    scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/CityTest.glb")));
     sunShadowCascade = std::make_unique<ShadowCascade>(
             context->device(), context->allocator(), settings.shadowCascade.resolution, Settings::SHADOW_CASCADE_COUNT
     );

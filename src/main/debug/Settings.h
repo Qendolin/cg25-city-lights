@@ -29,6 +29,7 @@ struct Settings {
         float distance = 64.0f;
         const int resolution = 2048;
         bool visualize = false;
+        bool update = true;
     } shadowCascade;
 
     struct AgXParams {
@@ -45,6 +46,8 @@ struct Settings {
         bool enableFrustumCulling = true;
         bool pauseFrustumCulling = false;
         bool whiteWorld = false;
+        bool lightDensity = false;
+        float lightRangeFactor = 1.0f;
     } rendering;
     struct SSAO {
         bool halfResolution = true;
@@ -55,6 +58,9 @@ struct Settings {
         float bias = 0.0f;
         float filterSharpness = 20.0f;
     } ssao;
+    struct Blob {
+        bool render = false;
+    } blob;
 
     Settings() {
         shadowCascades[0] = {

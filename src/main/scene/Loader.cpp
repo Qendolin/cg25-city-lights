@@ -4,6 +4,7 @@
 
 #include "../backend/StagingBuffer.h"
 #include "../debug/Annotation.h"
+#include "../entity/Light.h"
 #include "Gltf.h"
 #include "gpu_types.h"
 
@@ -281,36 +282,38 @@ namespace scene {
                 staging.upload(material_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
         util::setDebugName(mDevice, *result.materials, "scene_materials");
 
-        std::vector<PointLightBlock> point_light_blocks;
-        point_light_blocks.reserve(scene_data.pointLights.size());
+        float light_range_epsilon = 1.0f / 128.0f;
+        std::vector<UberLightBlock> uber_light_blocks;
+        uber_light_blocks.reserve(scene_data.pointLights.size() + scene_data.spotLights.size());
         for (const auto &light: scene_data.pointLights) {
-            point_light_blocks.emplace_back() = {
-                .radiance = glm::vec4(light.radiance(), 0.0f),
-                .position = glm::vec4(light.position, 0.0f),
+            uber_light_blocks.emplace_back() = {
+                .position = light.position,
+                .range = 0,
+                .radiance = light.radiance(),
+                .pointSize = 0.05f,
             };
+            uber_light_blocks.back().updateRange(light_range_epsilon);
         }
-        std::tie(result.pointLights, result.pointLightsAlloc) =
-                staging.upload(point_light_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
-        util::setDebugName(mDevice, *result.pointLights, "scene_point_lights");
-
-        std::vector<SpotLightBlock> spot_light_blocks;
-        spot_light_blocks.reserve(scene_data.spotLights.size());
         for (const auto &light: scene_data.spotLights) {
             float angle_scale = 1.0f / std::max(
                                                0.001f, glm::cos(glm::radians(light.innerConeAngle)) -
                                                                glm::cos(glm::radians(light.outerConeAngle))
                                        );
-            spot_light_blocks.emplace_back() = {
-                .radiance = glm::vec4(light.radiance(), 0.0f),
-                .position = glm::vec4(light.position, 0.0f),
-                .direction = glm::vec4(light.direction(), 0.0f),
+            float angle_offset = -glm::cos(glm::radians(light.outerConeAngle)) * angle_scale;
+            uber_light_blocks.emplace_back() = {
+                .position = light.position,
+                .range = 0,
+                .radiance = light.radiance(),
                 .coneAngleScale = angle_scale,
-                .coneAngleOffset = -glm::cos(glm::radians(light.outerConeAngle)) * angle_scale,
+                .direction = util::octahedronEncode(light.direction()),
+                .pointSize = 0.05f,
+                .coneAngleOffset = angle_offset,
             };
+            uber_light_blocks.back().updateRange(light_range_epsilon);
         }
-        std::tie(result.spotLights, result.spotLightsAlloc) =
-                staging.upload(spot_light_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
-        util::setDebugName(mDevice, *result.spotLights, "scene_spot_lights");
+        std::tie(result.uberLights, result.uberLightsAlloc) =
+                staging.upload(uber_light_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
+        util::setDebugName(mDevice, *result.uberLights, "scene_uber_lights");
 
         mDevice.updateDescriptorSets(
                 {
@@ -327,12 +330,8 @@ namespace scene {
                             vk::DescriptorBufferInfo{.buffer = *result.materials, .offset = 0, .range = vk::WholeSize}
                     ),
                     result.sceneDescriptor.write(
-                            SceneDescriptorLayout::PointLightBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *result.pointLights, .offset = 0, .range = vk::WholeSize}
-                    ),
-                    result.sceneDescriptor.write(
-                            SceneDescriptorLayout::SpotLightBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *result.spotLights, .offset = 0, .range = vk::WholeSize}
+                            SceneDescriptorLayout::UberLightBuffer,
+                            vk::DescriptorBufferInfo{.buffer = *result.uberLights, .offset = 0, .range = vk::WholeSize}
                     ),
                     result.sceneDescriptor.write(
                             SceneDescriptorLayout::BoundingBoxBuffer,

@@ -108,7 +108,7 @@ void Application::init() {
         context->transferQueue, context->mainQueue,
     };
 
-    scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/CityTest.glb")));
+    scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/LightTest.glb")));
     sunShadowCascade = std::make_unique<ShadowCascade>(
             context->device(), context->allocator(), settings.shadowCascade.resolution, Settings::SHADOW_CASCADE_COUNT
     );
@@ -169,4 +169,6 @@ void Application::run() {
                 scene->cpu(), static_cast<float>(input->time()) - 4.f, animation_cursor_cache
         );
     }
+
+    context->device().waitIdle();
 }

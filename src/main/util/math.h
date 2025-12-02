@@ -68,9 +68,7 @@ namespace util {
         return n - (n >> 1);
     }
 
-    inline size_t alignOffset(size_t offset, size_t alignment) {
-        return (offset + alignment - 1) & ~(alignment - 1);
-    }
+    inline size_t alignOffset(size_t offset, size_t alignment) { return (offset + alignment - 1) & ~(alignment - 1); }
 
     inline glm::mat4 createReverseZInfiniteProjectionMatrix(float aspect_ratio, float fov, float near_plane) {
         float f = 1.0f / std::tan(fov / 2.0f);
@@ -154,6 +152,36 @@ namespace util {
         }
 
         return planes;
+    }
+
+    inline glm::vec2 octahedronEncode(const glm::vec3 &n_in) {
+        glm::vec3 n = glm::normalize(n_in);
+
+        // Project onto octahedron
+        float invL1 = 1.0f / (std::abs(n.x) + std::abs(n.y) + std::abs(n.z));
+        n *= invL1;
+
+        // Branchless fold for the lower hemisphere
+        glm::vec2 fold = (glm::vec2(1.0f) - glm::abs(glm::vec2(n.y, n.x))) * glm::sign(glm::vec2(n.x, n.y));
+
+        glm::vec2 xy = glm::mix(glm::vec2(n.x, n.y), fold, n.z <= 0.0f ? 1.0f : 0.0f);
+
+        return xy * 0.5f + 0.5f; // Map to [0,1]
+    }
+
+
+    inline glm::vec3 octahedronDecode(const glm::vec2 &f) {
+        // Back to [-1,1]
+        glm::vec2 n = f * 2.0f - 1.0f;
+
+        glm::vec3 v(n.x, n.y, 1.0f - std::abs(n.x) - std::abs(n.y));
+
+        // Unfold
+        float t = glm::max(-v.z, 0.0f);
+        v.x += (v.x >= 0.0f ? 1.0f : -1.0f) * t;
+        v.y += (v.y >= 0.0f ? 1.0f : -1.0f) * t;
+
+        return glm::normalize(v);
     }
 
 } // namespace util

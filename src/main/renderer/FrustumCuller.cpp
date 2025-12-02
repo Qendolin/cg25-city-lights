@@ -12,7 +12,7 @@ FrustumCuller::FrustumCuller(const vk::Device &device) {
     mShaderParamsDescriptorLayout = ShaderParamsDescriptorLayout(device);
 }
 
-BufferRef FrustumCuller::execute(
+UnmanagedBuffer FrustumCuller::execute(
         const vk::Device &device,
         const DescriptorAllocator &desc_alloc,
         const TransientBufferAllocator &buf_alloc,

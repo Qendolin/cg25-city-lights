@@ -49,6 +49,7 @@ void PbrSceneRenderer::execute(
         const DirectionalLight &sun_light,
         std::span<const CascadedShadowCaster> sun_shadow_cascades,
         const ImageViewPairBase &ao_result,
+        const BufferBase &tile_light_indices_buffer,
         const Settings &settings
 ) {
     util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
@@ -68,7 +69,7 @@ void PbrSceneRenderer::execute(
         mCapturedFrustum.reset();
     }
 
-    BufferRef culled_commands = {};
+    UnmanagedBuffer culled_commands = {};
     if (enableCulling) {
         culled_commands = frustum_culler.execute(device, desc_alloc, buf_alloc, cmd_buf, gpu_data, frustum_matrix);
         culled_commands.barrier(cmd_buf, BufferResourceAccess::IndirectCommandRead);
@@ -91,7 +92,7 @@ void PbrSceneRenderer::execute(
         };
     }
 
-    BufferRef shadow_cascade_uniform_buffer = buf_alloc.allocate(
+    UnmanagedBuffer shadow_cascade_uniform_buffer = buf_alloc.allocate(
             sun_shadow_cascades.size_bytes(), vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst
     );
     util::setDebugName(device, shadow_cascade_uniform_buffer.buffer, "shadow_cascades_uniform_buffer");
@@ -116,6 +117,8 @@ void PbrSceneRenderer::execute(
         .ambient = glm::vec4(settings.rendering.ambient, 1.0),
     };
 
+    tile_light_indices_buffer.barrier(cmd_buf, BufferResourceAccess::GraphicsShaderUniformRead);
+
     auto descriptor_set = desc_alloc.allocate(mShaderParamsDescriptorLayout);
     ao_result.image().barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
     device.updateDescriptorSets(
@@ -129,11 +132,17 @@ void PbrSceneRenderer::execute(
              descriptor_set.write(
                      ShaderParamsDescriptorLayout::AmbientOcclusion,
                      {.sampler = *mAoSampler, .imageView = ao_result.view(), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal}
+             ),
+             descriptor_set.write(
+                     ShaderParamsDescriptorLayout::TileLightIndices,
+                     {.buffer = tile_light_indices_buffer, .offset = 0, .range = vk::WholeSize}
              )},
             {}
     );
     for (uint32_t i = 0; i < sun_shadow_cascades.size(); i++) {
-        sun_shadow_cascades[i].framebuffer().depthAttachment.image().barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
+        sun_shadow_cascades[i].framebuffer().depthAttachment.image().barrier(
+                cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal
+        );
         device.updateDescriptorSets(
                 descriptor_set.write(
                         ShaderParamsDescriptorLayout::SunShadowMap,
@@ -179,7 +188,13 @@ void PbrSceneRenderer::execute(
     cmd_buf.bindVertexBuffers(
             0, {*gpu_data.positions, *gpu_data.normals, *gpu_data.tangents, *gpu_data.texcoords}, {0, 0, 0, 0}
     );
-    ShaderPushConstants push_constants = {.flags = {.bits = {.shadowCascades = settings.shadowCascade.visualize, .whiteWorld = settings.rendering.whiteWorld}}};
+    ShaderPushConstants push_constants =
+            {.flags =
+                     {.bits = {
+                          .shadowCascades = settings.shadowCascade.visualize,
+                          .whiteWorld = settings.rendering.whiteWorld,
+                          .lightDensity = settings.rendering.lightDensity,
+                      }}};
     cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eAllGraphics, 0, sizeof(push_constants), &push_constants);
 
     if (enableCulling) {

@@ -45,6 +45,14 @@ constexpr BufferResourceAccess BufferResourceAccess::GraphicsShaderUniformRead =
     .access = vk::AccessFlagBits2::eUniformRead,
 };
 
+BufferResource::BufferResource(BufferResource &&other) noexcept : mPrevAccess(std::exchange(other.mPrevAccess, {})) {}
+
+BufferResource &BufferResource::operator=(BufferResource &&other) noexcept {
+    if (this == &other)
+        return *this;
+    mPrevAccess = std::exchange(other.mPrevAccess, {});
+    return *this;
+}
 
 void BufferResource::barrier(
         vk::Buffer buffer,
@@ -71,4 +79,41 @@ void BufferResource::barrier(
         .pBufferMemoryBarriers = &barrier,
     });
     mPrevAccess = end;
+}
+
+void BufferResource::transfer(
+        vk::Buffer buffer, vk::CommandBuffer src_cmd_buf, vk::CommandBuffer dst_cmd_buf, uint32_t src_queue, uint32_t dst_queue
+) const {
+    vk::BufferMemoryBarrier2 src_barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eNone,
+        .srcAccessMask = {},
+        .dstStageMask = vk::PipelineStageFlagBits2::eNone,
+        .dstAccessMask = {},
+        .srcQueueFamilyIndex = src_queue,
+        .dstQueueFamilyIndex = dst_queue,
+        .buffer = buffer,
+        .offset = 0,
+        .size = vk::WholeSize,
+    };
+
+    src_cmd_buf.pipelineBarrier2({
+        .bufferMemoryBarrierCount = 1,
+        .pBufferMemoryBarriers = &src_barrier,
+    });
+    vk::BufferMemoryBarrier2 dst_barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eNone,
+        .srcAccessMask = {},
+        .dstStageMask = vk::PipelineStageFlagBits2::eNone,
+        .dstAccessMask = {},
+        .srcQueueFamilyIndex = src_queue,
+        .dstQueueFamilyIndex = dst_queue,
+        .buffer = buffer,
+        .offset = 0,
+        .size = vk::WholeSize,
+    };
+
+    dst_cmd_buf.pipelineBarrier2({
+        .bufferMemoryBarrierCount = 1,
+        .pBufferMemoryBarriers = &dst_barrier,
+    });
 }

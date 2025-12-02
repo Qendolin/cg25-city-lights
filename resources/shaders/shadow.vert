@@ -15,8 +15,8 @@ layout (push_constant) uniform ShaderParamConstants
 } cParams;
 
 void main() {
-    Section section = uSectionBuffer.sections[gl_InstanceIndex];
-    Instance instance = uInstanceBuffer.instances[section.instance];
+    Section section = uSectionBuffer[gl_InstanceIndex];
+    Instance instance = uInstanceBuffer[section.instance];
 
     gl_Position = cParams.projectionView * instance.transform * vec4(in_position + in_normal * cParams.extrusionBias, 1.0);
 }

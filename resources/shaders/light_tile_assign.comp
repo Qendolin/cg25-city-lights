@@ -1,0 +1,272 @@
+#version 460 core
+
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
+
+#include "common/descriptors_light.glsl"
+
+#include "common/math.glsl"
+
+#define MAX_FAR_Z 4096.0
+
+layout(local_size_x = LIGHT_TILE_SIZE, local_size_y = LIGHT_TILE_SIZE, local_size_z = 1) in;
+
+layout (set = 1, binding = 0) uniform sampler2D in_depth;
+
+layout (std430, set = 1, binding = 1) writeonly buffer TileLightIndicesBuffer {
+    uint uTileLightIndices[];
+};
+
+layout (push_constant) uniform ShaderParamConstants {
+    mat4 inverseViewMatrix;
+    vec2 inverseProjectionScale;
+    vec2 inverseProjectionOffset;
+    float zNear;
+    float lightRangeFactor;
+} cParams;
+
+float depthToViewZ(float d) {
+    return cParams.zNear / d;
+}
+
+// Helper to reconstruct View Vector at Depth = 1.0
+vec3 getUnitDepthViewVec(vec2 pixelPos) {
+    vec2 ray_xy = fma(pixelPos, cParams.inverseProjectionScale, cParams.inverseProjectionOffset);
+    return vec3(ray_xy.x, -ray_xy.y, -1.0);// View Space usually looks down -Z
+}
+
+bool testSphereVsTaperedCapsule(vec3 sphereCenter, float sphereRadius, vec3 A, vec3 B, float rA, float rB) {
+    // Vector from A to B
+    vec3 segDir = B - A;
+    float segLenSq = dot(segDir, segDir);
+
+    // Project Sphere Center onto the line containing the segment
+    // t is the factor (0 to 1) along the segment
+    float t = dot(sphereCenter - A, segDir) / segLenSq;
+
+    // Handle zero-length capsule
+    if (segLenSq > 1e-6) {
+        t = dot(sphereCenter - A, segDir) / segLenSq;
+        t = clamp(t, 0.0, 1.0);
+    }
+
+    // Clamp t to the segment [0, 1]
+    t = clamp(t, 0.0, 1.0);
+
+    // Find the closest point on the central axis
+    vec3 closestPoint = A + t * segDir;
+
+    // Interpolate the capsule radius at this point
+    float capRadius = mix(rA, rB, t);
+
+    // Check distance squared
+    vec3 distVec = closestPoint - sphereCenter;
+    float distSq = dot(distVec, distVec);
+    float minDist = sphereRadius + capRadius;
+
+    return distSq <= (minDist * minDist);
+}
+
+bool testSpotlightVsTaperedCapsule(
+vec3 lightPos, vec3 lightDir, float lightRange, float lightCosHalfAngle,
+vec3 A, vec3 B, float rA, float rB
+) {
+    // 1. Range Check (Capsule vs Sphere)
+    if (!testSphereVsTaperedCapsule(lightPos, lightRange, A, B, rA, rB)) {
+        return false;
+    }
+
+    // 2. Cone Angle Check (The Quadratic)
+    float sinAlpha = sqrt(1.0 - lightCosHalfAngle * lightCosHalfAngle);
+    float tanAlpha = sinAlpha / lightCosHalfAngle;
+
+    vec3 V = B - A;
+    vec3 X0 = A - lightPos;
+
+    float r0 = rA;
+    float dr = rB - rA;
+
+    float DV  = dot(lightDir, V);
+    float DX0 = dot(lightDir, X0);
+    float VV  = dot(V, V);
+    float XV  = dot(X0, V);
+    float XX  = dot(X0, X0);
+
+    float a_dist = VV - DV * DV;
+    float b_dist = 2.0 * (XV - DX0 * DV);
+    float c_dist = XX - DX0 * DX0;
+
+    float slope  = DV * tanAlpha + dr;
+    float origin = DX0 * tanAlpha + r0;
+
+    float a_cone = slope * slope;
+    float b_cone = 2.0 * slope * origin;
+    float c_cone = origin * origin;
+
+    float A_quad = a_dist - a_cone;
+    float B_quad = b_dist - b_cone;
+    float C_quad = c_dist - c_cone;
+
+    // --- Solving the Inequality ---
+
+    // Case 1: Check Start (t=0)
+    if (C_quad <= 0.0) {
+        // Only return true if we are in the forward cone (RHS >= 0)
+        // At t=0, RHS = origin
+        if (origin >= 0.0) return true;
+    }
+
+    // Case 2: Check End (t=1)
+    if (A_quad + B_quad + C_quad <= 0.0) {
+        // At t=1, RHS = slope + origin
+        if (slope + origin >= 0.0) return true;
+    }
+
+    // Case 3: Check Vertex
+    // Only if parabola opens upwards (A > 0)
+    // AND if the minimum dips below zero
+    if (A_quad > 1e-6) {
+        float t = -B_quad / (2.0 * A_quad);
+
+        if (t > 0.0 && t < 1.0) {
+            float val = A_quad*t*t + B_quad*t + C_quad;
+
+            // If the minimum is <= 0 (intersection exists)
+            // AND the linear term at this point is positive (forward cone)
+            if (val <= 0.0 && (slope * t + origin >= 0.0)) {
+                return true;
+            }
+        }
+    }
+
+    // Note: If the capsule crosses from the backward cone THOUGH the light
+    // to the forward cone, one of the t=0 or t=1 checks above will have
+    // caught it (since one end must be in the forward cone for a crossing
+    // to be relevant, or the sphere check passed).
+
+    return false;
+}
+
+void getTileCapsule(float zMin, float zMax, out vec3 capN, out vec3 capF, out float radN, out float radF)
+{
+    // 1. Calculate Tile Center in Pixels
+    vec2 tileCenterPixels = (vec2(gl_WorkGroupID.xy) * LIGHT_TILE_SIZE) + (LIGHT_TILE_SIZE * 0.5) - 0.5;
+
+    // 2. Get View Space vector for the center of the tile at Z=1
+    // This vector is NOT normalized. It points from (0,0,0) to (x, y, -1).
+    vec3 viewVecAtUnity = getUnitDepthViewVec(tileCenterPixels);
+
+    // 3. Calculate Capsule Endpoints
+    // Since viewVecAtUnity is at Z=1, simply multiplying by zMin/zMax
+    // gives the correct View Space position at that depth.
+    capN = viewVecAtUnity * zMin;
+    capF = viewVecAtUnity * zMax;
+
+    // 4. Calculate Radius Growth Factor
+    // How wide is the tile in View Space at Z=1?
+    // We take the half-diagonal of the tile in pixels and apply the scale.
+    // Since scale.x/y is "units per pixel at Z=1":
+    vec2 tileHalfSizeView = (LIGHT_TILE_SIZE * 0.5) * cParams.inverseProjectionScale;
+    float radiusAtUnity = length(tileHalfSizeView);
+
+    // 5. Calculate Capsule Radii
+    radN = radiusAtUnity * zMin;
+    radF = radiusAtUnity * zMax;
+}
+
+// assume subgroup size is at least 16
+shared uint sTileBoundsMin[16];
+shared uint sTileBoundsMax[16];
+shared uint sTileLightCount;
+
+void main() {
+    ivec2 tile_count = ivec2(gl_NumWorkGroups.xy);
+    ivec2 tile_co = ivec2(gl_WorkGroupID.xy);
+    uint tile_index = tile_co.x + tile_co.y * uint(tile_count);
+    uint light_tile_base_index = tile_index << LIGHT_TILE_BUFFER_STRIDE_SHIFT;
+
+    ivec2 pixel_co = ivec2(gl_GlobalInvocationID.xy);
+
+    float d = texelFetch(in_depth, pixel_co, 0).r;
+
+    // works if d >= 0
+    uint du = floatBitsToUint(d);
+    uint sg_minu = subgroupMin(du);
+    uint sg_maxu = subgroupMax(du);
+
+    if (subgroupElect()) {
+        sTileBoundsMin[gl_SubgroupID] = sg_minu;
+        sTileBoundsMax[gl_SubgroupID] = sg_maxu;
+    }
+
+    barrier();
+
+    if (gl_SubgroupID == 0) {
+        uint local_min = 0x3f800000u;
+        uint local_max = 0x0u;
+
+        if (gl_SubgroupInvocationID < gl_NumSubgroups) {
+            local_min = min(sTileBoundsMin[gl_SubgroupInvocationID], local_min);
+            local_max = max(sTileBoundsMax[gl_SubgroupInvocationID], local_max);
+        }
+
+        uint tile_minu = subgroupMin(local_min);
+        uint tile_maxu = subgroupMax(local_max);
+
+        if (gl_SubgroupInvocationID == 0) {
+            sTileBoundsMin[0] = tile_minu;
+            sTileBoundsMax[0] = tile_maxu;
+
+            // initialize here because it's convenient
+            sTileLightCount = 0;
+        }
+    }
+
+    barrier();
+
+    // min and max are revesed here because we are using reverse-z where 0=far and 1=near
+    float tile_z_min = depthToViewZ(uintBitsToFloat(sTileBoundsMax[0]));
+    float tile_z_max = depthToViewZ(uintBitsToFloat(sTileBoundsMin[0]));
+    tile_z_min = min(tile_z_min, MAX_FAR_Z);
+    tile_z_max = min(tile_z_max, MAX_FAR_Z);
+
+    // My novel (?) idea: Use a tapered capsule as the frustum bounds proxy.
+    // Intersection test is *much* easier and more accurate than using frustum planes.
+
+    vec3 cap_p_n, cap_p_f;
+    float cap_r_n, cap_r_f;
+    getTileCapsule(tile_z_min, tile_z_max, cap_p_n, cap_p_f, cap_r_n, cap_r_f);
+    // transform into world space
+    cap_p_n = (cParams.inverseViewMatrix * vec4(cap_p_n, 1.0)).xyz;
+    cap_p_f = (cParams.inverseViewMatrix * vec4(cap_p_f, 1.0)).xyz;
+
+    for (uint i = gl_LocalInvocationIndex; i < uUberLightBuffer.length(); i += LIGHT_TILE_SIZE_2) {
+        UberLight light = uUberLightBuffer[i];
+
+        bool intersects = false;
+        if (light.coneAngleScale == 0.0) {
+            // is a point light
+            float range = light.range * cParams.lightRangeFactor;
+            intersects = testSphereVsTaperedCapsule(light.position, range, cap_p_n, cap_p_f, cap_r_n, cap_r_f);
+        } else {
+            // is a spot light
+            vec3 dir = octahedronDecode(light.direction);
+            float cos_outer_angle = -light.coneAngleOffset / light.coneAngleScale;
+            float range = light.range * cParams.lightRangeFactor;
+            intersects = testSpotlightVsTaperedCapsule(light.position, dir, range, cos_outer_angle, cap_p_n, cap_p_f, cap_r_n, cap_r_f);
+        }
+
+        if (intersects) {
+            uint sub_index = atomicAdd(sTileLightCount, 1);
+            if (sub_index < LIGHT_TILE_MAX_LIGHTS) {
+                uTileLightIndices[light_tile_base_index + sub_index + 1] = i;
+            }
+        }
+    }
+
+    barrier();
+
+    if (gl_LocalInvocationIndex == 0) {
+        uTileLightIndices[light_tile_base_index] = min(sTileLightCount, LIGHT_TILE_MAX_LIGHTS);
+    }
+}

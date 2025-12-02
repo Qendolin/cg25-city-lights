@@ -5,6 +5,8 @@
 layout (early_fragment_tests) in;
 
 #include "pbr_common.glsl"
+#include "common/math.glsl"
+#include "colormap/jet.glsl"
 
 layout (location = 0) in vec3 in_position_ws;
 layout (location = 1) in mat3 in_tbn;
@@ -17,12 +19,17 @@ layout (location = 0) out vec4 out_color;
 layout (set = 1, binding = 1) uniform sampler2DShadow uSunShadowMaps[SHADOW_CASCADE_COUNT];
 layout (set = 1, binding = 3) uniform sampler2D uAmbientOcclusion;
 
+layout (std430, set = 1, binding = 4) readonly buffer TileLightIndicesBuffer {
+    uint uTileLightIndices[];
+};
+
 const float PI = 3.14159265359;
 const float INV_PI = 1.0 / 3.14159265359;
-const vec3 LIGHT_EPSILON = vec3(1.0 / 255.0);
+const vec3 LIGHT_EPSILON = vec3(0.001);
 const uint NO_TEXTURE = 0xffff;
 const uint FLAG_SHADOW_CASCADES = 0x1;
 const uint FLAG_WHITE_WORLD = 0x2;
+const uint FLAG_LIGHT_DENSITY = 0x4;
 
 const vec3 CASCADE_DEBUG_COLORS[6] = {
 vec3(1.0, 0.0, 0.0),
@@ -34,14 +41,14 @@ vec3(1.0, 1.0, 1.0)
 };
 
 const vec2 POISSON[9] = vec2[](
-vec2(-0.75, -0.25), vec2(-0.25, -0.75), vec2( 0.25, -0.5),
-vec2(-0.5,   0.25), vec2( 0.0,   0.0 ), vec2( 0.5,   0.25),
-vec2(-0.25,  0.5 ), vec2( 0.75,  0.25), vec2( 0.25,  0.75)
+vec2(-0.75, -0.25), vec2(-0.25, -0.75), vec2(0.25, -0.5),
+vec2(-0.5, 0.25), vec2(0.0, 0.0), vec2(0.5, 0.25),
+vec2(-0.25, 0.5), vec2(0.75, 0.25), vec2(0.25, 0.75)
 );
 
 void unpackUint16(in uint packed, out uint lower, out uint upper) {
-    lower = packed & 0xffff;
-    upper = (packed >> 16) & 0xffff;
+    lower = packed & 0xffffu;
+    upper = (packed >> 16) & 0xffffu;
 }
 
 vec3 transformNormal(mat3 tbn, vec3 tangent_normal) {
@@ -99,22 +106,22 @@ float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
 
 vec3 fresnelSchlick(float cos_theta, vec3 F0)
 {
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+    return F0 + (1.0 - F0) * pow(saturate(1.0 - cos_theta), 5.0);
 }
 
 vec3 fresnelSchlickRoughness(float cos_theta, vec3 F0, float roughness)
 {
-    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(saturate(1.0 - cos_theta), 5.0);
 }
 
 // https://advances.realtimerendering.com/other/2016/naughty_dog/index.html
 float microShadowNaughtyDog(float ao, float n_dot_l) {
-    float aperture = 2.0 * ao * ao; // They use 2 * ao^2, but linear looks better imo
-    return clamp(n_dot_l + aperture - 1.0, 0.0, 1.0);
+    float aperture = 2.0 * ao * ao;// They use 2 * ao^2, but linear looks better imo
+    return saturate(n_dot_l + aperture - 1.0);
 }
 
 float sampleShadowGpuGems(vec3 P_shadow_ndc, float n_dot_l, int index) {
-    ShadowCascade cascade = uShadowCascades.cascades[index];
+    ShadowCascade cascade = uShadowCascades[index];
     vec2 texel_size = vec2(1.0) / textureSize(uSunShadowMaps[index], 0).xy;
     // z is seperate because we are using 0..1 depth
     vec3 shadow_uvz = vec3(P_shadow_ndc.xy * 0.5 + 0.5, P_shadow_ndc.z);
@@ -123,8 +130,8 @@ float sampleShadowGpuGems(vec3 P_shadow_ndc, float n_dot_l, int index) {
     bias = clamp(bias, 0.0, cascade.sampleBiasClamp * texel_size.x);
 
     // GPU Gems 1 / Chapter 11.4
-    vec2 offset = vec2(fract(gl_FragCoord.x * 0.5) > 0.25, fract(gl_FragCoord.y * 0.5) > 0.25); // mod
-    offset.y += offset.x; // y ^= x in floating point
+    vec2 offset = vec2(fract(gl_FragCoord.x * 0.5) > 0.25, fract(gl_FragCoord.y * 0.5) > 0.25);// mod
+    offset.y += offset.x;// y ^= x in floating point
     if (offset.y > 1.1) offset.y = 0;
     float shadow = 0.0;
     // + bias instead of - bias becase we are using reversed depth and the GL_GEQUAL compare mode.
@@ -139,12 +146,12 @@ float sampleShadowGpuGems(vec3 P_shadow_ndc, float n_dot_l, int index) {
 
 mat2 rotate(float a) {
     float s = sin(a), c = cos(a);
-    return mat2(c,-s,s,c);
+    return mat2(c, -s, s, c);
 }
 
 // Higher quality than GpuGems
 float sampleShadowPoisson(vec3 P_shadow_ndc, float n_dot_l, int index, float distance_vs) {
-    ShadowCascade cascade = uShadowCascades.cascades[index];
+    ShadowCascade cascade = uShadowCascades[index];
     vec2 texel_size = vec2(1.0f) / textureSize(uSunShadowMaps[index], 0).xy;
     // z is seperate because we are using 0..1 depth
     vec3 shadow_uvz = vec3(P_shadow_ndc.xy * 0.5f + 0.5f, P_shadow_ndc.z);
@@ -154,13 +161,13 @@ float sampleShadowPoisson(vec3 P_shadow_ndc, float n_dot_l, int index, float dis
     float bias = cascade.sampleBias * texel_size.x * sqrt(1.0f - n_dot_l * n_dot_l) / n_dot_l;
     bias = clamp(bias, 0.0f, cascade.sampleBiasClamp * texel_size.x);
 
-    float split = uShadowCascades.cascades[index].splitDistance;
+    float split = uShadowCascades[index].splitDistance;
     float blend_start = split * 0.5f;
     float blend_end   = split;
-    float kernel_scale = 1.0f + 1.0f * clamp((distance_vs - blend_start) / (blend_end - blend_start), 0.0f, 1.0f);
+    float kernel_scale = 1.0f + 1.0f * saturate((distance_vs - blend_start) / (blend_end - blend_start));
 
     float result = 0.0f;
-    for(int i = 0; i < 9; ++i) {
+    for (int i = 0; i < 9; ++i) {
         vec2 offset = kernel_scale * POISSON[i] * texel_size * 2.0f;
         result += texture(uSunShadowMaps[index], vec3(shadow_uvz.xy + offset, shadow_uvz.z + bias));
     }
@@ -197,7 +204,7 @@ vec3 bsdf(vec3 light_dir, vec3 view_dir, vec3 texture_normal, vec3 geometry_norm
     radiance *= micro_shadow;
 
     vec3 numerator = NDF * G * F;
-    float denominator = 4.0 * n_dot_v * n_dot_l + 1e-5; // + 1e-5 to prevent divide by zero
+    float denominator = 4.0 * n_dot_v * n_dot_l + 1e-5;// + 1e-5 to prevent divide by zero
     vec3 specular = numerator / denominator;
 
     // kS is equal to Fresnel
@@ -215,15 +222,8 @@ vec3 bsdf(vec3 light_dir, vec3 view_dir, vec3 texture_normal, vec3 geometry_norm
     return (kD * p.albedo.rgb * INV_PI + specular) * radiance * n_dot_l;
 }
 
-// https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_lights_punctual#:~:text=Reference%20code
-float spotFalloff(in SpotLight light, vec3 normalized_light_vector) {
-    float cd = dot(light.direction.xyz, normalized_light_vector);
-    float angularAttenuation = clamp(cd * light.coneAngleScale + light.coneAngleOffset, 0.0, 1.0);
-    return angularAttenuation * angularAttenuation;
-}
-
 void main() {
-    Material material = uMaterialBuffer.materials[in_material];
+    Material material = uMaterialBuffer[in_material];
     BSDFParams bsdf_params;
     uint albedoTextureIndex, normalTextureIndex;
     unpackUint16(material.packedImageIndices0, albedoTextureIndex, normalTextureIndex);
@@ -253,7 +253,8 @@ void main() {
     if (normalTextureIndex != NO_TEXTURE) {
         normal_ts.xy = texture(uTextures[nonuniformEXT(normalTextureIndex)], in_tex_coord).xy * 2.0 - 1.0;
         normal_ts.z = sqrt(1 - normal_ts.x * normal_ts.x - normal_ts.y * normal_ts.y);
-        normal_ts = normalize(normal_ts * vec3(material.rmnFactors.z, material.rmnFactors.z, 1.0)); // increase intensity
+        // increase intensity
+        normal_ts = normalize(normal_ts * vec3(material.rmnFactors.z, material.rmnFactors.z, 1.0));
         bsdf_params.roughness = adjustRoughness(normal_ts, bsdf_params.roughness);
     }
 
@@ -269,7 +270,7 @@ void main() {
 
     int shadow_index = SHADOW_CASCADE_COUNT-1;
     for (int i = SHADOW_CASCADE_COUNT - 1; i >= 0; i--) {
-        if (distance_vs < uShadowCascades.cascades[i].splitDistance) {
+        if (distance_vs < uShadowCascades[i].splitDistance) {
             shadow_index = i;
         }
     }
@@ -285,28 +286,34 @@ void main() {
         }
     }
 
-    // spot light
-    for (int i = 0; i < uSpotLightBuffer.lights.length(); i++) {
-        SpotLight light = uSpotLightBuffer.lights[i];
-        vec3 light_vec = light.position.xyz - position;
-        float d = length(light_vec);
-        vec3 light_dir = light_vec / d;
-        vec3 radiance = light.radiance.xyz / (d * d);
-        radiance *= spotFalloff(light, -light_dir);
-        if (any(greaterThan(radiance, LIGHT_EPSILON))) {
-            Lo += bsdf(light_dir, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
-        }
-    }
+    uvec2 light_tile_co = uvec2(gl_FragCoord.x, gl_FragCoord.y) >> LIGHT_TILE_SHIFT;
+    uint light_tiles_x = (uint(uParams.viewport.x) + LIGHT_TILE_SIZE - 1) >> LIGHT_TILE_SHIFT;// basically ceil division
+    uint light_tile_index = light_tile_co.x + light_tile_co.y * light_tiles_x;
+    uint light_tile_base_index = light_tile_index << LIGHT_TILE_BUFFER_STRIDE_SHIFT;
+    uint light_tile_count = uTileLightIndices[light_tile_base_index];
 
-    // point light
-    for (int i = 0; i < uPointLightBuffer.lights.length(); i++) {
-        PointLight light = uPointLightBuffer.lights[i];
-        vec3 light_vec = light.position.xyz - position;
-        float d = length(light_vec);
-        vec3 light_dir = light_vec / d;
-        vec3 radiance = light.radiance.xyz / (d * d);
-        if (any(greaterThan(radiance, LIGHT_EPSILON))) {
-            Lo += bsdf(light_dir, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
+    // spot and point lights
+    for (int i = 0; i < light_tile_count; i++) {
+        uint light_index = uTileLightIndices[light_tile_base_index + 1 + i];
+        UberLight light = uUberLightBuffer[light_index];
+        vec3 to_light_vec = light.position - position;
+        float dist = length(to_light_vec);
+        vec3 to_light_dir = to_light_vec / dist;
+
+        // inverse square law
+        float dist_attenuation = 1.0 / (dist * dist + light.pointSize);
+
+        // for point lights scale is 0 and offset is 1 which allows uniform control flow
+        vec3 light_dir = octahedronDecode(light.direction);
+        float spot_cos = dot(-light_dir, to_light_dir);
+        float spot_attenuation = saturate(spot_cos * light.coneAngleScale + light.coneAngleOffset);
+        spot_attenuation *= spot_attenuation;
+
+        vec3 radiance = light.radiance * dist_attenuation * spot_attenuation - LIGHT_EPSILON;
+
+        // hoping the gpu can skip the expensive bsdf call
+        if (any(greaterThan(radiance, vec3(0.0f)))) {
+            Lo += bsdf(to_light_dir, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
         }
     }
 
@@ -323,5 +330,16 @@ void main() {
 
     if ((cParams.flags & FLAG_SHADOW_CASCADES) != 0x0) {
         out_color.rgb = mix(out_color.rgb, CASCADE_DEBUG_COLORS[shadow_index], 0.3f);
+    }
+
+    if ((cParams.flags & FLAG_LIGHT_DENSITY) != 0x0) {
+        float density = 1.0 - float(light_tile_count) / LIGHT_TILE_MAX_LIGHTS;
+        // make small values a bit more apparent
+        density *= density;
+        density = 1.0 - density;
+        if(density > 0.0) {
+            vec4 jet_color = jet(density);
+            out_color.rgb = mix(out_color.rgb, jet_color.rgb, 0.3f);
+        }
     }
 }

@@ -8,9 +8,9 @@ struct Section {
 };
 
 layout(std430, set = 0, binding = 0) readonly buffer SectionBuffer {
-    Section sections[];
-} uSectionBuffer;
+    Section uSectionBuffer[];
+};
 
 layout(std430, set = 0, binding = 1) readonly buffer InstanceBuffer {
-    Instance instances[];
-} uInstanceBuffer;
+    Instance uInstanceBuffer[];
+};

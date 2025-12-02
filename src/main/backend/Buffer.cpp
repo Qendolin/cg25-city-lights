@@ -5,8 +5,22 @@
 #include "../util/math.h"
 
 
+void BufferBase::barrier(const vk::CommandBuffer &cmd_buf, const BufferResourceAccess &begin, const BufferResourceAccess &end) const {
+    BufferResource::barrier(*this, 0, vk::WholeSize, cmd_buf, begin, end);
+}
+
+void BufferBase::barrier(const vk::CommandBuffer &cmd_buf, const BufferResourceAccess &single) const {
+    barrier(cmd_buf, single, single);
+}
+
+void BufferBase::transfer(
+        vk::CommandBuffer src_cmd_buf, vk::CommandBuffer dst_cmd_buf, uint32_t src_queue, uint32_t dst_queue
+) const {
+    BufferResource::transfer(*this, src_cmd_buf, dst_cmd_buf, src_queue, dst_queue);
+}
+
 Buffer::Buffer(vma::UniqueBuffer &&buffer, vma::UniqueAllocation &&allocation, size_t size)
-    : size(size), buffer(*buffer), mBuffer(std::move(buffer)), mAllocation(std::move(allocation)) {}
+    : BufferBase(size), buffer(std::move(buffer)), allocation(std::move(allocation)) {}
 
 Buffer Buffer::create(const vma::Allocator &allocator, const BufferCreateInfo &create_info) {
     auto [buffer, alloc] = allocator.createBufferUnique(
@@ -22,30 +36,6 @@ Buffer Buffer::create(const vma::Allocator &allocator, const BufferCreateInfo &c
             }
     );
     return Buffer(std::move(buffer), std::move(alloc), create_info.size);
-}
-
-void Buffer::barrier(const vk::CommandBuffer &cmd_buf, const BufferResourceAccess &begin, const BufferResourceAccess &end) {
-    BufferResource::barrier(*mBuffer, 0, vk::WholeSize, cmd_buf, begin, end);
-}
-
-void Buffer::barrier(const vk::CommandBuffer &cmd_buf, const BufferResourceAccess &single) {
-    barrier(cmd_buf, single, single);
-}
-
-void Buffer::transfer(vk::CommandBuffer src_cmd_buf, vk::CommandBuffer dst_cmd_buf, uint32_t src_queue, uint32_t dst_queue) {
-    BufferResource::transfer(*mBuffer, src_cmd_buf, dst_cmd_buf, src_queue, dst_queue);
-}
-
-void BufferRef::barrier(const vk::CommandBuffer &cmd_buf, const BufferResourceAccess &begin, const BufferResourceAccess &end) {
-    BufferResource::barrier(buffer, 0, vk::WholeSize, cmd_buf, begin, end);
-}
-
-void BufferRef::barrier(const vk::CommandBuffer &cmd_buf, const BufferResourceAccess &single) {
-    barrier(cmd_buf, single, single);
-}
-
-void BufferRef::transfer(vk::CommandBuffer src_cmd_buf, vk::CommandBuffer dst_cmd_buf, uint32_t src_queue, uint32_t dst_queue) {
-    BufferResource::transfer(buffer, src_cmd_buf, dst_cmd_buf, src_queue, dst_queue);
 }
 
 struct TransientBufferAllocatorImpl {
@@ -64,7 +54,7 @@ struct TransientBufferAllocatorImpl {
     };
     std::vector<Dedicated> mDedicated;
 
-    TransientBufferAllocatorImpl(const vk::Device& device, const vma::Allocator& allocator, vk::DeviceSize capacity)
+    TransientBufferAllocatorImpl(const vk::Device &device, const vma::Allocator &allocator, vk::DeviceSize capacity)
         : mDevice(device), mAllocator(allocator), mTotalSize(capacity) {
 
         vk::BufferCreateInfo bufInfo = {};
@@ -92,7 +82,7 @@ struct TransientBufferAllocatorImpl {
     }
 };
 
-BufferRef TransientBufferAllocator::allocate(vk::DeviceSize size, vk::BufferUsageFlags usage) const {
+UnmanagedBuffer TransientBufferAllocator::allocate(vk::DeviceSize size, vk::BufferUsageFlags usage) const {
     assert(mImpl);
 
     vk::DeviceSize align = 256;
@@ -115,7 +105,7 @@ BufferRef TransientBufferAllocator::allocate(vk::DeviceSize size, vk::BufferUsag
         auto [buf, alloc] = mImpl->mAllocator.createBuffer(bufInfo, allocInfo);
         mImpl->mDedicated.push_back({buf, alloc});
         util::setDebugName(mImpl->mDevice, buf, "transient_buffer_dedicated_buffer");
-        return BufferRef(buf, size);
+        return UnmanagedBuffer(buf, size);
     }
 
     // Create a lightweight alias into the pre-allocated backing buffer
@@ -128,7 +118,7 @@ BufferRef TransientBufferAllocator::allocate(vk::DeviceSize size, vk::BufferUsag
 
     mImpl->mAliases.push_back(alias);
     mImpl->mCurrentOffset = alignedOffset + size;
-    return BufferRef(alias, size);
+    return UnmanagedBuffer(alias, size);
 }
 
 void TransientBufferAllocator::reset() {
@@ -146,7 +136,9 @@ void TransientBufferAllocator::reset() {
     mImpl->mDedicated.clear();
 }
 
-UniqueTransientBufferAllocator::UniqueTransientBufferAllocator(const vk::Device& device, const vma::Allocator& allocator, vk::DeviceSize capacity) {
+UniqueTransientBufferAllocator::UniqueTransientBufferAllocator(
+        const vk::Device &device, const vma::Allocator &allocator, vk::DeviceSize capacity
+) {
     mImpl = new TransientBufferAllocatorImpl(device, allocator, capacity);
 }
 

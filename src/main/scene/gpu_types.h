@@ -40,20 +40,29 @@ struct alignas(16) MaterialBlock {
     glm::uint pad1;
 };
 
+struct alignas(16) UberLightBlock {
+    glm::vec3 position = {};
+    float range = 0.0f;
+    glm::vec3 radiance = {};
+    float coneAngleScale = 0.0f;
+    glm::vec2 direction = {};
+    float pointSize = 0.0f;
+    float coneAngleOffset = 1.0f;
 
-struct alignas(16) PointLightBlock {
-    glm::vec4 radiance;
-    glm::vec4 position;
-};
+    static float calculateLightRange(glm::vec3 radiance, float pointSize, float epsilon = 0.001f) {
+        float intensity = std::max({radiance.x, radiance.y, radiance.z});
 
-struct alignas(16) SpotLightBlock {
-    glm::vec4 radiance;
-    glm::vec4 position;
-    glm::vec4 direction;
-    float coneAngleScale;
-    float coneAngleOffset;
-    float pad0;
-    float pad1;
+        float term = (intensity / epsilon) - pointSize;
+        if (term <= 0.0f) {
+            return 0.0f;
+        }
+        return std::sqrt(term);
+    }
+
+
+    void updateRange(float epsilon = 0.001f) {
+        range = calculateLightRange(radiance, pointSize, epsilon);
+    }
 };
 
 namespace scene {
@@ -68,8 +77,7 @@ namespace scene {
         static constexpr CombinedImageSamplerBinding ImageSamplers{
             3, vk::ShaderStageFlagBits::eAllGraphics, 65536, vk::DescriptorBindingFlagBits::ePartiallyBound
         };
-        static constexpr StorageBufferBinding PointLightBuffer{4, vk::ShaderStageFlagBits::eAllGraphics};
-        static constexpr StorageBufferBinding SpotLightBuffer{5, vk::ShaderStageFlagBits::eAllGraphics};
+        static constexpr StorageBufferBinding UberLightBuffer{4, vk::ShaderStageFlagBits::eAllGraphics | vk::ShaderStageFlagBits::eCompute};
         static constexpr StorageBufferBinding BoundingBoxBuffer{
             6, vk::ShaderStageFlagBits::eAllGraphics | vk::ShaderStageFlagBits::eCompute
         };
@@ -77,8 +85,7 @@ namespace scene {
         SceneDescriptorLayout() = default;
 
         explicit SceneDescriptorLayout(const vk::Device &device) {
-            create(device, {}, SectionBuffer, InstanceBuffer, MaterialBuffer, ImageSamplers, PointLightBuffer,
-                   SpotLightBuffer, BoundingBoxBuffer);
+            create(device, {}, SectionBuffer, InstanceBuffer, MaterialBuffer, ImageSamplers, UberLightBuffer, BoundingBoxBuffer);
             util::setDebugName(device, vk::DescriptorSetLayout(*this), "scene_descriptor_layout");
         }
     };

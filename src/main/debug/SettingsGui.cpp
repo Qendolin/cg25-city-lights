@@ -25,6 +25,7 @@ void SettingsGui::draw(Settings &settings) {
     }
 
     if (CollapsingHeader("Shadows")) {
+        Checkbox("Update", &settings.shadowCascade.update);
         Checkbox("Visualize", &settings.shadowCascade.visualize);
         SliderFloat("Split Lambda", &settings.shadowCascade.lambda, 0.0f, 1.0f);
         DragFloat("Distance", &settings.shadowCascade.distance);
@@ -71,6 +72,8 @@ void SettingsGui::draw(Settings &settings) {
         Checkbox("Frustum Culling", &settings.rendering.enableFrustumCulling);
         Checkbox("Pause", &settings.rendering.pauseFrustumCulling);
         Checkbox("White World", &settings.rendering.whiteWorld);
+        Checkbox("Light Density", &settings.rendering.lightDensity);
+        SliderFloat("Light Range Factor", &settings.rendering.lightRangeFactor, 0.0f, 1.0f);
         PopID();
     }
 
@@ -85,6 +88,12 @@ void SettingsGui::draw(Settings &settings) {
         SliderInt("Slices", &settings.ssao.slices, 1, 16);
         SliderInt("Samples", &settings.ssao.samples, 1, 32);
 
+        PopID();
+    }
+
+    if (CollapsingHeader("Blob")) {
+        PushID("blob");
+        Checkbox("Render", &settings.blob.render);
         PopID();
     }
 

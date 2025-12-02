@@ -41,7 +41,7 @@ void DepthPrePassRenderer::execute(
         mCapturedFrustum.reset();
     }
 
-    BufferRef culled_commands = {};
+    UnmanagedBuffer culled_commands = {};
     if (enableCulling) {
         culled_commands = frustum_culler.execute(device, desc_alloc, buf_alloc, cmd_buf, gpu_data, frustum_matrix);
         culled_commands.barrier(cmd_buf, BufferResourceAccess::IndirectCommandRead);

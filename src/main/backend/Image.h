@@ -222,6 +222,7 @@ struct ImageBase : protected ImageResource {
 
     ImageBase() = default;
     explicit ImageBase(const ImageInfo &info) : info(info) {} // NOLINT(*-explicit-constructor)
+    ~ImageBase() override = default;
 
     ImageBase(ImageBase &&other) noexcept = default;
     ImageBase &operator=(ImageBase &&other) noexcept = default;

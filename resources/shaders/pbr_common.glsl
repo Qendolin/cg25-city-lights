@@ -2,7 +2,7 @@
 #include "common/descriptors_mat.glsl"
 #include "common/descriptors_light.glsl"
 
-const int SHADOW_CASCADE_COUNT = 5;
+#define SHADOW_CASCADE_COUNT 5
 
 struct ShadowCascade {
     mat4 projectionView;
@@ -22,8 +22,8 @@ layout (std140, set = 1, binding = 0) uniform SceneUniforms {
 } uParams;
 
 layout (std140, set = 1, binding = 2) uniform ShadowCascadesUniforms {
-    ShadowCascade[SHADOW_CASCADE_COUNT] cascades;
-} uShadowCascades;
+    ShadowCascade[SHADOW_CASCADE_COUNT] uShadowCascades;
+};
 
 layout (push_constant) uniform ShaderPushConstants
 {

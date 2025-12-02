@@ -33,8 +33,8 @@ vec3 shadowSamplePosition(in mat4 projectionView, vec3 position, vec3 normal, fl
 }
 
 void main() {
-    Section section = uSectionBuffer.sections[gl_InstanceIndex];
-    Instance instance = uInstanceBuffer.instances[section.instance];
+    Section section = uSectionBuffer[gl_InstanceIndex];
+    Instance instance = uInstanceBuffer[section.instance];
 
     vec4 position_ws = instance.transform * vec4(in_position, 1.0);
     gl_Position = uParams.projection * uParams.view * position_ws;
@@ -52,9 +52,9 @@ void main() {
 
     for(int i = 0; i < SHADOW_CASCADE_COUNT; i++) {
         out_shadow_position_ndc[i] = shadowSamplePosition(
-            uShadowCascades.cascades[i].projectionView,
+            uShadowCascades[i].projectionView,
             out_position_ws,
             N,
-            uShadowCascades.cascades[i].normalBias);
+            uShadowCascades[i].normalBias);
     }
 }

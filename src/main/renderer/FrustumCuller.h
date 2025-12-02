@@ -56,7 +56,7 @@ public:
     /// <param name="gpu_data">The scene's GPU data, containing the input draw commands.</param>
     /// <param name="view_projection_matrix">The view-projection matrix of the camera, used to extract frustum planes.</param>
     /// <returns>A buffer containing the culled draw commands. The draw command count is at offset `buffer_size - 32`.</returns>
-    BufferRef execute(
+    UnmanagedBuffer execute(
             const vk::Device &device,
             const DescriptorAllocator &desc_alloc,
             const TransientBufferAllocator &buf_alloc,

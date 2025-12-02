@@ -4,6 +4,7 @@
 #include "debug/Annotation.h"
 #include "entity/ShadowCaster.h"
 #include "util/globals.h"
+#include "util/math.h"
 
 RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mImguiBackend = std::make_unique<ImGuiBackend>(
@@ -29,6 +30,7 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mFrustumCuller = std::make_unique<FrustumCuller>(context->device());
     mSSAORenderer = std::make_unique<SSAORenderer>(context->device(), context->allocator(), context->mainQueue);
     mDepthPrePassRenderer = std::make_unique<DepthPrePassRenderer>();
+    mLightRenderer = std::make_unique<LightRenderer>(context->device());
 }
 
 void RenderSystem::recreate(const Settings &settings) {
@@ -108,6 +110,7 @@ void RenderSystem::recreate(const Settings &settings) {
     mFrustumCuller->recreate(device, mShaderLoader);
     mSSAORenderer->recreate(device, mShaderLoader, settings.ssao.slices, settings.ssao.samples);
     mDepthPrePassRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
+    mLightRenderer->recreate(device, mShaderLoader);
 
     // These have to match the max frames in flight count but an be more
     mFramesInFlightSyncObjects.create(util::MaxFramesInFlight, [&] {
@@ -141,6 +144,21 @@ void RenderSystem::recreate(const Settings &settings) {
     mTransientBufferAllocators.create(swapchain.imageCount(), [&] {
         return UniqueTransientBufferAllocator(mContext->device(), mContext->allocator());
     });
+
+    size_t light_tile_stride = 256; // has to match shader
+    size_t tile_light_indices_size = light_tile_stride * util::divCeil(screen_extent.width, 16u) *
+                                     util::divCeil(screen_extent.height, 16u);
+    mTileLightIndicesBuffers.create(util::MaxFramesInFlight, [&] {
+        auto &&buf = Buffer::create(
+                mContext->allocator(),
+                {
+                    .size = tile_light_indices_size * sizeof(glm::uint),
+                    .usage = vk::BufferUsageFlagBits::eStorageBuffer,
+                }
+        );
+        util::setDebugName(device, *buf.buffer, "light_tile_indices");
+        return buf;
+    });
 }
 
 void RenderSystem::draw(const RenderData &rd) {
@@ -170,10 +188,19 @@ void RenderSystem::draw(const RenderData &rd) {
             mHdrFramebuffer.depthAttachment, mSsaoIntermediaryImage, mSsaoResultImage
     );
 
+    dbg_cmd_label_region.swap("Light Pass");
+    mLightRenderer->lightRangeFactor = rd.settings.rendering.lightRangeFactor;
+    mLightRenderer->execute(
+            mContext->device(), desc_alloc, cmd_buf, rd.gltfScene, rd.camera.projectionMatrix(), rd.camera.viewMatrix(),
+            rd.camera.nearPlane(), mHdrFramebuffer.depthAttachment, mTileLightIndicesBuffers.next()
+    );
+
     // Shadow pass
-    dbg_cmd_label_region.swap("Shadow Pass");
-    for (auto &caster: rd.sunShadowCasterCascade.cascades()) {
-        mShadowRenderer->execute(mContext->device(), desc_alloc, buf_alloc, cmd_buf, rd.gltfScene, *mFrustumCuller, caster);
+    if (rd.settings.shadowCascade.update) {
+        dbg_cmd_label_region.swap("Shadow Pass");
+        for (auto &caster: rd.sunShadowCasterCascade.cascades()) {
+            mShadowRenderer->execute(mContext->device(), desc_alloc, buf_alloc, cmd_buf, rd.gltfScene, *mFrustumCuller, caster);
+        }
     }
 
     // Main render pass
@@ -181,13 +208,15 @@ void RenderSystem::draw(const RenderData &rd) {
     mPbrSceneRenderer->enableCulling = rd.settings.rendering.enableFrustumCulling;
     mPbrSceneRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
     mPbrSceneRenderer->execute(
-            mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene,
-            *mFrustumCuller, rd.sunLight, rd.sunShadowCasterCascade.cascades(), mSsaoResultImage, rd.settings
+            mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene, *mFrustumCuller,
+            rd.sunLight, rd.sunShadowCasterCascade.cascades(), mSsaoResultImage, mTileLightIndicesBuffers.get(), rd.settings
     );
 
     // Blob render pass
-    dbg_cmd_label_region.swap("Blob Pass");
-    mBlobRenderer->execute(mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.blobModel);
+    if (rd.settings.blob.render) {
+        dbg_cmd_label_region.swap("Blob Pass");
+        mBlobRenderer->execute(mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.blobModel);
+    }
 
     // Skybox render pass (render late to reduce overdraw)
     dbg_cmd_label_region.swap("Skybox Pass");

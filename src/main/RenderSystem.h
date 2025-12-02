@@ -10,6 +10,7 @@
 #include "renderer/BlobRenderer.h"
 #include "renderer/DepthPrePassRenderer.h"
 #include "renderer/FinalizeRenderer.h"
+#include "renderer/LightRenderer.h"
 #include "renderer/PbrSceneRenderer.h"
 #include "renderer/SSAORenderer.h"
 #include "renderer/ShadowRenderer.h"
@@ -56,6 +57,7 @@ class RenderSystem {
     ImageWithView mHdrDepthAttachment;
     ImageWithView mSsaoIntermediaryImage;
     ImageWithView mSsaoResultImage;
+    util::PerFrame<Buffer> mTileLightIndicesBuffers;
 
     std::unique_ptr<ImGuiBackend> mImguiBackend;
 
@@ -67,6 +69,7 @@ class RenderSystem {
     std::unique_ptr<FrustumCuller> mFrustumCuller;
     std::unique_ptr<SSAORenderer> mSSAORenderer;
     std::unique_ptr<DepthPrePassRenderer> mDepthPrePassRenderer;
+    std::unique_ptr<LightRenderer> mLightRenderer;
 
 
 public:

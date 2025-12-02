@@ -7,14 +7,8 @@
 
 #include "../backend/Descriptors.h"
 #include "../backend/Image.h"
-#include "../entity/Light.h"
 #include "../util/math.h"
 #include "gpu_types.h"
-
-namespace gltf {
-    struct Scene;
-    class Loader;
-}
 
 namespace scene {
     struct GpuData {
@@ -52,10 +46,8 @@ namespace scene {
         vma::UniqueBuffer materials;
         vma::UniqueAllocation materialsAlloc;
 
-        vma::UniqueBuffer pointLights;
-        vma::UniqueAllocation pointLightsAlloc;
-        vma::UniqueBuffer spotLights;
-        vma::UniqueAllocation spotLightsAlloc;
+        vma::UniqueBuffer uberLights;
+        vma::UniqueAllocation uberLightsAlloc;
 
         SceneDescriptorLayout sceneDescriptorLayout = {};
         vk::UniqueDescriptorPool sceneDescriptorPool = {};

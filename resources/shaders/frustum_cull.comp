@@ -88,8 +88,8 @@ bool isObbOutsidePlane(vec3 center, vec3 extent, vec3 planeNormal, float planeDi
 
 bool checkVisibility(uint id) {
     BoundingBox box = uBoundingBoxBuffer.boxes[id];
-    Section section = uSectionBuffer.sections[id];
-    Instance instance = uInstanceBuffer.instances[section.instance];
+    Section section = uSectionBuffer[id];
+    Instance instance = uInstanceBuffer[section.instance];
     mat4 model = instance.transform;
 
     // Calculate Local Center and Extents

@@ -8,7 +8,7 @@ struct Material {
 };
 
 layout (std430, set = 0, binding = 2) readonly buffer MaterialBuffer {
-    Material materials[];
-} uMaterialBuffer;
+    Material uMaterialBuffer[];
+};
 
 layout (set = 0, binding = 3) uniform sampler2D uTextures[];

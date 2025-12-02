@@ -7,6 +7,10 @@
 #include "Scene.h"
 
 
+namespace gltf {
+    struct Scene;
+    class Loader;
+}
 namespace scene {
     class Loader {
     public:

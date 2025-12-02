@@ -74,6 +74,8 @@ std::vector<uint32_t> ShaderCompiler::compile(
         const std::filesystem::path &source_path, vk::ShaderStageFlagBits stage, ShaderCompileOptions opt
 ) const {
     shaderc::CompileOptions options = {};
+    options.SetTargetSpirv(shaderc_spirv_version_1_4);
+    options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
 
     if (opt.debug)
         options.SetGenerateDebugInfo();

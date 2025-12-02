@@ -13,8 +13,8 @@ layout (push_constant) uniform ShaderPushConstants
 } cParams;
 
 void main() {
-    Section section = uSectionBuffer.sections[gl_InstanceIndex];
-    Instance instance = uInstanceBuffer.instances[section.instance];
+    Section section = uSectionBuffer[gl_InstanceIndex];
+    Instance instance = uInstanceBuffer[section.instance];
 
     vec4 position_ws = instance.transform * vec4(in_position, 1.0);
     gl_Position = cParams.projection * cParams.view * position_ws;

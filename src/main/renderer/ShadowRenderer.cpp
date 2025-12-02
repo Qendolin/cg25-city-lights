@@ -27,7 +27,7 @@ void ShadowRenderer::execute(
     util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Culling");
 
     glm::mat4 frustum_matrix = shadow_caster.projectionMatrix * shadow_caster.viewMatrix;
-    BufferRef culled_commands = frustum_culler.execute(device, desc_alloc, buf_alloc, cmd_buf, gpu_data, frustum_matrix);
+    UnmanagedBuffer culled_commands = frustum_culler.execute(device, desc_alloc, buf_alloc, cmd_buf, gpu_data, frustum_matrix);
     culled_commands.barrier(cmd_buf, BufferResourceAccess::IndirectCommandRead);
 
     // Rendering

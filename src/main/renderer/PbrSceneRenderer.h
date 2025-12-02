@@ -40,9 +40,10 @@ public:
             uint32_t value;
 
             struct FlagBits {
-                unsigned int shadowCascades: 1;
-                unsigned int whiteWorld: 1;
-                unsigned int unused: 30;
+                unsigned int shadowCascades : 1;
+                unsigned int whiteWorld : 1;
+                unsigned int lightDensity : 1;
+                unsigned int unused : 29;
             } bits;
         } flags;
     };
@@ -64,16 +65,15 @@ public:
             1, vk::ShaderStageFlagBits::eFragment, Settings::SHADOW_CASCADE_COUNT
         };
         static constexpr UniformBufferBinding ShadowCascadeUniforms{
-            2,  vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            2, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         };
-        static constexpr CombinedImageSamplerBinding AmbientOcclusion{
-            3, vk::ShaderStageFlagBits::eFragment
-        };
+        static constexpr CombinedImageSamplerBinding AmbientOcclusion{3, vk::ShaderStageFlagBits::eFragment};
+        static constexpr StorageBufferBinding TileLightIndices{4, vk::ShaderStageFlagBits::eFragment};
 
         ShaderParamsDescriptorLayout() = default;
 
         explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
-            create(device, {}, SceneUniforms, SunShadowMap, ShadowCascadeUniforms, AmbientOcclusion);
+            create(device, {}, SceneUniforms, SunShadowMap, ShadowCascadeUniforms, AmbientOcclusion, TileLightIndices);
             util::setDebugName(device, vk::DescriptorSetLayout(*this), "pbr_scene_renderer_descriptor_layout");
         }
     };
@@ -97,8 +97,9 @@ public:
             const FrustumCuller &frustum_culler,
             const DirectionalLight &sun_light,
             std::span<const CascadedShadowCaster> sun_shadow_cascades,
-            const ImageViewPairBase& ao_result,
-            const Settings& settings
+            const ImageViewPairBase &ao_result,
+            const BufferBase &tile_light_indices_buffer,
+            const Settings &settings
     );
 
 private:

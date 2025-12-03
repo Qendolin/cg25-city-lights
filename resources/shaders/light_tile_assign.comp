@@ -1,5 +1,10 @@
 #version 460 core
 
+// References
+// https://takahiroharada.wordpress.com/wp-content/uploads/2015/04/forward_plus.pdf
+// https://www.aortiz.me/2018/12/21/CG.html
+// https://wickedengine.net/2018/01/optimizing-tile-based-light-culling/
+
 #extension GL_KHR_shader_subgroup_basic : require
 #extension GL_KHR_shader_subgroup_arithmetic : require
 

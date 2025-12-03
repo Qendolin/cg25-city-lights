@@ -1,6 +1,11 @@
 #ifndef MATH_H
 #define MATH_H
 
+const float PI = 3.14159265359;
+const float TWO_PI = 6.28318530718;
+const float PI_HALF = 1.57079632679;
+const float INV_PI = 1.0 / 3.14159265359;
+
 float saturate(in float x) {
     return clamp(x, 0.0, 1.0);
 }

@@ -42,7 +42,7 @@ struct Settings {
         float saturation = 1.0f;
     } agx;
     struct Rendering {
-        glm::vec3 ambient = glm::vec3(5.0f);
+        glm::vec3 ambient = glm::vec3(0.28f, 0.315, 0.385);
         bool enableFrustumCulling = true;
         bool pauseFrustumCulling = false;
         bool whiteWorld = false;

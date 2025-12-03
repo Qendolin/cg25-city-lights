@@ -4,8 +4,14 @@
 
 layout (early_fragment_tests) in;
 
-#include "pbr_common.glsl"
 #include "common/math.glsl"
+#include "pbr_common.glsl"
+
+#include "pbr/bsdf.glsl"
+#include "pbr/lighting.glsl"
+#include "pbr/normal.glsl"
+#include "pbr/shadow.glsl"
+
 #include "colormap/jet.glsl"
 
 layout (location = 0) in vec3 in_position_ws;
@@ -23,9 +29,6 @@ layout (std430, set = 1, binding = 4) readonly buffer TileLightIndicesBuffer {
     uint uTileLightIndices[];
 };
 
-const float PI = 3.14159265359;
-const float INV_PI = 1.0 / 3.14159265359;
-const vec3 LIGHT_EPSILON = vec3(0.001);
 const uint NO_TEXTURE = 0xffff;
 const uint FLAG_SHADOW_CASCADES = 0x1;
 const uint FLAG_WHITE_WORLD = 0x2;
@@ -40,186 +43,9 @@ vec3(0.0, 0.0, 1.0),
 vec3(1.0, 1.0, 1.0)
 };
 
-const vec2 POISSON[9] = vec2[](
-vec2(-0.75, -0.25), vec2(-0.25, -0.75), vec2(0.25, -0.5),
-vec2(-0.5, 0.25), vec2(0.0, 0.0), vec2(0.5, 0.25),
-vec2(-0.25, 0.5), vec2(0.75, 0.25), vec2(0.25, 0.75)
-);
-
 void unpackUint16(in uint packed, out uint lower, out uint upper) {
     lower = packed & 0xffffu;
     upper = (packed >> 16) & 0xffffu;
-}
-
-vec3 transformNormal(mat3 tbn, vec3 tangent_normal) {
-    return normalize(tbn * tangent_normal);
-}
-
-// Based on https://media.contentapi.ea.com/content/dam/eacom/frostbite/files/course-notes-moving-frostbite-to-pbr-v32.pdf page 92
-float adjustRoughness(vec3 tangent_normal, float roughness) {
-    float r = length(tangent_normal);
-    if (r < 1.0) {
-        float kappa = (3.0 * r - r * r * r) / (1.0 - r * r);
-        float variance = 1.0 / kappa;
-        // Why is it ok for the roughness to be > 1 ?
-        return sqrt(roughness * roughness + variance);
-    }
-    return roughness;
-}
-
-float distributionGGX(vec3 N, vec3 H, float roughness)
-{
-    float a = roughness * roughness;
-    float a_2 = a * a;
-    float n_dot_h = max(dot(N, H), 0.0);
-    float n_dot_h_2 = n_dot_h * n_dot_h;
-
-    float nom = a_2;
-    float denom = (n_dot_h_2 * (a_2 - 1.0) + 1.0);
-    // when roughness is zero and N = H denom would be 0
-    denom = PI * denom * denom + 5e-6;
-
-    return nom / denom;
-}
-
-float geometrySchlickGGX(float n_dot_v, float roughness)
-{
-    float r = (roughness + 1.0);
-    float k = (r * r) / 8.0;
-
-    float nom = n_dot_v;
-    float denom = n_dot_v * (1.0 - k) + k;
-
-    return nom / denom;
-}
-
-float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
-{
-    // + 5e-6 to prevent artifacts, value is from https://google.github.io/filament/Filament.html#materialsystem/specularbrdf:~:text=float%20NoV%20%3D%20abs(dot(n%2C%20v))%20%2B%201e%2D5%3B
-    float n_dot_v = max(dot(N, V), 0.0) + 5e-6;
-    float n_dot_l = max(dot(N, L), 0.0);
-    float ggx2 = geometrySchlickGGX(n_dot_v, roughness);
-    float ggx1 = geometrySchlickGGX(n_dot_l, roughness);
-
-    return ggx1 * ggx2;
-}
-
-vec3 fresnelSchlick(float cos_theta, vec3 F0)
-{
-    return F0 + (1.0 - F0) * pow(saturate(1.0 - cos_theta), 5.0);
-}
-
-vec3 fresnelSchlickRoughness(float cos_theta, vec3 F0, float roughness)
-{
-    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(saturate(1.0 - cos_theta), 5.0);
-}
-
-// https://advances.realtimerendering.com/other/2016/naughty_dog/index.html
-float microShadowNaughtyDog(float ao, float n_dot_l) {
-    float aperture = 2.0 * ao * ao;// They use 2 * ao^2, but linear looks better imo
-    return saturate(n_dot_l + aperture - 1.0);
-}
-
-float sampleShadowGpuGems(vec3 P_shadow_ndc, float n_dot_l, int index) {
-    ShadowCascade cascade = uShadowCascades[index];
-    vec2 texel_size = vec2(1.0) / textureSize(uSunShadowMaps[index], 0).xy;
-    // z is seperate because we are using 0..1 depth
-    vec3 shadow_uvz = vec3(P_shadow_ndc.xy * 0.5 + 0.5, P_shadow_ndc.z);
-
-    float bias = cascade.sampleBias * texel_size.x * tan(acos(n_dot_l));
-    bias = clamp(bias, 0.0, cascade.sampleBiasClamp * texel_size.x);
-
-    // GPU Gems 1 / Chapter 11.4
-    vec2 offset = vec2(fract(gl_FragCoord.x * 0.5) > 0.25, fract(gl_FragCoord.y * 0.5) > 0.25);// mod
-    offset.y += offset.x;// y ^= x in floating point
-    if (offset.y > 1.1) offset.y = 0;
-    float shadow = 0.0;
-    // + bias instead of - bias becase we are using reversed depth and the GL_GEQUAL compare mode.
-    shadow += texture(uSunShadowMaps[index], vec3(shadow_uvz.xy + (offset + vec2(-1.5, 0.5)) * texel_size, shadow_uvz.z + bias));
-    shadow += texture(uSunShadowMaps[index], vec3(shadow_uvz.xy + (offset + vec2(0.5, 0.5)) * texel_size, shadow_uvz.z + bias));
-    shadow += texture(uSunShadowMaps[index], vec3(shadow_uvz.xy + (offset + vec2(-1.5, -1.5)) * texel_size, shadow_uvz.z + bias));
-    shadow += texture(uSunShadowMaps[index], vec3(shadow_uvz.xy + (offset + vec2(0.5, -1.5)) * texel_size, shadow_uvz.z + bias));
-    shadow *= 0.25;
-
-    return shadow;
-}
-
-mat2 rotate(float a) {
-    float s = sin(a), c = cos(a);
-    return mat2(c, -s, s, c);
-}
-
-// Higher quality than GpuGems
-float sampleShadowPoisson(vec3 P_shadow_ndc, float n_dot_l, int index, float distance_vs) {
-    ShadowCascade cascade = uShadowCascades[index];
-    vec2 texel_size = vec2(1.0f) / textureSize(uSunShadowMaps[index], 0).xy;
-    // z is seperate because we are using 0..1 depth
-    vec3 shadow_uvz = vec3(P_shadow_ndc.xy * 0.5f + 0.5f, P_shadow_ndc.z);
-
-    // tan(acos(x)) = sqrt(1-x^2)/x
-    n_dot_l = max(n_dot_l, 1e-5f);
-    float bias = cascade.sampleBias * texel_size.x * sqrt(1.0f - n_dot_l * n_dot_l) / n_dot_l;
-    bias = clamp(bias, 0.0f, cascade.sampleBiasClamp * texel_size.x);
-
-    float split = uShadowCascades[index].splitDistance;
-    float blend_start = split * 0.5f;
-    float blend_end   = split;
-    float kernel_scale = 1.0f + 1.0f * saturate((distance_vs - blend_start) / (blend_end - blend_start));
-
-    float result = 0.0f;
-    for (int i = 0; i < 9; ++i) {
-        vec2 offset = kernel_scale * POISSON[i] * texel_size * 2.0f;
-        result += texture(uSunShadowMaps[index], vec3(shadow_uvz.xy + offset, shadow_uvz.z + bias));
-    }
-    return result / 9.0f;
-}
-
-vec3 backsideNormal(vec3 texture_normal, vec3 geometry_normal, vec3 light_dir) {
-    // Use geo normal for surface facing away from light
-    return mix(texture_normal, geometry_normal, clamp(-10 * dot(geometry_normal, light_dir), -0.5, 0.5) + 0.5);
-}
-
-struct BSDFParams {
-    vec4 albedo;
-    vec3 f0;
-    float roughness;
-    float metalness;
-    float occlusion;
-};
-
-vec3 bsdf(vec3 light_dir, vec3 view_dir, vec3 texture_normal, vec3 geometry_normal, in BSDFParams p, vec3 radiance) {
-    // The half way vector
-    vec3 halfway_dir = normalize(view_dir + light_dir);
-    vec3 normal = backsideNormal(texture_normal, geometry_normal, light_dir);
-
-    // Cook-Torrance BRDF
-    float NDF = distributionGGX(normal, halfway_dir, p.roughness);
-    float G = geometrySmith(normal, view_dir, light_dir, p.roughness);
-    vec3 F = fresnelSchlick(max(dot(halfway_dir, view_dir), 0.0), p.f0);
-
-    float n_dot_l = max(dot(normal, light_dir), 0.0);
-    float n_dot_v = max(dot(normal, view_dir), 0.0);
-
-    float micro_shadow = microShadowNaughtyDog(p.occlusion, n_dot_l);
-    radiance *= micro_shadow;
-
-    vec3 numerator = NDF * G * F;
-    float denominator = 4.0 * n_dot_v * n_dot_l + 1e-5;// + 1e-5 to prevent divide by zero
-    vec3 specular = numerator / denominator;
-
-    // kS is equal to Fresnel
-    vec3 kS = F;
-    // for energy conservation, the diffuse and specular light can't
-    // be above 1.0 (unless the surface emits light); to preserve this
-    // relationship the diffuse component (kD) should equal 1.0 - kS.
-    vec3 kD = vec3(1.0) - kS;
-    // multiply kD by the inverse metalness such that only non-metals
-    // have diffuse lighting, or a linear blend if partly metal (pure metals
-    // have no diffuse light).
-    kD *= 1.0 - p.metalness;
-
-    // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
-    return (kD * p.albedo.rgb * INV_PI + specular) * radiance * n_dot_l;
 }
 
 void main() {
@@ -246,7 +72,6 @@ void main() {
     bsdf_params.occlusion = orm.x;
     bsdf_params.roughness = orm.y;
     bsdf_params.metalness = orm.z;
-    mat3 tbn = in_tbn;
 
     // tangent-space normal
     vec3 normal_ts = vec3(0.0, 0.0, 1.0);
@@ -258,19 +83,19 @@ void main() {
         bsdf_params.roughness = adjustRoughness(normal_ts, bsdf_params.roughness);
     }
 
-    vec3 geometry_normal = normalize(tbn[2].xyz);
-    vec3 texture_normal = transformNormal(tbn, normal_ts);
-    vec3 position = in_position_ws;
-    vec3 view_dir = normalize(uParams.camera.xyz - position);
-    float n_dot_v = max(dot(texture_normal, view_dir), 0.0);
-    float distance_vs = distance(uParams.camera.xyz, position);
+    bsdf_params.P = in_position_ws;
+    bsdf_params.V.xyz = uParams.camera.xyz - bsdf_params.P;
+    bsdf_params.V.w = length(bsdf_params.V.xyz);
+    bsdf_params.V.xyz /= bsdf_params.V.w;
+    bsdf_params.N = transformNormal(in_tbn, normal_ts);
+    bsdf_params.geoN = normalize(in_tbn[2].xyz);
 
     bsdf_params.f0 = vec3(0.04);
     bsdf_params.f0 = mix(bsdf_params.f0, bsdf_params.albedo.rgb, bsdf_params.metalness);
 
     int shadow_index = SHADOW_CASCADE_COUNT-1;
     for (int i = SHADOW_CASCADE_COUNT - 1; i >= 0; i--) {
-        if (distance_vs < uShadowCascades[i].splitDistance) {
+        if (bsdf_params.V.w < uShadowCascades[i].splitDistance) {
             shadow_index = i;
         }
     }
@@ -279,65 +104,55 @@ void main() {
 
     // directional light
     {
-        float shadow = sampleShadowPoisson(in_shadow_position_ndc[shadow_index], dot(geometry_normal, uParams.sun.direction.xyz), shadow_index, distance_vs);
+        float n_dot_l = dot(bsdf_params.geoN, uParams.sun.direction.xyz);
+        float shadow = sampleShadowPoisson(uShadowCascades[shadow_index], uSunShadowMaps[shadow_index], in_shadow_position_ndc[shadow_index], n_dot_l, bsdf_params.V.w);
         vec3 radiance = uParams.sun.radiance.xyz * shadow;
         if (any(greaterThan(radiance, LIGHT_EPSILON))) {
-            Lo += bsdf(uParams.sun.direction.xyz, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
+            Lo += bsdf(bsdf_params, uParams.sun.direction.xyz, radiance);
         }
     }
-
-    uvec2 light_tile_co = uvec2(gl_FragCoord.x, gl_FragCoord.y) >> LIGHT_TILE_SHIFT;
-    uint light_tiles_x = (uint(uParams.viewport.x) + LIGHT_TILE_SIZE - 1) >> LIGHT_TILE_SHIFT;// basically ceil division
-    uint light_tile_index = light_tile_co.x + light_tile_co.y * light_tiles_x;
-    uint light_tile_base_index = light_tile_index << LIGHT_TILE_BUFFER_STRIDE_SHIFT;
-    uint light_tile_count = uTileLightIndices[light_tile_base_index];
 
     // spot and point lights
-    for (int i = 0; i < light_tile_count; i++) {
-        uint light_index = uTileLightIndices[light_tile_base_index + 1 + i];
-        UberLight light = uUberLightBuffer[light_index];
-        vec3 to_light_vec = light.position - position;
-        float dist = length(to_light_vec);
-        vec3 to_light_dir = to_light_vec / dist;
+    {
+        uint light_tile_base_index = calculateTileLightBaseIndex(uvec2(gl_FragCoord.xy));
+        uint light_tile_count = uTileLightIndices[light_tile_base_index];
 
-        // inverse square law
-        float dist_attenuation = 1.0 / (dist * dist + light.pointSize);
-
-        // for point lights scale is 0 and offset is 1 which allows uniform control flow
-        vec3 light_dir = octahedronDecode(light.direction);
-        float spot_cos = dot(-light_dir, to_light_dir);
-        float spot_attenuation = saturate(spot_cos * light.coneAngleScale + light.coneAngleOffset);
-        spot_attenuation *= spot_attenuation;
-
-        vec3 radiance = light.radiance * dist_attenuation * spot_attenuation - LIGHT_EPSILON;
-
-        // hoping the gpu can skip the expensive bsdf call
-        if (any(greaterThan(radiance, vec3(0.0f)))) {
-            Lo += bsdf(to_light_dir, view_dir, texture_normal, geometry_normal, bsdf_params, radiance);
+        for (int i = 0; i < light_tile_count; i++) {
+            uint light_index = uTileLightIndices[light_tile_base_index + 1 + i];
+            Lo += evaluateUberLight(uUberLightBuffer[light_index], bsdf_params);
         }
     }
 
-    vec2 screen_uv = vec2(gl_FragCoord.xy) * uParams.viewport.zw;
-    float ambient_occlusion = textureLod(uAmbientOcclusion, screen_uv, 0).x;
+    // ambient light
+    {
+        vec2 screen_uv = vec2(gl_FragCoord.xy) * uParams.viewport.zw;
+        float ambient_occlusion = textureLod(uAmbientOcclusion, screen_uv, 0).x;
 
-    vec3 ambient = uParams.ambient.rgb * bsdf_params.occlusion * ambient_occlusion;
-    ambient *= fresnelSchlickRoughness(n_dot_v, bsdf_params.f0, bsdf_params.roughness);
-    ambient *= bsdf_params.albedo.rgb;
-    ambient *= 1.0 - bsdf_params.metalness;
+        float n_dot_v = max(dot(bsdf_params.N, bsdf_params.V.xyz), 0.0);
 
-    vec3 color = ambient + Lo;
-    out_color = vec4(color, 1.0);
+        vec3 ambient = uParams.ambient.rgb * bsdf_params.occlusion * ambient_occlusion;
+        ambient *= 1.0 - fresnelSchlickRoughness(n_dot_v, bsdf_params.f0, bsdf_params.roughness);
+        ambient *= bsdf_params.albedo.rgb;
+        ambient *= 1.0 - bsdf_params.metalness;
+
+        Lo += ambient;
+    }
+
+    out_color = vec4(Lo, 1.0);
 
     if ((cParams.flags & FLAG_SHADOW_CASCADES) != 0x0) {
         out_color.rgb = mix(out_color.rgb, CASCADE_DEBUG_COLORS[shadow_index], 0.3f);
     }
 
     if ((cParams.flags & FLAG_LIGHT_DENSITY) != 0x0) {
-        float density = 1.0 - float(light_tile_count) / LIGHT_TILE_MAX_LIGHTS;
+        uint index = calculateTileLightBaseIndex(uvec2(gl_FragCoord.xy));
+        uint count = uTileLightIndices[index];
+
+        float density = 1.0 - float(count) / LIGHT_TILE_MAX_LIGHTS;
         // make small values a bit more apparent
         density *= density;
         density = 1.0 - density;
-        if(density > 0.0) {
+        if (density > 0.0) {
             vec4 jet_color = jet(density);
             out_color.rgb = mix(out_color.rgb, jet_color.rgb, 0.3f);
         }

@@ -60,8 +60,32 @@ void BlobRenderer::createGraphicsPipeline_(
     mGraphicsPipeline = createGraphicsPipeline(device, pipelineConfig, {*vertShader, *fragShader});
 }
 
-void BlobRenderer::computeVertices(const vk::Device &device, const DescriptorAllocator &allocator, const vk::CommandBuffer &commandBuffer, const blob::Model &blobModel) {
+void BlobRenderer::computeVertices(const vk::Device &device, const DescriptorAllocator &allocator, const vk::CommandBuffer &commandBuffer, const blob::Model &blobModel) {    
     util::ScopedCommandLabel dbg_cmd_label_func(commandBuffer);
+
+    vk::DrawIndirectCommand drawIndirectCommand{};
+    drawIndirectCommand.vertexCount = 0;
+    drawIndirectCommand.instanceCount = 1;
+    drawIndirectCommand.firstVertex = 0;
+    drawIndirectCommand.firstInstance = 0;
+
+    vk::Buffer indirectDrawBuffer = blobModel.getIndirectDrawBuffer();
+
+    commandBuffer.updateBuffer(indirectDrawBuffer, 0, sizeof(vk::DrawIndirectCommand), &drawIndirectCommand);
+
+    vk::BufferMemoryBarrier barrier{};
+    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+    barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+    barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
+    barrier.buffer = indirectDrawBuffer;
+    barrier.offset = 0;
+    barrier.size = vk::WholeSize;
+
+    commandBuffer.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader, {}, 0, nullptr, 1,
+            &barrier, 0, nullptr
+    );
 
     DescriptorSet set = allocator.allocate(mComputeDescriptorLayout);
 

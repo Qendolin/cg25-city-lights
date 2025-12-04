@@ -453,13 +453,6 @@ void main() {
     int j = int(gid.y);
     int k = int(gid.z);
 
-    if (gl_GlobalInvocationID == uvec3(0)) {
-        drawArgs.vertexCount   = 0;
-        drawArgs.instanceCount = 1;
-        drawArgs.firstVertex   = 0;
-        drawArgs.firstInstance = 0;
-    }
-
     if ((i >= pc.resolution) || (j >= pc.resolution) || (k >= pc.resolution)) {
         return;
     }

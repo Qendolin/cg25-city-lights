@@ -79,7 +79,8 @@ void main() {
         normal_ts.xy = texture(uTextures[nonuniformEXT(normalTextureIndex)], in_tex_coord).xy * 2.0 - 1.0;
         normal_ts.z = sqrt(1 - normal_ts.x * normal_ts.x - normal_ts.y * normal_ts.y);
         // increase intensity
-        normal_ts = normalize(normal_ts * vec3(material.rmnFactors.z, material.rmnFactors.z, 1.0));
+        float strength = material.rmnFactors.z;
+        normal_ts = normalize(normal_ts * vec3(strength, strength, 1.0));
         bsdf_params.roughness = adjustRoughness(normal_ts, bsdf_params.roughness);
     }
 
@@ -115,7 +116,7 @@ void main() {
     // spot and point lights
     {
         uint light_tile_base_index = calculateTileLightBaseIndex(uvec2(gl_FragCoord.xy));
-        uint light_tile_count = uTileLightIndices[light_tile_base_index];
+        uint light_tile_count = uTileLightIndices[light_tile_base_index + 0];
 
         for (int i = 0; i < light_tile_count; i++) {
             uint light_index = uTileLightIndices[light_tile_base_index + 1 + i];

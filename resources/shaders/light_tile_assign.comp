@@ -207,7 +207,7 @@ void main() {
     barrier();
 
     if (gl_SubgroupID == 0) {
-        uint local_min = 0x3f800000u;
+        uint local_min = 0x3f800000u; // float 1.0 as uint
         uint local_max = 0x0u;
 
         if (gl_SubgroupInvocationID < gl_NumSubgroups) {
@@ -272,6 +272,6 @@ void main() {
     barrier();
 
     if (gl_LocalInvocationIndex == 0) {
-        uTileLightIndices[light_tile_base_index] = min(sTileLightCount, LIGHT_TILE_MAX_LIGHTS);
+        uTileLightIndices[light_tile_base_index + 0] = min(sTileLightCount, LIGHT_TILE_MAX_LIGHTS);
     }
 }

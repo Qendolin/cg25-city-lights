@@ -99,7 +99,7 @@ private:
     );
 
     vk::UniqueSampler mDepthSampler;
-    vk::UniqueSampler mNoiseSampler;
+    vk::UniqueSampler mAoSampler;
     ImageWithView mNoise;
 
     ConfiguredComputePipeline mSamplerPipeline;

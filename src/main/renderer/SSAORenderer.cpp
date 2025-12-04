@@ -16,6 +16,12 @@ SSAORenderer::SSAORenderer(const vk::Device &device, const vma::Allocator &alloc
         .addressModeV = vk::SamplerAddressMode::eClampToBorder,
         .borderColor = vk::BorderColor::eFloatTransparentBlack,
     });
+    mAoSampler = device.createSamplerUnique({
+        .magFilter = vk::Filter::eLinear,
+        .minFilter = vk::Filter::eLinear,
+        .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+        .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+    });
 
     auto cmd_pool = device.createCommandPoolUnique(
             {.flags = vk::CommandPoolCreateFlagBits::eTransient, .queueFamilyIndex = graphicsQueue}
@@ -147,7 +153,7 @@ void SSAORenderer::filterPass(
                 descriptor_set.write(
                         FilterShaderParamsDescriptorLayout::InRawAO,
                         vk::DescriptorImageInfo{
-                            .sampler = *mDepthSampler, .imageView = ao_input.view(), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+                            .sampler = *mAoSampler, .imageView = ao_input.view(), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
                         }
                 ),
                 descriptor_set.write(

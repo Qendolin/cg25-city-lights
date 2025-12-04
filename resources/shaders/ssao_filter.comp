@@ -13,9 +13,10 @@ layout (push_constant) uniform ShaderParamPush {
     float exponent;
 } cParams;
 
-// 9-Tap Gaussian Weights (Sigma ~ 2.0)
-// Center + 4 neighbors on each side
-const float WEIGHTS[5] = float[](0.20236, 0.179044, 0.124009, 0.067234, 0.028532);
+// 13-tap effective -> 4 bilinear taps
+const float WEIGHTS[4] = float[]( 0.044787, 0.134685, 0.248200, 0.144657 );
+
+const float OFFSETS[3] = float[]( -5.333107, -3.391331, -1.452815 );
 
 float getLinearZ(vec2 uv) {
     float d = textureLod(in_depth, uv, 0).x;
@@ -52,12 +53,13 @@ void main() {
     float gradient = (abs(grad_fwd) < abs(grad_bwd)) ? grad_fwd : grad_bwd;
 
     // Initialize Accumulators
-    float total_weight = WEIGHTS[0];
+    float total_weight = WEIGHTS[3];  // center
     float total_val = center_val * total_weight;
 
-    // Loop radius
-    for (int i = 1; i < 5; i++) {
-        vec2 uv_offset = cParams.direction * float(i) * texel_size;
+    // Loop: only 2 iterations instead of 4
+    for (int i = 0; i < 3; i++) {
+        float offset = OFFSETS[i];
+        vec2 uv_offset = cParams.direction * offset * texel_size;
 
         // Positive Side
         {
@@ -65,10 +67,7 @@ void main() {
             float val = textureLod(in_source, uv, 0).x;
             float z = getLinearZ(uv);
 
-            // Plane Prediction: What should Z be if this is just a slope?
-            float expected_z = center_z + gradient * float(i);
-
-            // Error: How far is the actual Z from the slope prediction?
+            float expected_z = center_z + gradient * offset;
             float error = abs(z - expected_z);
 
             // Weight based on Plane Error, NOT raw Z difference
@@ -84,7 +83,7 @@ void main() {
             float val = textureLod(in_source, uv, 0).x;
             float z = getLinearZ(uv);
 
-            float expected_z = center_z - gradient * float(i);
+            float expected_z = center_z - gradient * offset;
             float error = abs(z - expected_z);
 
             float w = WEIGHTS[i] * max(0.0f, 1.0f - error * cParams.sharpness);

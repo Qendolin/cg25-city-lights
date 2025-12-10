@@ -74,8 +74,8 @@ namespace scene {
     };
 
     /// <summary>
-    /// Stored the timestamps for which translation and rotation animation data exists for an
-    /// instance and the corresponding values.
+    /// Stores the respective timestamps if translation or rotation animation data exists and the
+    /// associated animation data at the same index.
     /// </summary>
     struct InstanceAnimation {
         std::vector<float> translation_timestamps;

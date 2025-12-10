@@ -10,22 +10,21 @@
 
 namespace scene {
     Loader::Loader(
-            const gltf::Loader *loader,
             const vma::Allocator &allocator,
             const vk::Device &device,
             const vk::PhysicalDevice &physical_device,
             const DeviceQueue &transferQueue,
             const DeviceQueue &graphicsQueue
     )
-        : mLoader(loader),
-          mAllocator(allocator),
+        : mAllocator(allocator),
           mDevice(device),
           mPhysicalDevice(physical_device),
           mTransferQueue(transferQueue),
           mGraphicsQueue(graphicsQueue) {}
 
     Scene Loader::load(const std::filesystem::path &path) const {
-        gltf::Scene gltf_scene = mLoader->load(path);
+        gltf::Loader gltf_loader;
+        gltf::Scene gltf_scene = gltf_loader.load(path);
         CpuData cpu_data = createCpuData(gltf_scene);
         GpuData gpu_data = createGpuData(gltf_scene);
 
@@ -61,7 +60,7 @@ namespace scene {
                 cpu_data.animated_instances.push_back(instance_idx);
 
                 const gltf::Animation &gltf_anim = scene_data.animations[node.animation];
-                
+
                 InstanceAnimation instance_anim{
                     gltf_anim.translation_timestamps, gltf_anim.rotation_timestamps, gltf_anim.translations,
                     [&] {

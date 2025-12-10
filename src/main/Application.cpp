@@ -1,11 +1,10 @@
 #include "Application.h"
 
 #include <GLFW/glfw3.h>
-#include <array>
-#include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.inl>
 #include <glm/gtx/fast_trigonometry.hpp>
+#include <vulkan/vulkan.hpp>
 
 #include "RenderSystem.h"
 #include "backend/Swapchain.h"
@@ -23,152 +22,157 @@
 #include "scene/Scene.h"
 #include "util/Logger.h"
 
-Application::Application() = default;
-Application::~Application() = default;
-
-
-void Application::processInput() {
-    if (input->isKeyPress(GLFW_KEY_F5)) {
-        Logger::info("Reloading render system");
-        context->device().waitIdle();
-        try {
-            renderSystem->recreate(settings);
-        } catch (const std::exception &exc) {
-            Logger::error("Reload failed: " + std::string(exc.what()));
-        }
-    }
-
-    if (input->isMouseReleased() && input->isMousePress(GLFW_MOUSE_BUTTON_LEFT)) {
-        if (!ImGui::GetIO().WantCaptureMouse)
-            input->captureMouse();
-    } else if (input->isMouseCaptured() && (input->isKeyPress(GLFW_KEY_ESCAPE) || input->isKeyPress(GLFW_KEY_LEFT_ALT))) {
-        input->releaseMouse();
-    }
-
-    if (input->isMouseCaptured()) {
-        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
-    } else {
-        ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
-    }
-
-    if (input->isMouseCaptured()) {
-        // yaw
-        camera->angles.y -= input->mouseDelta().x * glm::radians(0.15f);
-        camera->angles.y = glm::wrapAngle(camera->angles.y);
-
-        // pitch
-        camera->angles.x -= input->mouseDelta().y * glm::radians(0.15f);
-        camera->angles.x = glm::clamp(camera->angles.x, -glm::half_pi<float>(), glm::half_pi<float>());
-
-        glm::vec3 move_input = {
-            input->isKeyDown(GLFW_KEY_D) - input->isKeyDown(GLFW_KEY_A),
-            input->isKeyDown(GLFW_KEY_SPACE) - input->isKeyDown(GLFW_KEY_LEFT_CONTROL),
-            input->isKeyDown(GLFW_KEY_S) - input->isKeyDown(GLFW_KEY_W)
-        };
-        glm::vec3 velocity = move_input * 5.0f;
-        velocity = glm::mat3(glm::rotate(glm::mat4(1.0f), camera->angles.y, {0, 1, 0})) * velocity;
-        if (input->isKeyDown(GLFW_KEY_LEFT_SHIFT))
-            velocity *= 10.0f;
-        camera->position += velocity * input->timeDelta();
-    }
-    camera->updateViewMatrix();
-}
-
-void Application::drawGui() {
-    debugFrameTimes->update(input->timeDelta());
-    debugFrameTimes->draw();
-
-    settingsGui->draw(settings);
-}
-
-void Application::init() {
-    context = std::make_unique<VulkanContext>(std::move(VulkanContext::create(glfw::WindowCreateInfo{
-        .width = 1600,
-        .height = 900,
-        .title = "City Lights",
+Application::Application() {
+    ctx = std::make_unique<VulkanContext>(std::move(VulkanContext::create(glfw::WindowCreateInfo{
+        .width = WINDOW_WIDTH,
+        .height = WINDOW_HEIGHT,
+        .title = TITLE,
         .resizable = true,
         .visible = false,
     })));
-    Logger::info("Using present mode: " + vk::to_string(context->swapchain().presentMode()));
-    context->window().centerOnScreen();
-    glfwShowWindow(context->window());
+
+    Logger::info("Using present mode: " + vk::to_string(ctx->swapchain().presentMode()));
+
+    ctx->window().centerOnScreen();
+    glfwShowWindow(ctx->window());
 
     // imgui must be initialized after input
-    input = std::make_unique<glfw::Input>(context->window());
+    input = std::make_unique<glfw::Input>(ctx->window());
     if (glfwRawMouseMotionSupported())
-        glfwSetInputMode(context->window(), GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        glfwSetInputMode(ctx->window(), GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
 
-    renderSystem = std::make_unique<RenderSystem>(context.get());
+    render_system = std::make_unique<RenderSystem>(ctx.get());
 
-    settingsGui = std::make_unique<SettingsGui>();
+    settings_gui = std::make_unique<SettingsGui>();
 
-    gltf::Loader gltf_loader = {};
-    scene::Loader scene_loader = {
-        &gltf_loader,           context->allocator(), context->device(), context->physicalDevice(),
-        context->transferQueue, context->mainQueue,
+    scene::Loader scene_loader{
+        ctx->allocator(), ctx->device(), ctx->physicalDevice(), ctx->transferQueue, ctx->mainQueue,
     };
 
-    scene = std::make_unique<scene::Scene>(std::move(scene_loader.load("resources/scenes/CityTest.glb")));
-    sunShadowCascade = std::make_unique<ShadowCascade>(
-            context->device(), context->allocator(), settings.shadowCascade.resolution, Settings::SHADOW_CASCADE_COUNT
+    scene = std::make_unique<scene::Scene>(std::move(scene_loader.load(SCENE_FILENAME)));
+    sun_shadow_cascade = std::make_unique<ShadowCascade>(
+            ctx->device(), ctx->allocator(), settings.shadowCascade.resolution, Settings::SHADOW_CASCADE_COUNT
     );
 
-    camera = std::make_unique<Camera>(glm::radians(90.0f), 0.001f, glm::vec3{0, 1, 5}, glm::vec3{});
-    debugFrameTimes = std::make_unique<FrameTimes>();
+    blob_model = std::make_unique<blob::Model>(ctx->allocator(), ctx->device(), BLOB_RESOLUTION);
+    skybox = std::make_unique<Cubemap>(ctx->allocator(), ctx->device(), ctx->transferQueue, ctx->mainQueue, SKYBOX_FILENAMES);
 
-    renderSystem->recreate(settings);
+    camera = std::make_unique<Camera>(FOV, NEAR_PLANE, CAMERA_POSITION, glm::vec3{});
+    debug_frame_times = std::make_unique<FrameTimes>();
 
-    blobModel = std::make_unique<blob::Model>(context->allocator(), context->device(), BLOB_RESOLUTION);
-
-    const std::array<std::string, 6> skyboxImageFilenames{"resources/skybox/px.hdr", "resources/skybox/nx.hdr",
-                                                          "resources/skybox/py.hdr", "resources/skybox/ny.hdr",
-                                                          "resources/skybox/pz.hdr", "resources/skybox/nz.hdr"};
-    skybox = std::make_unique<Cubemap>(
-            context->allocator(), context->device(), context->transferQueue, context->mainQueue, skyboxImageFilenames
-    );
+    render_system->recreate(settings);
 }
+
+Application::~Application() = default;
 
 void Application::run() {
     std::vector<scene::InstanceAnimationCursor> animation_cursor_cache(scene->cpu().instance_animations.size());
 
-    while (!context->window().shouldClose()) {
-        renderSystem->advance(settings);
+    while (!ctx->window().shouldClose()) {
+        render_system->advance(settings);
 
         input->update();
         processInput();
+        blob_model->advanceTime(input->timeDelta());
 
-        renderSystem->begin();
-        renderSystem->imGuiBackend().beginFrame();
+        render_system->begin();
+        render_system->imGuiBackend().beginFrame();
 
         drawGui();
 
-        camera->setViewport(context->swapchain().width(), context->swapchain().height());
+        camera->setViewport(ctx->swapchain().width(), ctx->swapchain().height());
+        updateSunShadowCascades();
 
-        sunShadowCascade->lambda = settings.shadowCascade.lambda;
-        sunShadowCascade->distance = settings.shadowCascade.distance;
-        sunShadowCascade->update(camera->fov(), camera->aspect(), camera->viewMatrix(), -settings.sun.direction());
-        for (size_t i = 0; i < settings.shadowCascades.size(); i++) {
-            settings.shadowCascades[i].applyTo(sunShadowCascade->cascades()[i]);
-        }
-
-        blobModel->advanceTime(input->timeDelta());
-
-        renderSystem->draw({
+        render_system->draw({
             .gltfScene = scene->gpu(),
             .camera = *camera,
-            .sunShadowCasterCascade = *sunShadowCascade,
+            .sunShadowCasterCascade = *sun_shadow_cascade,
             .sunLight = settings.sun,
             .settings = settings,
-            .blobModel = *blobModel,
+            .blobModel = *blob_model,
             .skybox = *skybox,
         });
 
-        renderSystem->submit(settings);
+        render_system->submit(settings);
 
         std::vector<glm::mat4> animated_instance_transforms = scene::AnimationSampler::sampleAnimatedInstanceTransforms(
                 scene->cpu(), static_cast<float>(input->time()) - 4.f, animation_cursor_cache
         );
     }
 
-    context->device().waitIdle();
+    ctx->device().waitIdle();
+}
+
+void Application::processInput() {
+    if (input->isKeyPress(GLFW_KEY_F5))
+        reloadRenderSystem();
+
+    updateMouseCapture();
+
+    if (input->isMouseCaptured()) {
+        updateCamera();
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
+    } else
+        ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+}
+
+void Application::drawGui() {
+    debug_frame_times->update(input->timeDelta());
+    debug_frame_times->draw();
+
+    settings_gui->draw(settings);
+}
+
+void Application::updateSunShadowCascades() {
+    sun_shadow_cascade->lambda = settings.shadowCascade.lambda;
+    sun_shadow_cascade->distance = settings.shadowCascade.distance;
+    sun_shadow_cascade->update(camera->fov(), camera->aspect(), camera->viewMatrix(), -settings.sun.direction());
+
+    for (size_t i = 0; i < settings.shadowCascades.size(); i++)
+        settings.shadowCascades[i].applyTo(sun_shadow_cascade->cascades()[i]);
+}
+
+void Application::reloadRenderSystem() {
+    Logger::info("Reloading render system");
+
+    ctx->device().waitIdle();
+
+    try {
+        render_system->recreate(settings);
+    } catch (const std::exception &exc) {
+        Logger::error("Reload failed: " + std::string(exc.what()));
+    }
+}
+
+void Application::updateMouseCapture() {
+    if (input->isMouseReleased() && input->isMousePress(GLFW_MOUSE_BUTTON_LEFT)) {
+        if (!ImGui::GetIO().WantCaptureMouse)
+            input->captureMouse();
+    } else if (input->isMouseCaptured() && (input->isKeyPress(GLFW_KEY_ESCAPE) || input->isKeyPress(GLFW_KEY_LEFT_ALT)))
+        input->releaseMouse();
+}
+
+void Application::updateCamera() {
+    // Yaw
+    camera->angles.y -= input->mouseDelta().x * MOUSE_SENSITIVITY;
+    camera->angles.y = glm::wrapAngle(camera->angles.y);
+
+    // Pitch
+    camera->angles.x -= input->mouseDelta().y * MOUSE_SENSITIVITY;
+    camera->angles.x = glm::clamp(camera->angles.x, -glm::half_pi<float>(), glm::half_pi<float>());
+
+    glm::vec3 move_input = {
+        input->isKeyDown(GLFW_KEY_D) - input->isKeyDown(GLFW_KEY_A),
+        input->isKeyDown(GLFW_KEY_SPACE) - input->isKeyDown(GLFW_KEY_LEFT_CONTROL),
+        input->isKeyDown(GLFW_KEY_S) - input->isKeyDown(GLFW_KEY_W)
+    };
+
+    glm::vec3 velocity = move_input * BASE_SPEED;
+    velocity = glm::mat3(glm::rotate(glm::mat4(1.0f), camera->angles.y, {0, 1, 0})) * velocity;
+
+    if (input->isKeyDown(GLFW_KEY_LEFT_SHIFT))
+        velocity *= FAST_SPEED_MULTIPLIER;
+
+    camera->position += velocity * input->timeDelta();
+    camera->updateViewMatrix();
 }

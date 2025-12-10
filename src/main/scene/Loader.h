@@ -14,8 +14,7 @@ namespace gltf {
 namespace scene {
     class Loader {
     public:
-        Loader(const gltf::Loader *loader,
-               const vma::Allocator &allocator,
+        Loader(const vma::Allocator &allocator,
                const vk::Device &device,
                const vk::PhysicalDevice &physical_device,
                const DeviceQueue &transferQueue,
@@ -32,7 +31,6 @@ namespace scene {
 
         [[nodiscard]] GpuData createGpuData(const gltf::Scene &scene_data) const;
 
-        const gltf::Loader *mLoader;
         vma::Allocator mAllocator;
         vk::Device mDevice;
         vk::PhysicalDevice mPhysicalDevice;

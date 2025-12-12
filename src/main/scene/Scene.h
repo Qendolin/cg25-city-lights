@@ -5,6 +5,7 @@
 #include <vector>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
+#include "../backend/Buffer.h"
 #include "../backend/Descriptors.h"
 #include "../backend/Image.h"
 #include "../util/math.h"
@@ -38,8 +39,7 @@ namespace scene {
 
         vma::UniqueBuffer sections;
         vma::UniqueAllocation sectionsAlloc;
-        vma::UniqueBuffer instances;
-        vma::UniqueAllocation instancesAlloc;
+        Buffer instances;
         vma::UniqueBuffer boundingBoxes;
         vma::UniqueAllocation boundingBoxesAlloc;
 

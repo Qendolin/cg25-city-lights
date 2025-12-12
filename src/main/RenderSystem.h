@@ -22,7 +22,7 @@ class ShadowCascade;
 struct RenderData {
     const scene::GpuData &gltfScene;
     const Camera &camera;
-    const ShadowCascade& sunShadowCasterCascade;
+    const ShadowCascade &sunShadowCasterCascade;
     const DirectionalLight &sunLight;
     const Settings &settings;
     const blob::Model &blobModel;
@@ -40,13 +40,13 @@ class RenderSystem {
 
     vk::UniqueCommandPool mCommandPool;
 
-
     util::PerFrame<FramesInFlightSyncObjects> mFramesInFlightSyncObjects;
     util::PerFrame<vk::UniqueSemaphore> mRenderFinishedSemaphores;
     util::PerFrame<vk::CommandBuffer> mCommandBuffers;
     util::PerFrame<Framebuffer> mSwapchainFramebuffers;
     util::PerFrame<UniqueDescriptorAllocator> mDescriptorAllocators;
     util::PerFrame<UniqueTransientBufferAllocator> mTransientBufferAllocators;
+    util::PerFrame<Buffer> mInstanceTransformUpdates;
 
     // This descriptor allocator is never reset
     UniqueDescriptorAllocator mStaticDescriptorAllocator;
@@ -75,16 +75,18 @@ class RenderSystem {
 public:
     explicit RenderSystem(VulkanContext *context);
 
-    void recreate(const Settings& settings);
+    void recreate(const Settings &settings);
+
+    void updateInstanceTransforms(const scene::GpuData &gpu_scene_data, std::span<const glm::mat4> updated_transforms);
 
     void draw(const RenderData &render_data);
 
     /// <summary>Advance to the next frame</summary>
-    void advance(const Settings& settings);
+    void advance(const Settings &settings);
     /// <summary>Begin recording commands</summary>
     void begin();
 
-    void submit(const Settings& settings);
+    void submit(const Settings &settings);
 
     [[nodiscard]] const DescriptorAllocator &staticDescriptorAllocator() const { return mStaticDescriptorAllocator; }
     [[nodiscard]] DescriptorAllocator &staticDescriptorAllocator() { return mStaticDescriptorAllocator; }

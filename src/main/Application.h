@@ -2,10 +2,12 @@
 
 #include <array>
 #include <glm/glm.hpp>
-#include <string>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "debug/Settings.h"
+#include "scene/AnimationSampler.h"
 
 class ShadowCascade;
 class RenderSystem;
@@ -36,28 +38,30 @@ private:
     static constexpr float NEAR_PLANE = 0.001f;
     static constexpr glm::vec3 CAMERA_POSITION = glm::vec3{0, 1, 5};
     static constexpr char TITLE[] = "City Lights";
-    static constexpr char SCENE_FILENAME[] = "resources/scenes/CityTest.glb";
+    static constexpr char SCENE_FILENAME[] = "resources/scenes/city_animated.glb";
     static inline const std::array<std::string, 6> SKYBOX_FILENAMES{
         "resources/skybox/px.hdr", "resources/skybox/nx.hdr", "resources/skybox/py.hdr",
         "resources/skybox/ny.hdr", "resources/skybox/pz.hdr", "resources/skybox/nz.hdr",
     };
 
     // Order is important here
-    std::unique_ptr<VulkanContext> ctx;
-    std::unique_ptr<RenderSystem> render_system;
+    std::unique_ptr<VulkanContext> mCtx;
+    std::unique_ptr<RenderSystem> mRenderSystem;
 
-    Settings settings = {};
-    std::unique_ptr<SettingsGui> settings_gui;
+    Settings mSettings = {};
+    std::unique_ptr<SettingsGui> mSettingsGui;
 
-    std::unique_ptr<glfw::Input> input;
-    std::unique_ptr<Camera> camera;
-    std::unique_ptr<scene::Scene> scene;
-    std::unique_ptr<ShadowCascade> sun_shadow_cascade;
+    std::unique_ptr<glfw::Input> mInput;
+    std::unique_ptr<Camera> mCamera;
+    std::unique_ptr<scene::Scene> mScene;
+    std::unique_ptr<ShadowCascade> mSunShadowCascade;
 
-    std::unique_ptr<FrameTimes> debug_frame_times;
+    std::unique_ptr<FrameTimes> mDebugFrameTimes;
 
-    std::unique_ptr<blob::Model> blob_model;
-    std::unique_ptr<Cubemap> skybox;
+    std::unique_ptr<blob::Model> mBlobModel;
+    std::unique_ptr<Cubemap> mSkybox;
+
+    std::vector<scene::InstanceAnimationCursor> mAnimationCursorCache;
 
 public:
     Application();
@@ -69,6 +73,7 @@ private:
     void processInput();
     void drawGui();
     void updateSunShadowCascades();
+    void updateAnimatedInstances();
     void reloadRenderSystem();
     void updateCamera();
     void updateMouseCapture();

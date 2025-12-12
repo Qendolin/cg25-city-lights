@@ -45,6 +45,11 @@ constexpr BufferResourceAccess BufferResourceAccess::GraphicsShaderUniformRead =
     .access = vk::AccessFlagBits2::eUniformRead,
 };
 
+constexpr BufferResourceAccess BufferResourceAccess::GraphicsShaderStorageRead = {
+    .stage = vk::PipelineStageFlagBits2::eAllGraphics,
+    .access = vk::AccessFlagBits2::eShaderStorageRead,
+};
+
 BufferResource::BufferResource(BufferResource &&other) noexcept : mPrevAccess(std::exchange(other.mPrevAccess, {})) {}
 
 BufferResource &BufferResource::operator=(BufferResource &&other) noexcept {

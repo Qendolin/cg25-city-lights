@@ -213,24 +213,51 @@ namespace scene {
                 staging.upload(scene_data.index_data, vk::BufferUsageFlagBits::eIndexBuffer);
         util::setDebugName(mDevice, *result.indices, "scene_vertex_indices");
 
-        std::vector<InstanceBlock> instance_blocks;
-        instance_blocks.reserve(std::ranges::count_if(scene_data.nodes, [](const auto &node) {
+        const std::vector<gltf::Node> &nodes = scene_data.nodes;
+
+        const std::size_t mesh_node_count = std::ranges::count_if(nodes, [](const gltf::Node &node) {
             return node.mesh != UINT32_MAX;
-        }));
-        // maps node index to instance index
-        std::vector<glm::uint> node_instance_map(scene_data.nodes.size());
-        for (size_t i = 0; i < scene_data.nodes.size(); i++) {
-            const auto &node = scene_data.nodes[i];
+        });
+
+        // Of those, count how many are animated
+        const std::size_t animated_mesh_node_count = std::ranges::count_if(nodes, [](const gltf::Node &node) {
+            return node.mesh != UINT32_MAX && node.animation != UINT32_MAX;
+        });
+
+        const std::size_t static_mesh_node_count = mesh_node_count - animated_mesh_node_count;
+
+        std::vector<InstanceBlock> instance_blocks(mesh_node_count);
+
+        // maps *node* index to *instance* index
+        std::vector<glm::uint> node_instance_map(nodes.size(), UINT32_MAX);
+
+        std::size_t next_static_inst_idx = 0;
+        std::size_t next_animated_inst_idx = static_mesh_node_count;
+
+        for (std::size_t i = 0; i < nodes.size(); ++i) {
+            const auto &node = nodes[i];
+
             if (node.mesh == UINT32_MAX) {
                 node_instance_map[i] = UINT32_MAX;
                 continue;
             }
-            node_instance_map[i] = static_cast<glm::uint>(instance_blocks.size());
-            instance_blocks.emplace_back() = {.transform = node.transform};
+
+            std::size_t instance_idx = 0;
+            if (node.animation == UINT32_MAX)
+                instance_idx = next_static_inst_idx++;
+            else
+                instance_idx = next_animated_inst_idx++;
+
+            node_instance_map[i] = static_cast<glm::uint>(instance_idx);
+            instance_blocks[instance_idx] = {.transform = node.transform};
         }
-        std::tie(result.instances, result.instancesAlloc) =
-                staging.upload(instance_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
-        util::setDebugName(mDevice, *result.instances, "scene_instances");
+
+        auto [raw_instance_buffer,
+              instance_alloc] = staging.upload(instance_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
+        result.instances = Buffer(
+                std::move(raw_instance_buffer), std::move(instance_alloc), instance_blocks.size() * sizeof(InstanceBlock)
+        );
+        util::setDebugName(mDevice, static_cast<vk::Buffer>(result.instances), "scene_instances");
 
         std::vector<SectionBlock> section_blocks;
         section_blocks.reserve(scene_data.sections.size());
@@ -262,7 +289,6 @@ namespace scene {
         std::tie(result.boundingBoxes, result.boundingBoxesAlloc) =
                 staging.upload(bounding_box_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
         util::setDebugName(mDevice, *result.boundingBoxes, "scene_bounding_boxes");
-
 
         std::vector<MaterialBlock> material_blocks;
         material_blocks.reserve(scene_data.materials.size());
@@ -322,7 +348,9 @@ namespace scene {
                     ),
                     result.sceneDescriptor.write(
                             SceneDescriptorLayout::InstanceBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *result.instances, .offset = 0, .range = vk::WholeSize}
+                            vk::DescriptorBufferInfo{
+                                .buffer = static_cast<vk::Buffer>(result.instances), .offset = 0, .range = vk::WholeSize
+                            }
                     ),
                     result.sceneDescriptor.write(
                             SceneDescriptorLayout::MaterialBuffer,

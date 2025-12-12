@@ -3,6 +3,8 @@
 #include "backend/Swapchain.h"
 #include "debug/Annotation.h"
 #include "entity/ShadowCaster.h"
+#include "scene/Scene.h"
+#include "util/Logger.h"
 #include "util/globals.h"
 #include "util/math.h"
 
@@ -159,6 +161,45 @@ void RenderSystem::recreate(const Settings &settings) {
         util::setDebugName(device, *buf.buffer, "light_tile_indices");
         return buf;
     });
+
+    mInstanceTransformUpdates.create(util::MaxFramesInFlight, [&] {
+        return Buffer{}; // initially empty; will be allocated on demand
+    });
+}
+
+void RenderSystem::updateInstanceTransforms(const scene::GpuData &gpu_scene_data, std::span<const glm::mat4> updated_transforms) {
+    if (updated_transforms.empty())
+        return;
+
+    Buffer &staging_buffer = mInstanceTransformUpdates.get();
+    const size_t required_size = updated_transforms.size() * sizeof(InstanceBlock);
+
+    if (!staging_buffer || staging_buffer.size < required_size)
+        staging_buffer = Buffer::create(
+                mContext->allocator(),
+                {
+                    .size = required_size,
+                    .usage = vk::BufferUsageFlagBits::eTransferSrc,
+                    .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped,
+                    .device = vma::MemoryUsage::eAuto,
+                    .requiredProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                }
+        );
+
+    void *mapped = nullptr;
+    vk::Result result = mContext->allocator().mapMemory(staging_buffer.allocation.get(), &mapped);
+    Logger::check(result == vk::Result::eSuccess, "Failed to map staging buffer");
+    std::memcpy(mapped, updated_transforms.data(), required_size);
+    mContext->allocator().unmapMemory(staging_buffer.allocation.get());
+
+    vk::CommandBuffer &cmd = mCommandBuffers.get();
+
+    vk::DeviceSize dstOffset =
+            static_cast<vk::DeviceSize>(gpu_scene_data.instances.size - updated_transforms.size() * sizeof(glm::mat4));
+
+    vk::BufferCopy copy_region{0, dstOffset, required_size};
+    cmd.copyBuffer(static_cast<vk::Buffer>(staging_buffer), static_cast<vk::Buffer>(gpu_scene_data.instances), 1, &copy_region);
+    gpu_scene_data.instances.barrier(cmd, BufferResourceAccess::TransferWrite, BufferResourceAccess::GraphicsShaderStorageRead);
 }
 
 void RenderSystem::draw(const RenderData &rd) {
@@ -266,6 +307,7 @@ void RenderSystem::advance(const Settings &settings) {
     mCommandBuffers.next();
     mDescriptorAllocators.next().reset();
     mTransientBufferAllocators.next().reset();
+    mInstanceTransformUpdates.next();
 }
 
 void RenderSystem::begin() {

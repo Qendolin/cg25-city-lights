@@ -91,11 +91,6 @@ namespace scene {
         std::vector<Instance> instances;
 
         /// <summary>
-        /// Maps the animation indices to the indices of instances in the instances vector.
-        /// </summary>
-        std::vector<std::size_t> animated_instances;
-
-        /// <summary>
         /// The data of n animations for the last n instances in the instances vector.
         /// </summary>
         std::vector<InstanceAnimation> instance_animations;

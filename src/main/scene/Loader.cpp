@@ -1,10 +1,14 @@
 #include "Loader.h"
 
 #include <algorithm>
+#include <array>
+#include <ranges>
+#include <utility>
 
 #include "../backend/StagingBuffer.h"
 #include "../debug/Annotation.h"
 #include "../entity/Light.h"
+#include "../util/Logger.h"
 #include "Gltf.h"
 #include "gpu_types.h"
 
@@ -32,99 +36,143 @@ namespace scene {
     }
 
     CpuData Loader::createCpuData(const gltf::Scene &scene_data) const {
-        CpuData cpu_data;
+        CpuData cpu_data{};
+
         const std::size_t node_count = scene_data.nodes.size();
         const std::size_t animated_node_count = std::ranges::count_if(scene_data.nodes, [](const gltf::Node &node) {
-            return node.animation != UINT32_MAX;
+            return node.mesh != UINT32_MAX && node.animation != UINT32_MAX;
         });
-        const std::size_t static_node_count = node_count - animated_node_count;
 
-        cpu_data.instances.resize(node_count);
-        cpu_data.animated_instances.reserve(animated_node_count);
+        cpu_data.instances.reserve(node_count);
         cpu_data.instance_animations.reserve(animated_node_count);
-
-        std::size_t next_static_inst_idx{0};
-        std::size_t next_animated_inst_idx{static_node_count};
+        std::vector<Instance> anim_inst_to_insert_last;
+        anim_inst_to_insert_last.reserve(animated_node_count);
 
         for (const gltf::Node &node: scene_data.nodes) {
-            util::BoundingBox bounds = {};
-            if (node.mesh != UINT32_MAX)
+            const bool hasMesh = (node.mesh != UINT32_MAX);
+            const bool hasAnimation = (node.animation != UINT32_MAX);
+            util::BoundingBox bounds{};
+
+            if (hasMesh)
                 bounds = scene_data.meshes[node.mesh].bounds;
 
-            std::size_t instance_idx;
+            Instance instance{node.name, node.transform, bounds};
 
-            if (node.animation == UINT32_MAX)
-                instance_idx = next_static_inst_idx++;
-            else {
-                instance_idx = next_animated_inst_idx++;
-                cpu_data.animated_instances.push_back(instance_idx);
-
-                const gltf::Animation &gltf_anim = scene_data.animations[node.animation];
-
-                InstanceAnimation instance_anim{
-                    gltf_anim.translation_timestamps, gltf_anim.rotation_timestamps, gltf_anim.translations,
-                    [&] {
-                        std::vector<glm::quat> quats;
-                        quats.reserve(gltf_anim.rotations.size());
-                        std::ranges::transform(gltf_anim.rotations, std::back_inserter(quats), [](const glm::vec4 &v) {
-                            return glm::quat(v.w, v.x, v.y, v.z);
-                        });
-                        return quats;
-                    }()
-                };
-
-                cpu_data.instance_animations.push_back(std::move(instance_anim));
-                cpu_data.animated_instances.push_back(instance_idx);
+            if (hasAnimation && !hasMesh) {
+                Logger::warning("Animated nodes without meshes are not supported because "
+                                "they aren't stored as instances on the GPU!");
+                cpu_data.instances.emplace_back(instance);
+                continue;
             }
 
-            cpu_data.instances[instance_idx] = {
-                .name = node.name,
-                .transform = node.transform,
-                .bounds = bounds,
-            };
+            if (hasAnimation) {
+                const gltf::Animation &anim_data = scene_data.animations[node.animation];
+                cpu_data.instance_animations.push_back(createInstanceAnimation(anim_data));
+                anim_inst_to_insert_last.emplace_back(std::move(instance));
+            } else
+                cpu_data.instances.emplace_back(std::move(instance));
         }
+
+        cpu_data.instances.insert(cpu_data.instances.end(), anim_inst_to_insert_last.begin(), anim_inst_to_insert_last.end());
 
         return cpu_data;
     }
 
+    InstanceAnimation Loader::createInstanceAnimation(const gltf::Animation &animation_data) {
+        std::vector<glm::quat> quats(animation_data.rotations.size());
+
+        std::ranges::transform(animation_data.rotations, quats.begin(), [](const glm::vec4 &v) {
+            return glm::quat(v.w, v.x, v.y, v.z);
+        });
+
+        return InstanceAnimation{
+            animation_data.translation_timestamps, animation_data.rotation_timestamps, animation_data.translations,
+            std::move(quats)
+        };
+    }
+
     GpuData Loader::createGpuData(const gltf::Scene &scene_data) const {
-        auto graphics_cmd_pool = mDevice.createCommandPoolUnique(
+        vk::UniqueCommandPool graphics_cmd_pool = mDevice.createCommandPoolUnique(
                 {.flags = vk::CommandPoolCreateFlagBits::eTransient, .queueFamilyIndex = mGraphicsQueue}
         );
-        auto transfer_cmd_pool = mDevice.createCommandPoolUnique(
+
+        vk::UniqueCommandPool transfer_cmd_pool = mDevice.createCommandPoolUnique(
                 {.flags = vk::CommandPoolCreateFlagBits::eTransient, .queueFamilyIndex = mTransferQueue}
         );
 
-        auto graphics_cmds =
+        vk::CommandBuffer graphics_cmds =
                 mDevice.allocateCommandBuffers({.commandPool = *graphics_cmd_pool, .commandBufferCount = 1}).at(0);
-        graphics_cmds.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
-        GpuData result;
+        GpuData gpu_data;
         StagingBuffer staging = {mAllocator, mDevice, *transfer_cmd_pool};
 
-        {
-            result.sceneDescriptorLayout = SceneDescriptorLayout(mDevice);
-            // Bindless gets it's own pool because of it's pool size requirements
-            std::array pool_sizes = {
-                vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 1024},
-                vk::DescriptorPoolSize{vk::DescriptorType::eCombinedImageSampler, 65536},
-                vk::DescriptorPoolSize{vk::DescriptorType::eStorageBuffer, 1024},
-            };
-            result.sceneDescriptorPool = mDevice.createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{
-                .maxSets = 1,
-            }
-                                                                                    .setPoolSizes(pool_sizes));
-            util::setDebugName(mDevice, *result.sceneDescriptorPool, "scene_descriptor_pool");
+        createGpuDataInitDescriptorPool("scene_descriptor_pool", gpu_data);
+        createGpuDataInitDescriptorSet("scene_descriptor_set", gpu_data);
+        createGpuDataInitSampler("scene_sampler", gpu_data);
+        const auto image_indices =
+                createGpuDataInitImages(scene_data, graphics_cmds, staging, "scene_image", "scene_image_view", gpu_data);
 
-            vk::DescriptorSetLayout vk_layout = result.sceneDescriptorLayout;
-            result.sceneDescriptor = DescriptorSet(mDevice.allocateDescriptorSets(
-                    {.descriptorPool = *result.sceneDescriptorPool, .descriptorSetCount = 1, .pSetLayouts = &vk_layout}
-            )[0]);
-            util::setDebugName(mDevice, vk::DescriptorSet(result.sceneDescriptor), "scene_descriptor_set");
+        vk::UniqueSemaphore image_transfer_semaphore = mDevice.createSemaphoreUnique({});
+        vk::UniqueFence fence = mDevice.createFenceUnique({});
+        staging.submit(mTransferQueue, vk::SubmitInfo().setSignalSemaphores(*image_transfer_semaphore));
+        vk::PipelineStageFlags semaphore_stage_mask = vk::PipelineStageFlagBits::eTopOfPipe;
+        vk::SubmitInfo submitInfo{};
+        submitInfo.setWaitSemaphores(*image_transfer_semaphore)
+                .setCommandBuffers(graphics_cmds)
+                .setWaitDstStageMask(semaphore_stage_mask);
+        mGraphicsQueue.queue.submit(submitInfo, *fence);
+
+        createGpuDataInitVertices(
+                scene_data, staging,
+                {"scene_vertex_positions", "scene_vertex_normals", "scene_vertex_tangents", "scene_vertex_texcoords",
+                 "scene_vertex_indices"},
+                gpu_data
+        );
+        const auto node_instance_map = createGpuDataInitInstances(scene_data, staging, "scene_instances", gpu_data);
+        createGpuDataInitSections(
+                scene_data, staging, node_instance_map, "scene_draw_commands", "scene_sections", "scene_bounding_boxes", gpu_data
+        );
+        createGpuDataInitMaterials(scene_data, staging, image_indices, "scene_materials", gpu_data);
+        createGpuDataInitLights(scene_data, staging, "scene_uber_lights", gpu_data);
+        createGpuDataUpdateDescriptorSet(gpu_data);
+        staging.submit(mTransferQueue);
+
+        while (mDevice.waitForFences(*fence, true, UINT64_MAX) == vk::Result::eTimeout) {
         }
 
+        return gpu_data;
+    }
+
+    void Loader::createGpuDataInitDescriptorPool(const std::string &debug_name, GpuData &gpu_data) const {
+        gpu_data.sceneDescriptorLayout = SceneDescriptorLayout(mDevice);
+
+        std::array pool_sizes = {
+            vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, UNIFORM_BUFFER_POOL_SIZE},
+            vk::DescriptorPoolSize{vk::DescriptorType::eCombinedImageSampler, COMBINED_IMAGE_SAMPLER_POOL_SIZE},
+            vk::DescriptorPoolSize{vk::DescriptorType::eStorageBuffer, STORAGE_BUFFER_POOL_SIZE},
+        };
+
+        gpu_data.sceneDescriptorPool =
+                mDevice.createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo{.maxSets = 1}.setPoolSizes(pool_sizes));
+        util::setDebugName(mDevice, *gpu_data.sceneDescriptorPool, debug_name);
+    }
+
+    void Loader::createGpuDataInitDescriptorSet(const std::string &debug_name, GpuData &gpu_data) const {
+        vk::DescriptorSetLayout vk_layout = gpu_data.sceneDescriptorLayout;
+
+        gpu_data.sceneDescriptor = DescriptorSet(mDevice.allocateDescriptorSets({
+            .descriptorPool = *gpu_data.sceneDescriptorPool,
+            .descriptorSetCount = 1,
+            .pSetLayouts = &vk_layout,
+        })[0]);
+
+        util::setDebugName(mDevice, vk::DescriptorSet(gpu_data.sceneDescriptor), debug_name);
+    }
+
+    void Loader::createGpuDataInitSampler(const std::string &debug_name, GpuData &gpu_data) const {
         float max_anisotropy = mPhysicalDevice.getProperties().limits.maxSamplerAnisotropy;
-        result.sampler = mDevice.createSamplerUnique(
+
+        gpu_data.sampler = mDevice.createSamplerUnique(
                 {.magFilter = vk::Filter::eLinear,
                  .minFilter = vk::Filter::eLinear,
                  .mipmapMode = vk::SamplerMipmapMode::eLinear,
@@ -133,20 +181,32 @@ namespace scene {
                  .maxLod = vk::LodClampNone,
                  .borderColor = vk::BorderColor::eFloatOpaqueBlack}
         );
-        util::setDebugName(mDevice, *result.sampler, "scene_sampler");
 
-        result.images.reserve(scene_data.images.size());
-        result.views.reserve(scene_data.images.size());
-        // since some images will be skipped, the indices need to be mapped
-        std::vector<uint32_t> image_index;
+        util::setDebugName(mDevice, *gpu_data.sampler, debug_name);
+    }
+
+    std::vector<uint32_t> Loader::createGpuDataInitImages(
+            const gltf::Scene &scene_data,
+            const vk::CommandBuffer &graphics_cmds,
+            StagingBuffer &staging,
+            const std::string &image_debug_name,
+            const std::string &image_view_debug_name,
+            GpuData &gpu_data
+    ) const {
+        std::vector<uint32_t> image_indices;
+        gpu_data.images.reserve(scene_data.images.size());
+        gpu_data.views.reserve(scene_data.images.size());
+
+        graphics_cmds.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+
         for (const auto &image_data: scene_data.images) {
             // image isn't used by any material
             if (image_data.format == vk::Format::eUndefined) {
-                image_index.emplace_back(-1);
+                image_indices.emplace_back(-1);
                 continue;
             }
-            uint32_t index = static_cast<uint32_t>(result.images.size());
-            image_index.emplace_back(index);
+            uint32_t index = static_cast<uint32_t>(gpu_data.images.size());
+            image_indices.emplace_back(index);
 
             ImageCreateInfo create_info = {
                 .format = image_data.format,
@@ -157,9 +217,9 @@ namespace scene {
                 .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc |
                          vk::ImageUsageFlagBits::eTransferDst,
             };
-            Image &image = result.images.emplace_back();
+            Image &image = gpu_data.images.emplace_back();
             image = Image::create(staging.allocator(), create_info);
-            util::setDebugName(mDevice, *image.image, "scene_image");
+            util::setDebugName(mDevice, *image.image, image_debug_name);
 
             vk::Buffer staged_buffer = staging.stage(image_data.pixels);
             image.load(staging.commands(), 0, {}, staged_buffer);
@@ -167,15 +227,15 @@ namespace scene {
             image.generateMipmaps(graphics_cmds);
             image.barrier(graphics_cmds, ImageResourceAccess::FragmentShaderReadOptimal);
 
-            ImageView &view = result.views.emplace_back();
+            ImageView &view = gpu_data.views.emplace_back();
             view = ImageView::create(mDevice, image);
-            util::setDebugName(mDevice, *view.view, "scene_image_view");
+            util::setDebugName(mDevice, *view.view, image_view_debug_name);
 
             mDevice.updateDescriptorSets(
-                    {result.sceneDescriptor.write(
+                    {gpu_data.sceneDescriptor.write(
                             SceneDescriptorLayout::ImageSamplers,
                             vk::DescriptorImageInfo{
-                                .sampler = *result.sampler, .imageView = view, .imageLayout = vk::ImageLayout::eReadOnlyOptimal
+                                .sampler = *gpu_data.sampler, .imageView = view, .imageLayout = vk::ImageLayout::eReadOnlyOptimal
                             },
                             index
                     )},
@@ -185,34 +245,38 @@ namespace scene {
 
         graphics_cmds.end();
 
-        auto graphics_queue_fence = mDevice.createFenceUnique({});
-        auto image_transfer_semaphore = mDevice.createSemaphoreUnique({});
-        staging.submit(mTransferQueue, vk::SubmitInfo().setSignalSemaphores(*image_transfer_semaphore));
-        vk::PipelineStageFlags semaphore_stage_mask = vk::PipelineStageFlagBits::eTopOfPipe;
-        mGraphicsQueue.queue.submit(
-                {vk::SubmitInfo()
-                         .setWaitSemaphores(*image_transfer_semaphore)
-                         .setCommandBuffers(graphics_cmds)
-                         .setWaitDstStageMask(semaphore_stage_mask)},
-                *graphics_queue_fence
+        return image_indices;
+    }
+
+    void Loader::createGpuDataInitVertices(
+            const gltf::Scene &scene_data, StagingBuffer &staging, const std::array<std::string, 5> &debug_names, GpuData &gpu_data
+    ) const {
+        uploadBufferWithDebugName(
+                staging, scene_data.vertex_position_data, vk::BufferUsageFlagBits::eVertexBuffer,
+                "scene_vertex_positions", gpu_data.positions, gpu_data.positionsAlloc
         );
+        uploadBufferWithDebugName(
+                staging, scene_data.vertex_normal_data, vk::BufferUsageFlagBits::eVertexBuffer, "scene_vertex_normals",
+                gpu_data.normals, gpu_data.normalsAlloc
+        );
+        uploadBufferWithDebugName(
+                staging, scene_data.vertex_tangent_data, vk::BufferUsageFlagBits::eVertexBuffer,
+                "scene_vertex_tangents", gpu_data.tangents, gpu_data.tangentsAlloc
+        );
+        uploadBufferWithDebugName(
+                staging, scene_data.vertex_texcoord_data, vk::BufferUsageFlagBits::eVertexBuffer,
+                "scene_vertex_texcoords", gpu_data.texcoords, gpu_data.texcoordsAlloc
+        );
+        uploadBufferWithDebugName(
+                staging, scene_data.index_data, vk::BufferUsageFlagBits::eIndexBuffer, "scene_vertex_indices",
+                gpu_data.indices, gpu_data.indicesAlloc
+        );
+    }
 
-        std::tie(result.positions, result.positionsAlloc) =
-                staging.upload(scene_data.vertex_position_data, vk::BufferUsageFlagBits::eVertexBuffer);
-        util::setDebugName(mDevice, *result.positions, "scene_vertex_positions");
-        std::tie(result.normals, result.normalsAlloc) =
-                staging.upload(scene_data.vertex_normal_data, vk::BufferUsageFlagBits::eVertexBuffer);
-        util::setDebugName(mDevice, *result.normals, "scene_vertex_normals");
-        std::tie(result.tangents, result.tangentsAlloc) =
-                staging.upload(scene_data.vertex_tangent_data, vk::BufferUsageFlagBits::eVertexBuffer);
-        util::setDebugName(mDevice, *result.tangents, "scene_vertex_tangents");
-        std::tie(result.texcoords, result.texcoordsAlloc) =
-                staging.upload(scene_data.vertex_texcoord_data, vk::BufferUsageFlagBits::eVertexBuffer);
-        util::setDebugName(mDevice, *result.texcoords, "scene_vertex_texcoords");
-        std::tie(result.indices, result.indicesAlloc) =
-                staging.upload(scene_data.index_data, vk::BufferUsageFlagBits::eIndexBuffer);
-        util::setDebugName(mDevice, *result.indices, "scene_vertex_indices");
-
+    // TODO: Clean up
+    std::vector<glm::uint> Loader::createGpuDataInitInstances(
+            const gltf::Scene &scene_data, StagingBuffer &staging, const std::string &debug_name, GpuData &gpu_data
+    ) const {
         const std::vector<gltf::Node> &nodes = scene_data.nodes;
 
         const std::size_t mesh_node_count = std::ranges::count_if(nodes, [](const gltf::Node &node) {
@@ -254,11 +318,64 @@ namespace scene {
 
         auto [raw_instance_buffer,
               instance_alloc] = staging.upload(instance_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
-        result.instances = Buffer(
+        gpu_data.instances = Buffer(
                 std::move(raw_instance_buffer), std::move(instance_alloc), instance_blocks.size() * sizeof(InstanceBlock)
         );
-        util::setDebugName(mDevice, static_cast<vk::Buffer>(result.instances), "scene_instances");
+        util::setDebugName(mDevice, static_cast<vk::Buffer>(gpu_data.instances), debug_name);
 
+        return node_instance_map;
+    }
+
+    void Loader::createGpuDataInitLights(
+            const gltf::Scene &scene_data, StagingBuffer &staging, const std::string &debug_name, GpuData &gpu_data
+    ) const {
+        float light_range_epsilon = 1.0f / 128.0f;
+        std::vector<UberLightBlock> uber_light_blocks;
+        uber_light_blocks.reserve(scene_data.pointLights.size() + scene_data.spotLights.size());
+
+        for (const auto &light: scene_data.pointLights) {
+            uber_light_blocks.emplace_back() = {
+                .position = light.position,
+                .range = 0,
+                .radiance = light.radiance(),
+                .pointSize = 0.05f,
+            };
+            uber_light_blocks.back().updateRange(light_range_epsilon);
+        }
+
+        for (const auto &light: scene_data.spotLights) {
+            float angle_scale = 1.0f / std::max(
+                                               0.001f, glm::cos(glm::radians(light.innerConeAngle)) -
+                                                               glm::cos(glm::radians(light.outerConeAngle))
+                                       );
+            float angle_offset = -glm::cos(glm::radians(light.outerConeAngle)) * angle_scale;
+            uber_light_blocks.emplace_back() = {
+                .position = light.position,
+                .range = 0,
+                .radiance = light.radiance(),
+                .coneAngleScale = angle_scale,
+                .direction = util::octahedronEncode(light.direction()),
+                .pointSize = 0.05f,
+                .coneAngleOffset = angle_offset,
+            };
+            uber_light_blocks.back().updateRange(light_range_epsilon);
+        }
+
+        uploadBufferWithDebugName(
+                staging, uber_light_blocks, vk::BufferUsageFlagBits::eStorageBuffer, debug_name, gpu_data.uberLights,
+                gpu_data.uberLightsAlloc
+        );
+    }
+
+    void Loader::createGpuDataInitSections(
+            const gltf::Scene &scene_data,
+            StagingBuffer &staging,
+            const std::vector<glm::uint> node_instance_map,
+            const std::string &draw_cmd_debug_name,
+            const std::string &sections_debug_name,
+            const std::string &bounding_boxes_debug_name,
+            GpuData &gpu_data
+    ) const {
         std::vector<SectionBlock> section_blocks;
         section_blocks.reserve(scene_data.sections.size());
         std::vector<vk::DrawIndexedIndirectCommand> draw_commands;
@@ -278,24 +395,38 @@ namespace scene {
             const auto &bounds = scene_data.bounds[section.bounds];
             bounding_box_blocks.emplace_back() = {.min = glm::vec4(bounds.min, 0.0f), .max = glm::vec4(bounds.max, 0.0f)};
         }
-        std::tie(result.drawCommands, result.drawCommandsAlloc) = staging.upload(
-                draw_commands, vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eStorageBuffer
-        );
-        util::setDebugName(mDevice, *result.drawCommands, "scene_draw_commands");
-        result.drawCommandCount = static_cast<uint32_t>(draw_commands.size());
-        std::tie(result.sections, result.sectionsAlloc) =
-                staging.upload(section_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
-        util::setDebugName(mDevice, *result.sections, "scene_sections");
-        std::tie(result.boundingBoxes, result.boundingBoxesAlloc) =
-                staging.upload(bounding_box_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
-        util::setDebugName(mDevice, *result.boundingBoxes, "scene_bounding_boxes");
 
+        uploadBufferWithDebugName(
+                staging, draw_commands, vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eStorageBuffer,
+                draw_cmd_debug_name, gpu_data.drawCommands, gpu_data.drawCommandsAlloc
+        );
+
+        gpu_data.drawCommandCount = static_cast<uint32_t>(draw_commands.size());
+
+        uploadBufferWithDebugName(
+                staging, section_blocks, vk::BufferUsageFlagBits::eStorageBuffer, sections_debug_name,
+                gpu_data.sections, gpu_data.sectionsAlloc
+        );
+
+        uploadBufferWithDebugName(
+                staging, bounding_box_blocks, vk::BufferUsageFlagBits::eStorageBuffer, bounding_boxes_debug_name,
+                gpu_data.boundingBoxes, gpu_data.boundingBoxesAlloc
+        );
+    }
+
+    void Loader::createGpuDataInitMaterials(
+            const gltf::Scene &scene_data,
+            StagingBuffer &staging,
+            const std::vector<uint32_t> image_indices,
+            const std::string &debug_name,
+            GpuData &gpu_data
+    ) const {
         std::vector<MaterialBlock> material_blocks;
         material_blocks.reserve(scene_data.materials.size());
         for (const auto &material: scene_data.materials) {
-            uint32_t albedo_texture_index = material.albedoTexture == -1 ? 0xffff : image_index[material.albedoTexture];
-            uint32_t normal_texture_index = material.normalTexture == -1 ? 0xffff : image_index[material.normalTexture];
-            uint32_t orm_texture_index = material.ormTexture == -1 ? 0xffff : image_index[material.ormTexture];
+            uint32_t albedo_texture_index = material.albedoTexture == -1 ? 0xffff : image_indices[material.albedoTexture];
+            uint32_t normal_texture_index = material.normalTexture == -1 ? 0xffff : image_indices[material.normalTexture];
+            uint32_t orm_texture_index = material.ormTexture == -1 ? 0xffff : image_indices[material.ormTexture];
             material_blocks.emplace_back() = {
                 .albedoFactors = material.albedoFactor,
                 .rmnFactors = glm::vec4{material.roughnessFactor, material.metalnessFactor, material.normalFactor, 1.0f},
@@ -303,77 +434,54 @@ namespace scene {
                 .packedImageIndices1 = orm_texture_index & 0xffff,
             };
         }
-        std::tie(result.materials, result.materialsAlloc) =
-                staging.upload(material_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
-        util::setDebugName(mDevice, *result.materials, "scene_materials");
 
-        float light_range_epsilon = 1.0f / 128.0f;
-        std::vector<UberLightBlock> uber_light_blocks;
-        uber_light_blocks.reserve(scene_data.pointLights.size() + scene_data.spotLights.size());
-        for (const auto &light: scene_data.pointLights) {
-            uber_light_blocks.emplace_back() = {
-                .position = light.position,
-                .range = 0,
-                .radiance = light.radiance(),
-                .pointSize = 0.05f,
-            };
-            uber_light_blocks.back().updateRange(light_range_epsilon);
-        }
-        for (const auto &light: scene_data.spotLights) {
-            float angle_scale = 1.0f / std::max(
-                                               0.001f, glm::cos(glm::radians(light.innerConeAngle)) -
-                                                               glm::cos(glm::radians(light.outerConeAngle))
-                                       );
-            float angle_offset = -glm::cos(glm::radians(light.outerConeAngle)) * angle_scale;
-            uber_light_blocks.emplace_back() = {
-                .position = light.position,
-                .range = 0,
-                .radiance = light.radiance(),
-                .coneAngleScale = angle_scale,
-                .direction = util::octahedronEncode(light.direction()),
-                .pointSize = 0.05f,
-                .coneAngleOffset = angle_offset,
-            };
-            uber_light_blocks.back().updateRange(light_range_epsilon);
-        }
-        std::tie(result.uberLights, result.uberLightsAlloc) =
-                staging.upload(uber_light_blocks, vk::BufferUsageFlagBits::eStorageBuffer);
-        util::setDebugName(mDevice, *result.uberLights, "scene_uber_lights");
+        uploadBufferWithDebugName(
+                staging, material_blocks, vk::BufferUsageFlagBits::eStorageBuffer, debug_name, gpu_data.materials,
+                gpu_data.materialsAlloc
+        );
+    }
 
+    void Loader::createGpuDataUpdateDescriptorSet(GpuData &gpu_data) const {
         mDevice.updateDescriptorSets(
                 {
-                    result.sceneDescriptor.write(
+                    gpu_data.sceneDescriptor.write(
                             SceneDescriptorLayout::SectionBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *result.sections, .offset = 0, .range = vk::WholeSize}
+                            vk::DescriptorBufferInfo{.buffer = *gpu_data.sections, .offset = 0, .range = vk::WholeSize}
                     ),
-                    result.sceneDescriptor.write(
+                    gpu_data.sceneDescriptor.write(
                             SceneDescriptorLayout::InstanceBuffer,
                             vk::DescriptorBufferInfo{
-                                .buffer = static_cast<vk::Buffer>(result.instances), .offset = 0, .range = vk::WholeSize
+                                .buffer = static_cast<vk::Buffer>(gpu_data.instances), .offset = 0, .range = vk::WholeSize
                             }
                     ),
-                    result.sceneDescriptor.write(
+                    gpu_data.sceneDescriptor.write(
                             SceneDescriptorLayout::MaterialBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *result.materials, .offset = 0, .range = vk::WholeSize}
+                            vk::DescriptorBufferInfo{.buffer = *gpu_data.materials, .offset = 0, .range = vk::WholeSize}
                     ),
-                    result.sceneDescriptor.write(
+                    gpu_data.sceneDescriptor.write(
                             SceneDescriptorLayout::UberLightBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *result.uberLights, .offset = 0, .range = vk::WholeSize}
+                            vk::DescriptorBufferInfo{.buffer = *gpu_data.uberLights, .offset = 0, .range = vk::WholeSize}
                     ),
-                    result.sceneDescriptor.write(
+                    gpu_data.sceneDescriptor.write(
                             SceneDescriptorLayout::BoundingBoxBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *result.boundingBoxes, .offset = 0, .range = vk::WholeSize}
+                            vk::DescriptorBufferInfo{.buffer = *gpu_data.boundingBoxes, .offset = 0, .range = vk::WholeSize}
                     ),
                 },
                 {}
         );
+    }
 
-        staging.submit(mTransferQueue);
-
-        while (mDevice.waitForFences(*graphics_queue_fence, true, UINT64_MAX) == vk::Result::eTimeout) {
-        }
-
-        return result;
+    template<typename T>
+    void Loader::uploadBufferWithDebugName(
+            StagingBuffer &staging,
+            T &&src,
+            vk::BufferUsageFlags usage,
+            const std::string &debugName,
+            vma::UniqueBuffer &outBuffer,
+            vma::UniqueAllocation &outAlloc
+    ) const {
+        std::tie(outBuffer, outAlloc) = staging.upload(std::forward<T>(src), usage);
+        util::setDebugName(mDevice, *outBuffer, debugName);
     }
 
 } // namespace scene

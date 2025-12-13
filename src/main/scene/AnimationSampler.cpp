@@ -15,6 +15,7 @@ namespace scene {
 
         const std::size_t anim_cursor_count = anim_cursor_cache.size();
         const std::size_t anim_count = cpu_data.instance_animations.size();
+        const std::size_t first_anim_instance_idx = cpu_data.instances.size() - cpu_data.instance_animations.size();
 
         if (anim_cursor_count != anim_count) {
             Logger::warning(std::format(
@@ -23,7 +24,7 @@ namespace scene {
             ));
 
             for (std::size_t anim_idx{0}; anim_idx < anim_count; ++anim_idx) {
-                const std::size_t instance_idx = cpu_data.animated_instances[anim_idx];
+                const std::size_t instance_idx = first_anim_instance_idx + anim_idx;
                 const Instance &instance = cpu_data.instances[instance_idx];
                 transforms.push_back(instance.transform);
             }
@@ -33,7 +34,7 @@ namespace scene {
 
         for (std::size_t anim_idx{0}; anim_idx < anim_count; ++anim_idx) {
             const InstanceAnimation &anim = cpu_data.instance_animations[anim_idx];
-            const std::size_t instance_idx = cpu_data.animated_instances[anim_idx];
+            const std::size_t instance_idx = first_anim_instance_idx + anim_idx;
             const Instance &instance = cpu_data.instances[instance_idx];
             const glm::mat4 &prev_transform = instance.transform;
 

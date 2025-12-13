@@ -28,17 +28,17 @@ class Cubemap;
 
 class Application {
 private:
-    static constexpr int BLOB_RESOLUTION = 50;
-    static constexpr float MOUSE_SENSITIVITY = 0.0026;
-    static constexpr float BASE_SPEED = 5.0f;
-    static constexpr float FAST_SPEED_MULTIPLIER = 10.0f;
-    static constexpr int WINDOW_WIDTH = 1600;
-    static constexpr int WINDOW_HEIGHT = 900;
-    static constexpr float FOV = glm::radians(90.0f);
-    static constexpr float NEAR_PLANE = 0.001f;
-    static constexpr glm::vec3 CAMERA_POSITION = glm::vec3{0, 1, 5};
-    static constexpr char TITLE[] = "City Lights";
-    static constexpr char SCENE_FILENAME[] = "resources/scenes/city_animated.glb";
+    static constexpr int BLOB_RESOLUTION{50};
+    static constexpr float MOUSE_SENSITIVITY{0.0026f};
+    static constexpr float BASE_SPEED{5.0f};
+    static constexpr float FAST_SPEED_MULTIPLIER{10.0f};
+    static constexpr int WINDOW_WIDTH{1600};
+    static constexpr int WINDOW_HEIGHT{900};
+    static constexpr float FOV{glm::radians(90.0f)};
+    static constexpr float NEAR_PLANE{0.001f};
+    static constexpr glm::vec3 CAMERA_POSITION{0.0f, 1.0f, 5.0f};
+    static constexpr char TITLE[]{"City Lights"};
+    static constexpr char SCENE_FILENAME[]{"resources/scenes/city_animated.glb"};
     static inline const std::array<std::string, 6> SKYBOX_FILENAMES{
         "resources/skybox/px.hdr", "resources/skybox/nx.hdr", "resources/skybox/py.hdr",
         "resources/skybox/ny.hdr", "resources/skybox/pz.hdr", "resources/skybox/nz.hdr",

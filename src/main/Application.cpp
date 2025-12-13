@@ -81,6 +81,8 @@ void Application::run() {
         mInput->update();
         processInput();
         mBlobModel->advanceTime(mInput->timeDelta());
+        // if audio L/R is swapped then this should be (0,0,-1)
+        mAudio->update(mCamera->position, mCamera->rotationMatrix() * glm::vec3(0, 0, 1));
 
         mRenderSystem->begin();
         mRenderSystem->imGuiBackend().beginFrame();

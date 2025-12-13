@@ -9,6 +9,10 @@
 #include "debug/Settings.h"
 #include "scene/AnimationSampler.h"
 
+
+class Sound;
+class Audio;
+class Music;
 class ShadowCascade;
 class RenderSystem;
 class SettingsGui;
@@ -38,7 +42,7 @@ private:
     static constexpr float NEAR_PLANE{0.001f};
     static constexpr glm::vec3 CAMERA_POSITION{0.0f, 1.0f, 5.0f};
     static constexpr char TITLE[]{"City Lights"};
-    static constexpr char SCENE_FILENAME[]{"resources/scenes/city_animated.glb"};
+    static constexpr char SCENE_FILENAME[]{"resources/scenes/CityTest.glb"};
     static inline const std::array<std::string, 6> SKYBOX_FILENAMES{
         "resources/skybox/px.hdr", "resources/skybox/nx.hdr", "resources/skybox/py.hdr",
         "resources/skybox/ny.hdr", "resources/skybox/pz.hdr", "resources/skybox/nz.hdr",
@@ -60,6 +64,9 @@ private:
 
     std::unique_ptr<blob::Model> mBlobModel;
     std::unique_ptr<Cubemap> mSkybox;
+
+    std::unique_ptr<Audio> mAudio;
+    std::unique_ptr<Music> mAmbientMusic;
 
     std::vector<scene::InstanceAnimationCursor> mAnimationCursorCache;
 

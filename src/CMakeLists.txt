@@ -55,6 +55,11 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tracy)
 
+include(cmake/soloud.cmake)
+target_compile_definitions(soloud PRIVATE
+        WITH_MINIAUDIO
+)
+
 ## Config / Linking
 
 target_compile_definitions(main PRIVATE VULKAN_HPP_NO_CONSTRUCTORS VULKAN_HPP_NO_SPACESHIP_OPERATOR VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1)
@@ -65,10 +70,11 @@ target_compile_definitions(main PRIVATE GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_T
 target_link_libraries(main PRIVATE glm::glm)
 target_link_libraries(main PRIVATE unofficial::shaderc::shaderc)
 target_include_directories(main PRIVATE ${Stb_INCLUDE_DIR})
-target_link_libraries(main PRIVATE Vulkan::UtilityHeaders) # Unused-> Vulkan::SafeStruct Vulkan::LayerSettings  Vulkan::CompilerConfiguration
+target_link_libraries(main PRIVATE Vulkan::UtilityHeaders) # Unused-> Vulkan::SafeStruct Vulkan::LayerSettings Vulkan::CompilerConfiguration
 target_link_libraries(main PRIVATE cpptrace::cpptrace)
 target_compile_definitions(main PRIVATE IMGUI_DEFINE_MATH_OPERATORS)
 target_link_libraries(main PRIVATE imgui::imgui)
 target_link_libraries(main PRIVATE TracyClient)
 target_link_libraries(main PRIVATE vk-bootstrap::vk-bootstrap)
 target_link_libraries(main PRIVATE fastgltf::fastgltf)
+target_link_libraries(main PRIVATE soloud)

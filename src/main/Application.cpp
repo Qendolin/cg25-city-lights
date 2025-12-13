@@ -7,6 +7,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include "RenderSystem.h"
+#include "audio/Audio.h"
 #include "backend/Swapchain.h"
 #include "backend/VulkanContext.h"
 #include "debug/Performance.h"
@@ -60,6 +61,11 @@ Application::Application() {
     mCamera = std::make_unique<Camera>(FOV, NEAR_PLANE, CAMERA_POSITION, glm::vec3{});
     mDebugFrameTimes = std::make_unique<FrameTimes>();
 
+    mAudio = std::make_unique<Audio>();
+    mAmbientMusic = mAudio->createMusic("resources/audio/ambiance.ogg");
+    mAmbientMusic->setLooping(true);
+    mAmbientMusic->setVolume(0.05);
+
     mAnimationCursorCache.resize(mScene->cpu().instance_animations.size());
 
     mRenderSystem->recreate(mSettings);
@@ -68,6 +74,7 @@ Application::Application() {
 Application::~Application() = default;
 
 void Application::run() {
+    mAmbientMusic->play();
     while (!mCtx->window().shouldClose()) {
         mRenderSystem->advance(mSettings);
 

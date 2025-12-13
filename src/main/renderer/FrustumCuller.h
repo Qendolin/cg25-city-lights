@@ -12,7 +12,7 @@ class TransientBufferAllocator;
 namespace scene {
     struct GpuData;
 }
-class Buffer;
+struct Buffer;
 class ShaderLoader;
 
 class FrustumCuller {

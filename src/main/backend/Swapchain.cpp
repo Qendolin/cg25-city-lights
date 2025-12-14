@@ -60,7 +60,7 @@ void Swapchain::create() {
                     .surfaceCapabilities;
 
     // +1 avoids stalls when cpu and gpu are fast and waiting on the monitor
-    uint32_t swapchain_image_count = util::MaxFramesInFlight + 0;
+    uint32_t swapchain_image_count = util::MaxFramesInFlight + 1;
     if (surface_capabilities.maxImageCount > 0)
         swapchain_image_count = std::min(swapchain_image_count, surface_capabilities.maxImageCount);
     swapchain_image_count = std::max(swapchain_image_count, surface_capabilities.minImageCount);

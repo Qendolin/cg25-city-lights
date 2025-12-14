@@ -1,5 +1,5 @@
 #pragma once
 
 namespace util {
-    inline constexpr int MaxFramesInFlight = 3;
+    inline constexpr int MaxFramesInFlight = 2;
 }

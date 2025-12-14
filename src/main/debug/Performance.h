@@ -1,7 +1,9 @@
 #pragma once
 
 #include <array>
+#include <complex.h>
 #include <limits>
+#include <vector>
 
 struct FrameTimes {
     int singleIndex = 0;
@@ -21,6 +23,8 @@ struct FrameTimes {
     std::array<float, 32> avg = {};
     std::array<float, 32> min = {};
     std::array<float, 32> max = {};
+
+    std::vector <std::pair<std::string, float>> lines = {};
 
     void update(float delta);
     void draw();

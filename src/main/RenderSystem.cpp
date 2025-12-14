@@ -106,7 +106,7 @@ void RenderSystem::recreate(const Settings &settings) {
     mSsaoIntermediaryImage = ImageWithView::create(
             device, mContext->allocator(),
             {
-                .format = vk::Format::eR8G8B8A8Unorm,
+                .format = settings.ssao.bentNormals ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8Unorm,
                 .aspects = vk::ImageAspectFlagBits::eColor,
                 .width = ao_size.width,
                 .height = ao_size.height,
@@ -120,7 +120,7 @@ void RenderSystem::recreate(const Settings &settings) {
     mSsaoResultImage = ImageWithView::create(
             device, mContext->allocator(),
             {
-                .format = vk::Format::eR8G8B8A8Unorm,
+                .format = settings.ssao.bentNormals ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8Unorm,
                 .aspects = vk::ImageAspectFlagBits::eColor,
                 .width = ao_size.width,
                 .height = ao_size.height,
@@ -159,32 +159,32 @@ void RenderSystem::recreate(const Settings &settings) {
     mDepthPrePassRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mLightRenderer->recreate(device, mShaderLoader);
 
-    // These have to match the max frames in flight count but can be more
+    // These have to match the max frames in flight count
     if (!mPerFrameObjects.initialized()) {
         mPerFrameObjects.create(util::MaxFramesInFlight, [&](int i) {
-           auto graphics_cmd_bufs = device.allocateCommandBuffers(
-                   {.commandPool = *mGraphicsCommandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 4}
-           );
-           auto compute_cmd_bufs = device.allocateCommandBuffers(
-                   {.commandPool = *mComputeCommandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1}
-           );
+            auto graphics_cmd_bufs = device.allocateCommandBuffers(
+                    {.commandPool = *mGraphicsCommandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 4}
+            );
+            auto compute_cmd_bufs = device.allocateCommandBuffers(
+                    {.commandPool = *mComputeCommandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1}
+            );
 
-           PerFrameObjects result = {
-               .earlyGraphicsCommands = graphics_cmd_bufs[0],
-               .mainGraphicsCommands = graphics_cmd_bufs[1],
-               .independentGraphicsCommands = graphics_cmd_bufs[2],
-               .asyncComputeCommands = compute_cmd_bufs[0],
-               .nonAsyncComputeCommands = graphics_cmd_bufs[3],
-               .earlyGraphicsFinishedSemaphore = device.createSemaphoreUnique({}),
-               .asyncComputeFinishedSemaphore = device.createSemaphoreUnique({}),
-               .imageAvailableSemaphore = device.createSemaphoreUnique({}),
-               .inFlightFence = device.createFenceUnique({.flags = vk::FenceCreateFlagBits::eSignaled}),
-               .descriptorAllocator = UniqueDescriptorAllocator(device),
-               .transientBufferAllocator = UniqueTransientBufferAllocator(mContext->device(), mContext->allocator()),
-           };
-           result.setDebugLabels(device, i);
-           return result;
-       });
+            PerFrameObjects result = {
+                .earlyGraphicsCommands = graphics_cmd_bufs[0],
+                .mainGraphicsCommands = graphics_cmd_bufs[1],
+                .independentGraphicsCommands = graphics_cmd_bufs[2],
+                .asyncComputeCommands = compute_cmd_bufs[0],
+                .nonAsyncComputeCommands = graphics_cmd_bufs[3],
+                .earlyGraphicsFinishedSemaphore = device.createSemaphoreUnique({}),
+                .asyncComputeFinishedSemaphore = device.createSemaphoreUnique({}),
+                .imageAvailableSemaphore = device.createSemaphoreUnique({}),
+                .inFlightFence = device.createFenceUnique({.flags = vk::FenceCreateFlagBits::eSignaled}),
+                .descriptorAllocator = UniqueDescriptorAllocator(device),
+                .transientBufferAllocator = UniqueTransientBufferAllocator(mContext->device(), mContext->allocator()),
+            };
+            result.setDebugLabels(device, i);
+            return result;
+        });
     }
 
     // These have to match the swapchain image count exactly
@@ -271,6 +271,8 @@ void RenderSystem::draw(const RenderData &rd) {
     const auto &cmd_buf_compute = rd.settings.rendering.asyncCompute ? frame_objects.asyncComputeCommands
                                                                      : frame_objects.nonAsyncComputeCommands;
 
+    auto time_record_start = std::chrono::high_resolution_clock::now();
+
     // Framebuffer needs to be synced to swapchain, so get it explicitly
     Framebuffer &swapchain_fb = mSwapchainFramebuffers.get(swapchain.activeImageIndex());
 
@@ -339,7 +341,7 @@ void RenderSystem::draw(const RenderData &rd) {
         );
     }
 
-    // """Async""" Graphics (Graphics that can run independently)
+    // Independent Graphics (Don't need swapchain)
     {
         const auto &cmd_buf = frame_objects.independentGraphicsCommands;
         cmd_buf.begin(vk::CommandBufferBeginInfo{});
@@ -410,6 +412,9 @@ void RenderSystem::draw(const RenderData &rd) {
         swapchain_fb.colorAttachments[0].image().barrier(cmd_buf, ImageResourceAccess::PresentSrc);
     }
 
+    auto time_record_end = std::chrono::high_resolution_clock::now();
+    mTimings.record = std::chrono::duration<double, std::milli>(time_record_end - time_record_start).count();
+
     // Submit early graphics work
     {
         frame_objects.earlyGraphicsCommands.end();
@@ -436,25 +441,38 @@ void RenderSystem::draw(const RenderData &rd) {
         }
     }
 
-    // Sumit """async""" graphics
+    // Sumit independent graphics
     {
         frame_objects.independentGraphicsCommands.end();
         // Don't need to wait because submission is on the same queue as early graphics
         // For the same reason it doesn't need to signal for the main graphics
         mContext->mainQueue->submit(vk::SubmitInfo().setCommandBuffers(frame_objects.independentGraphicsCommands));
     }
+
+    auto time_submit_end = std::chrono::high_resolution_clock::now();
+    mTimings.submit = std::chrono::duration<double, std::milli>(time_submit_end - time_record_end).count();
 }
 
 void RenderSystem::advance(const Settings &settings) {
     auto &swapchain = mContext->swapchain();
     auto &frame_objects = mPerFrameObjects.next();
 
+    auto time_fence_start = std::chrono::high_resolution_clock::now();
+    mBeginTime = time_fence_start;
+
     while (mContext->device().waitForFences(*frame_objects.inFlightFence, true, UINT64_MAX) == vk::Result::eTimeout) {
     }
 
+    auto time_fence_end = std::chrono::high_resolution_clock::now();
+    mTimings.fence = std::chrono::duration<double, std::milli>(time_fence_end - time_fence_start).count();
+
+    // It would be better to do this later in the frame to give the host more time to release the image
     if (!swapchain.advance(*frame_objects.imageAvailableSemaphore)) {
         recreate(settings);
     }
+
+    auto time_advance_end = std::chrono::high_resolution_clock::now();
+    mTimings.advance = std::chrono::duration<double, std::milli>(time_advance_end - time_fence_end).count();
 
     mInstanceTransformUpdates.next();
 }
@@ -470,15 +488,17 @@ void RenderSystem::submit(const Settings &settings) {
     const auto &frame_objects = mPerFrameObjects.get();
     // These must correspond to the active swapchain image index, because the semaphore only becomes unsignaled
     // once the swapchain image is released (and acquired)
+    // https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html
     const auto &render_finished_semaphore = mRenderFinishedSemaphore.get(mContext->swapchain().activeImageIndex());
 
-    frame_objects.mainGraphicsCommands.end();
+    auto time_submit_start = std::chrono::high_resolution_clock::now();
 
+    frame_objects.mainGraphicsCommands.end();
     util::static_vector<vk::Semaphore, 2> wait_semaphores = {*frame_objects.imageAvailableSemaphore};
     util::static_vector<vk::PipelineStageFlags, 2> wait_masks = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
     if (settings.rendering.asyncCompute) {
         wait_semaphores.push_back(*frame_objects.asyncComputeFinishedSemaphore);
-        wait_masks.push_back(vk::PipelineStageFlagBits::eTopOfPipe);
+        wait_masks.push_back(vk::PipelineStageFlagBits::eFragmentShader);
     }
     auto submit_info = vk::SubmitInfo()
                                .setCommandBuffers(frame_objects.mainGraphicsCommands)
@@ -488,9 +508,17 @@ void RenderSystem::submit(const Settings &settings) {
 
     mContext->mainQueue->submit({submit_info}, *frame_objects.inFlightFence);
 
+    auto time_submit_end = std::chrono::high_resolution_clock::now();
+    mTimings.submit += std::chrono::duration<double, std::milli>(time_submit_end - time_submit_start).count();
+
     if (!mContext->swapchain().present(
                 mContext->presentQueue, vk::PresentInfoKHR().setWaitSemaphores(*render_finished_semaphore)
         )) {
         recreate(settings);
     }
+
+    auto time_present_end = std::chrono::high_resolution_clock::now();
+    mTimings.present = std::chrono::duration<double, std::milli>(time_present_end - time_submit_end).count();
+
+    mTimings.total = std::chrono::duration<double, std::milli>(time_present_end - mBeginTime).count();
 }

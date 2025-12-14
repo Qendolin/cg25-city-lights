@@ -51,6 +51,15 @@ class RenderSystem {
         void setDebugLabels(const vk::Device& device, int frame);
     };
 
+    struct Timings {
+        double total = 0;
+        double record = 0;
+        double submit = 0;
+        double present = 0;
+        double fence = 0;
+        double advance = 0;
+    };
+
     VulkanContext *mContext;
 
     vk::UniqueCommandPool mGraphicsCommandPool;
@@ -89,6 +98,8 @@ class RenderSystem {
     std::unique_ptr<DepthPrePassRenderer> mDepthPrePassRenderer;
     std::unique_ptr<LightRenderer> mLightRenderer;
 
+    std::chrono::time_point<std::chrono::steady_clock> mBeginTime;
+    Timings mTimings;
 
 public:
     explicit RenderSystem(VulkanContext *context);
@@ -114,4 +125,6 @@ public:
 
     [[nodiscard]] const ImGuiBackend &imGuiBackend() const { return *mImguiBackend; }
     [[nodiscard]] ImGuiBackend &imGuiBackend() { return *mImguiBackend; }
+
+    [[nodiscard]] const Timings &timings() const { return mTimings; }
 };

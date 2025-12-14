@@ -123,6 +123,13 @@ void Application::processInput() {
 }
 
 void Application::drawGui() {
+    auto cpuRenderTimings = mRenderSystem->timings();
+    mDebugFrameTimes->lines.emplace_back("Fence", static_cast<float>(cpuRenderTimings.fence));
+    mDebugFrameTimes->lines.emplace_back("Advance", static_cast<float>(cpuRenderTimings.advance));
+    mDebugFrameTimes->lines.emplace_back("Record", static_cast<float>(cpuRenderTimings.record));
+    mDebugFrameTimes->lines.emplace_back("Submit", static_cast<float>(cpuRenderTimings.submit));
+    mDebugFrameTimes->lines.emplace_back("Present", static_cast<float>(cpuRenderTimings.present));
+    mDebugFrameTimes->lines.emplace_back("Total", static_cast<float>(cpuRenderTimings.total));
     mDebugFrameTimes->update(mInput->timeDelta());
     mDebugFrameTimes->draw();
 

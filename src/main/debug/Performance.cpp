@@ -50,6 +50,11 @@ void FrameTimes::draw() {
     );
     draw_list->AddLine(sixty_fps_line_point, sixty_fps_line_point + ImVec2{256, 0}, sixty_fps_line_color);
 
+    for (const auto & line : lines) {
+        Text("%s: %.3f", line.first.c_str(), line.second);
+    }
+    lines.clear();
+
     End();
 }
 

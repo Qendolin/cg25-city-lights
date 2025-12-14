@@ -60,7 +60,7 @@ void Swapchain::create() {
                     .surfaceCapabilities;
 
     // +1 avoids stalls when cpu and gpu are fast and waiting on the monitor
-    uint32_t swapchain_image_count = util::MaxFramesInFlight + 1;
+    uint32_t swapchain_image_count = util::MaxFramesInFlight + 0;
     if (surface_capabilities.maxImageCount > 0)
         swapchain_image_count = std::min(swapchain_image_count, surface_capabilities.maxImageCount);
     swapchain_image_count = std::max(swapchain_image_count, surface_capabilities.minImageCount);
@@ -157,7 +157,12 @@ bool Swapchain::advance(const vk::Semaphore &image_available_semaphore) {
     try {
         auto image_acquisition_result =
                 mDevice.acquireNextImageKHR(*mSwapchain, UINT64_MAX, image_available_semaphore, nullptr);
-        if (image_acquisition_result.result == vk::Result::eSuboptimalKHR) {
+
+        if (image_acquisition_result.result == vk::Result::eErrorOutOfDateKHR) {
+            // Future proof. Newer versions of vk-hpp may not throw
+            Logger::debug("Swapchain needs recreation: VK_ERROR_OUT_OF_DATE_KHR");
+            invalidate();
+        } else if (image_acquisition_result.result == vk::Result::eSuboptimalKHR) {
             Logger::debug("Swapchain may need recreation: VK_SUBOPTIMAL_KHR");
             invalidate();
         }

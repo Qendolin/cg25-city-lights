@@ -27,8 +27,6 @@ void DepthPrePassRenderer::execute(
         const scene::GpuData &gpu_data,
         const FrustumCuller &frustum_culler
 ) {
-    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
-
     util::ScopedCommandLabel dbg_cmd_label_region_culling(cmd_buf, "Culling");
 
     glm::mat4 frustum_matrix = camera.projectionMatrix() * camera.viewMatrix();

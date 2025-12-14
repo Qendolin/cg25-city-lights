@@ -48,8 +48,6 @@ void LightRenderer::execute(
         const ImageViewPairBase &depth_attachment,
         const BufferBase &tile_light_indices_buffer
 ) {
-    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
-
     depth_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
     tile_light_indices_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderWrite);
 

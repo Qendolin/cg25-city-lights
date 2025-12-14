@@ -48,6 +48,16 @@ void unpackUint16(in uint packed, out uint lower, out uint upper) {
     upper = (packed >> 16) & 0xffffu;
 }
 
+// Approximates single-bounce ambient occlusion to multi-bounce ambient occlusion
+// https://blog.selfshadow.com/publications/s2016-shading-course/activision/s2016_pbs_activision_occlusion.pdf#page=78
+vec3 gtaoMultibounce(float visibility, vec3 base_color) {
+    vec3 a = 2.0404 * base_color - 0.3324;
+    vec3 b = -4.7951 * base_color + 0.6417;
+    vec3 c = 2.7552 * base_color + 0.6903;
+    vec3 x = vec3(visibility);
+    return max(x, ((x * a + b) * x + c) * x);
+}
+
 void main() {
     Material material = uMaterialBuffer[in_material];
     BSDFParams bsdf_params;
@@ -127,15 +137,19 @@ void main() {
     // ambient light
     {
         vec2 screen_uv = vec2(gl_FragCoord.xy) * uParams.viewport.zw;
-        float ambient_occlusion = textureLod(uAmbientOcclusion, screen_uv, 0).x;
+        vec4 ao_raw = textureLod(uAmbientOcclusion, screen_uv, 0);
+        vec3 bent_normal_vs = octahedronDecode(ao_raw.yz); // still unused
+        float ao_combined = ao_raw.x * bsdf_params.occlusion;
+        vec3 ao_multi_bounce = gtaoMultibounce(ao_combined, bsdf_params.albedo.rgb);
 
         float n_dot_v = max(dot(bsdf_params.N, bsdf_params.V.xyz), 0.0);
+        vec3 kS = fresnelSchlickRoughness(n_dot_v, bsdf_params.f0, bsdf_params.roughness);
+        vec3 kD = (1.0 - kS) * (1.0 - bsdf_params.metalness);
 
-        vec3 ambient = uParams.ambient.rgb * bsdf_params.occlusion * ambient_occlusion;
-        ambient *= 1.0 - fresnelSchlickRoughness(n_dot_v, bsdf_params.f0, bsdf_params.roughness);
-        ambient *= bsdf_params.albedo.rgb;
-        ambient *= 1.0 - bsdf_params.metalness;
+        vec3 irradiance = uParams.ambient.rgb;
+        vec3 diffuse = irradiance * bsdf_params.albedo.rgb * ao_multi_bounce;
 
+        vec3 ambient = diffuse * kD;
         Lo += ambient;
     }
 

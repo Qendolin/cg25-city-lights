@@ -2,16 +2,17 @@
 
 #include "VulkanContext.h"
 
-#include <iostream>
 #include <VkBootstrap.h>
 #include <glfw/glfw3.h>
+#include <iostream>
 #include <vulkan/vulkan.hpp>
 
-#include "Pipeline.h"
-#include "Swapchain.h"
+#include "../debug/Annotation.h"
 #include "../glfw/Context.h"
 #include "../glfw/Window.h"
 #include "../util/Logger.h"
+#include "Pipeline.h"
+#include "Swapchain.h"
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
@@ -33,15 +34,15 @@ static vkb::Instance createInstance() {
     uint32_t required_glfw_extension_count = 0;
     auto required_glfw_extensions = glfwGetRequiredInstanceExtensions(&required_glfw_extension_count);
     auto instance_builder = vkb::InstanceBuilder{}
-            .use_default_debug_messenger()
             .require_api_version(1, 3, 0)
-            .enable_extension(vk::EXTDebugUtilsExtensionName)
             .enable_extension(vk::KHRGetSurfaceCapabilities2ExtensionName)
             .enable_extensions(required_glfw_extension_count, required_glfw_extensions);
 #ifndef NDEBUG
     Logger::info("Using validation layers");
     instance_builder.enable_validation_layers(true);
     instance_builder.enable_layer("VK_LAYER_KHRONOS_synchronization2");
+    instance_builder.enable_extension(vk::EXTDebugUtilsExtensionName);
+    instance_builder.use_default_debug_messenger();
 #endif
 
     auto instance_ret = instance_builder.build();
@@ -157,7 +158,7 @@ vma::UniqueAllocator createVmaAllocator(const vk::Instance &instance, const vk::
     });
 }
 
-void createQueues(const vkb::Device &device, DeviceQueue &out_graphics_queue, DeviceQueue &out_transfer_queue, DeviceQueue &out_present_queue) {
+void createQueues(const vkb::Device &device, DeviceQueue &out_graphics_queue, DeviceQueue &out_compute_queue, DeviceQueue &out_transfer_queue, DeviceQueue &out_present_queue) {
     auto gq_ret = device.get_queue(vkb::QueueType::graphics);
     auto gq_family_ret = device.get_queue_index(vkb::QueueType::graphics);
     if (!gq_ret.has_value() || !gq_family_ret.has_value()) {
@@ -166,6 +167,16 @@ void createQueues(const vkb::Device &device, DeviceQueue &out_graphics_queue, De
     out_graphics_queue = {
         gq_ret.value(),
         gq_family_ret.value()
+    };
+
+    auto cq_ret = device.get_queue(vkb::QueueType::compute);
+    auto cq_family_ret = device.get_queue_index(vkb::QueueType::compute);
+    if (!cq_ret.has_value() || !cq_family_ret.has_value()) {
+        Logger::fatal("failed to get compute queue: " + cq_ret.error().message());
+    }
+    out_compute_queue = {
+        cq_ret.value(),
+        cq_family_ret.value()
     };
 
     auto pq_ret = device.get_queue(vkb::QueueType::present);
@@ -215,8 +226,15 @@ VulkanContext VulkanContext::create(const glfw::WindowCreateInfo &window_create_
     vma::UniqueAllocator allocator = createVmaAllocator(instance.instance, device.device, physical_device.physical_device);
 
     // Step 6: Retrieve Queues
-    DeviceQueue main_queue, transfer_queue, present_queue;
-    createQueues(device, main_queue, transfer_queue, present_queue);
+    DeviceQueue main_queue, compute_queue, transfer_queue, present_queue;
+    createQueues(device, main_queue, compute_queue, transfer_queue, present_queue);
+    util::setDebugName(device.device, main_queue.queue, "main");
+    if (compute_queue.queue != main_queue.queue)
+        util::setDebugName(device.device, compute_queue.queue, "compute");
+    if (transfer_queue.queue != main_queue.queue)
+        util::setDebugName(device.device, transfer_queue.queue, "transfer");
+    if (present_queue.queue != main_queue.queue)
+        util::setDebugName(device.device, present_queue.queue, "present");
 
     // Step 7: Create Swapchain
     auto swapchain = std::make_unique<Swapchain>(
@@ -237,6 +255,7 @@ VulkanContext VulkanContext::create(const glfw::WindowCreateInfo &window_create_
         std::move(surface),
         std::move(swapchain),
         main_queue,
+        compute_queue,
         present_queue,
         transfer_queue,
     };
@@ -252,50 +271,21 @@ VulkanContext::VulkanContext(
     vk::UniqueSurfaceKHR &&surface,
     std::unique_ptr<Swapchain> &&swapchain,
     const DeviceQueue &main_queue,
+    const DeviceQueue &compute_queue,
     const DeviceQueue &present_queue,
     const DeviceQueue &transfer_queue)
-    : mInstance(std::move(instance)),
+    : mainQueue(main_queue),
+      computeQueue(compute_queue),
+      presentQueue(present_queue),
+      transferQueue(transfer_queue),
+      mWindow(std::move(window)),
+      mInstance(std::move(instance)),
       mDebugMessenger(std::move(debug_messenger)),
+      mSurface(std::move(surface)),
       mPhysicalDevice(physical_device),
       mDevice(std::move(device)),
       mAllocator(std::move(allocator)),
-      mWindow(std::move(window)),
-      mSurface(std::move(surface)),
-      mSwapchain(std::move(swapchain)),
-      mainQueue(main_queue),
-      presentQueue(present_queue),
-      transferQueue(transfer_queue) {
+      mSwapchain(std::move(swapchain)) {
 }
 
 VulkanContext::~VulkanContext() = default;
-
-VulkanContext::VulkanContext(VulkanContext &&other) noexcept
-    : mInstance(std::move(other.mInstance)),
-      mDebugMessenger(std::move(other.mDebugMessenger)),
-      mPhysicalDevice(other.mPhysicalDevice),
-      mDevice(std::move(other.mDevice)),
-      mAllocator(std::move(other.mAllocator)),
-      mWindow(std::move(other.mWindow)),
-      mSurface(std::move(other.mSurface)),
-      mSwapchain(std::move(other.mSwapchain)),
-      mainQueue(other.mainQueue),
-      presentQueue(other.presentQueue),
-      transferQueue(other.transferQueue) {
-}
-
-VulkanContext &VulkanContext::operator=(VulkanContext &&other) noexcept {
-    if (this == &other)
-        return *this;
-    mInstance = std::move(other.mInstance);
-    mDebugMessenger = std::move(other.mDebugMessenger);
-    mPhysicalDevice = other.mPhysicalDevice;
-    mDevice = std::move(other.mDevice);
-    mAllocator = std::move(other.mAllocator);
-    mWindow = std::move(other.mWindow);
-    mSurface = std::move(other.mSurface);
-    mSwapchain = std::move(other.mSwapchain);
-    mainQueue = other.mainQueue;
-    presentQueue = other.presentQueue;
-    transferQueue = other.transferQueue;
-    return *this;
-}

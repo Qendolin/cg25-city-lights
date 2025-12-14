@@ -1,10 +1,14 @@
 #version 460
 
+#include "common/math.glsl"
+
 layout (local_size_x = 16, local_size_y = 16) in;
 
 layout (set = 0, binding = 0) uniform sampler2D in_source;
 layout (set = 0, binding = 1) uniform sampler2D in_depth;
 layout (set = 0, binding = 2) uniform writeonly restrict image2D out_result;
+
+layout (constant_id = 0) const bool BENT_NORMALS = true;
 
 layout (push_constant) uniform ShaderParamPush {
     vec2 direction;
@@ -31,9 +35,18 @@ void main() {
 
     vec2 texel_size = 1.0f / vec2(size);
     vec2 center_uv = (vec2(p) + 0.5f) * texel_size;
-
-    float center_val = textureLod(in_source, center_uv, 0).x;
     float center_z = getLinearZ(center_uv);
+
+    vec4 center_src = textureLod(in_source, center_uv, 0);
+    float center_ao = center_src.x;
+
+    float center_bn_mag;
+    vec3 center_bn_dir, center_bn;
+    if (BENT_NORMALS) {
+        center_bn_mag = center_src.w;
+        center_bn_dir = octahedronDecode(center_src.yz);
+        center_bn = center_bn_dir * center_bn_mag;
+    }
 
     // Calculate Slope
     // We only care about the slope along the current blur direction.
@@ -54,7 +67,8 @@ void main() {
 
     // Initialize Accumulators
     float total_weight = WEIGHTS[3];  // center
-    float total_val = center_val * total_weight;
+    float total_ao = center_ao * total_weight;
+    vec3 total_bn = center_bn * total_weight;
 
     // Loop: only 2 iterations instead of 4
     for (int i = 0; i < 3; i++) {
@@ -64,36 +78,84 @@ void main() {
         // Positive Side
         {
             vec2 uv = center_uv + uv_offset;
-            float val = textureLod(in_source, uv, 0).x;
             float z = getLinearZ(uv);
+            vec4 src = textureLod(in_source, uv, 0);
 
             float expected_z = center_z + gradient * offset;
             float error = abs(z - expected_z);
 
-            // Weight based on Plane Error, NOT raw Z difference
-            float w = WEIGHTS[i] * max(0.0f, 1.0f - error * cParams.sharpness);
+            // plane / depth weight
+            float plane_w = max(0.0f, 1.0f - error * cParams.sharpness);
 
-            total_val += val * w;
+            // angular similarity: prefer neighbors pointing roughly the same way
+            // float ang_w = max(dot(center_bn_dir, bn_dir), 0.0f);
+
+            float w = WEIGHTS[i] * plane_w;
+
+            float ao = src.x;
+            total_ao += ao * w;
+
+            if(BENT_NORMALS) {
+                float bn_mag = src.w;
+                vec3 bn_dir = octahedronDecode(src.yz);
+                vec3 bn = bn_dir * bn_mag;
+                total_bn += bn * w;
+            }
+
             total_weight += w;
         }
 
         // Negative Side
         {
             vec2 uv = center_uv - uv_offset;
-            float val = textureLod(in_source, uv, 0).x;
+            vec4 src = textureLod(in_source, uv, 0);
             float z = getLinearZ(uv);
 
-            float expected_z = center_z - gradient * offset;
+            float expected_z = center_z + gradient * offset;
             float error = abs(z - expected_z);
 
-            float w = WEIGHTS[i] * max(0.0f, 1.0f - error * cParams.sharpness);
+            // plane / depth weight
+            float plane_w = max(0.0f, 1.0f - error * cParams.sharpness);
 
-            total_val += val * w;
+            // angular similarity: prefer neighbors pointing roughly the same way
+            // float ang_w = max(dot(center_bn_dir, bn_dir), 0.0f);
+
+            float w = WEIGHTS[i] * plane_w;
+
+            float ao = src.x;
+            total_ao += ao * w;
+
+            if(BENT_NORMALS) {
+                float bn_mag = src.w;
+                vec3 bn_dir = octahedronDecode(src.yz);
+                vec3 bn = bn_dir * bn_mag;
+                total_bn += bn * w;
+            }
+
             total_weight += w;
         }
     }
 
-    float result = total_val / max(total_weight, 0.0001f);
-    result = pow(result, cParams.exponent);
-    imageStore(out_result, p, vec4(result));
+    float out_ao = total_ao / max(total_weight, 0.0001f);
+    out_ao = pow(out_ao, cParams.exponent);
+
+    vec4 result = vec4(out_ao);
+
+    if(BENT_NORMALS) {
+        vec3 out_bn = total_bn / max(total_weight, 0.0001f);
+        float out_bn_mag = length(out_bn);
+        vec3 out_bn_dir;
+        if (out_bn_mag > 1e-5) {
+            out_bn_dir =  out_bn / out_bn_mag;
+        } else {
+            out_bn_dir = center_bn_dir;
+            out_bn_mag = center_bn_mag;
+        }
+        vec2 out_bn_encoded = octahedronEncode(out_bn_dir);
+
+        result.yz = out_bn_encoded;
+        result.w = out_bn_mag;
+    }
+
+    imageStore(out_result, p, result);
 }

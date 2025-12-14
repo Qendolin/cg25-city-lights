@@ -70,6 +70,7 @@ void SettingsGui::draw(Settings &settings) {
         PushID("rendering");
         ColorEdit3("Ambient", glm::value_ptr(settings.rendering.ambient), ImGuiColorEditFlags_Float);
         Checkbox("Frustum Culling", &settings.rendering.enableFrustumCulling);
+        Checkbox("Async Compute", &settings.rendering.asyncCompute);
         Checkbox("Pause", &settings.rendering.pauseFrustumCulling);
         Checkbox("White World", &settings.rendering.whiteWorld);
         Checkbox("Light Density", &settings.rendering.lightDensity);
@@ -79,12 +80,14 @@ void SettingsGui::draw(Settings &settings) {
 
     if (CollapsingHeader("SSAO")) {
         PushID("ssao");
+        Checkbox("Update", &settings.ssao.update);
         SliderFloat("Radius", &settings.ssao.radius, 0.0f, 4.0f);
         SliderFloat("Exponent", &settings.ssao.exponent, 0.0f, 4.0f);
         DragFloat("Filter Sharpness", &settings.ssao.filterSharpness, 1, 0, 200);
         SliderFloat("Depth Bias", &settings.ssao.bias, 0.0f, 0.1f);
         Text("Settings below require a resource reload.");
         Checkbox("Half Resolution", &settings.ssao.halfResolution);
+        Checkbox("Bent Normals", &settings.ssao.bentNormals);
         SliderInt("Slices", &settings.ssao.slices, 1, 16);
         SliderInt("Samples", &settings.ssao.samples, 1, 32);
 

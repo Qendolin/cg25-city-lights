@@ -35,8 +35,6 @@ void FinalizeRenderer::execute(
         const ImageViewPairBase &sdr_attachment,
         const Settings::AgXParams &agx_params
 ) {
-    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
-
     hdr_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
     sdr_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
 

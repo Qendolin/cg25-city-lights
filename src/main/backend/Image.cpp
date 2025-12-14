@@ -431,6 +431,9 @@ Image Image::create(const vma::Allocator &allocator, const ImageCreateInfo &crea
                 .mipLevels = ci.levels,
                 .arrayLayers = ci.layers,
                 .usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | ci.usage,
+                .sharingMode = ci.sharedQueues.size() == 0 ? vk::SharingMode::eExclusive : vk::SharingMode::eConcurrent,
+                .queueFamilyIndexCount = static_cast<uint32_t>(ci.sharedQueues.size()),
+                .pQueueFamilyIndices = ci.sharedQueues.data(),
             },
             {
                 .usage = ci.device,

@@ -48,9 +48,12 @@ struct Settings {
         bool whiteWorld = false;
         bool lightDensity = false;
         float lightRangeFactor = 1.0f;
+        bool asyncCompute = true;
     } rendering;
     struct SSAO {
+        bool update = true;
         bool halfResolution = true;
+        bool bentNormals = true;
         int slices = 3;
         int samples = 6;
         float radius = 2.0f;

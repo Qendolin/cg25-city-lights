@@ -2,6 +2,8 @@
 
 #extension GL_EXT_samplerless_texture_functions: require
 
+#include "common/math.glsl"
+
 // ------------------------------------------------------------------
 // CONFIGURATION
 // ------------------------------------------------------------------
@@ -19,13 +21,11 @@
 // Specialization Constants (Pipeline overridable, default 2)
 layout (constant_id = 0) const int SLICE_COUNT = 2;
 layout (constant_id = 1) const int SAMPLES_PER_SLICE_SIDE = 2;
+layout (constant_id = 2) const bool BENT_NORMALS = true;
 
 // ------------------------------------------------------------------
 // CONSTANTS & UNIFORMS
 // ------------------------------------------------------------------
-
-#define PI 3.14159265359
-#define HALF_PI 1.57079632679
 
 layout (local_size_x = 8, local_size_y = 8) in;
 
@@ -54,10 +54,6 @@ float fast_acos(float x) {
     float res = -0.156583 * abs(x) + HALF_PI;
     res *= sqrt(1.0 - abs(x));
     return x >= 0 ? res : PI - res;
-}
-
-float saturate(float x) {
-    return clamp(x, 0.0, 1.0);
 }
 
 vec3 getPositionVS(vec2 p, float dist) {
@@ -104,14 +100,7 @@ vec3 reconstructNormal(ivec2 p, float z_c, ivec2 depth_dim, int scale) {
 
 // Calculates visibility for a single slice based on the active mode
 // Returns vec2(ActualVisibility, MaxPossibleVisibility)
-vec2 calculateSliceVisibility(float n, float max_cos_h1, float max_cos_h2) {
-    float h1 = fast_acos(max_cos_h1);
-    float h2 = -fast_acos(max_cos_h2);
-
-    // Clamp horizons to the tangent hemisphere
-    h1 = n + max(h1 - n, -HALF_PI);
-    h2 = n + min(h2 - n, HALF_PI);
-
+vec2 calculateSliceVisibility(float n, float h1, float h2) {
     // Calculate Theoretical Max Visibility (for normalization)
     float h1_max = min(n + HALF_PI, HALF_PI);
     float h2_max = max(n - HALF_PI, -HALF_PI);
@@ -195,8 +184,9 @@ void main() {
     float falloff_add = (cParams.radius * (1.0 - 0.615)) / falloff_range + 1.0;
     float min_s = 1.5 / pixel_radius;
 
-    float visibility = 0.0;
+    float total_visibility = 0.0;
     float total_possible_vis = 0.0;
+    vec3 total_bent_normal = vec3(0.0);
 
     // Sample Loop
     for (float slice = 0.0; slice < float(SLICE_COUNT); slice++) {
@@ -250,17 +240,34 @@ void main() {
             max_cos_h2 = max(max_cos_h2, mix(cos(n - HALF_PI), cos_h2, weight2));
         }
 
-        vec2 slice_res = calculateSliceVisibility(n, max_cos_h1, max_cos_h2);
+        float h1 = fast_acos(max_cos_h1);
+        float h2 = -fast_acos(max_cos_h2);
 
-        visibility += proj_n_len * slice_res.x;
+        // Clamp horizons to the tangent hemisphere
+        h1 = n + max(h1 - n, -HALF_PI);
+        h2 = n + min(h2 - n, HALF_PI);
+
+        vec2 slice_res = calculateSliceVisibility(n, h1, h2);
+
+        float visiblity = proj_n_len * slice_res.x;
+        total_visibility += visiblity;
         total_possible_vis += proj_n_len * slice_res.y;
+
+        // Bent Normals
+
+        if(BENT_NORMALS) {
+            float bent_angle = (h1 + h2) * 0.5;
+            vec3 slice_tangent = normalize(ortho_dir);
+            vec3 slice_bent = V * cos(bent_angle) + slice_tangent * sin(bent_angle);
+            total_bent_normal += slice_bent * visiblity;
+        }
     }
 
     // Normalization
     #if INTEGRATION_MODE == MODE_GTAO_RAW
     // Raw GTAO is not normalized by geometry, just averaged
     // This preserves the cosine-weighted light falloff (view dependency)
-    visibility /= float(SLICE_COUNT);
+    total_visibility /= float(SLICE_COUNT);
     #else
 
     // The "normalization" factor fixes the view direction dependent darkening issue when following the original paper and common open implementations.
@@ -268,9 +275,26 @@ void main() {
     // https://discord.com/channels/318590007881236480/1398853492826968136
 
     // All other modes normalize Actual / Possible to get 0..1 factor
-    visibility /= max(total_possible_vis, 0.0001);
+    total_visibility /= max(total_possible_vis, 0.0001);
     #endif
 
-    visibility = clamp(visibility, 0.0, 1.0);
-    imageStore(out_ao, pix, vec4(visibility));
+    vec4 result = vec4(total_visibility);
+
+    if (BENT_NORMALS) {
+        float bent_normal_mag = length(total_bent_normal);
+        vec3 bent_normal_dir;
+        if (bent_normal_mag > 1e-5) {
+            bent_normal_dir = total_bent_normal / bent_normal_mag;
+        } else {
+            bent_normal_dir = N;
+            bent_normal_mag = 1.0;
+        }
+        vec2 bent_normal_encoded = octahedronEncode(bent_normal_dir);
+        bent_normal_mag /= (float(SLICE_COUNT) * 2.0);// compress to 0-1 range (untested)
+
+        result.yz = bent_normal_encoded;
+        result.w = bent_normal_mag;
+    }
+
+    imageStore(out_ao, pix, result);
 }

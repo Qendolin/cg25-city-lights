@@ -8,14 +8,43 @@
 #include "util/globals.h"
 #include "util/math.h"
 
+void RenderSystem::PerFrameObjects::reset(const vk::Device &device) {
+    device.resetFences(*inFlightFence);
+
+    earlyGraphicsCommands.reset();
+    mainGraphicsCommands.reset();
+    independentGraphicsCommands.reset();
+    asyncComputeCommands.reset();
+    nonAsyncComputeCommands.reset();
+
+    descriptorAllocator.reset();
+    transientBufferAllocator.reset();
+}
+
+void RenderSystem::PerFrameObjects::setDebugLabels(const vk::Device &device, int frame) {
+    util::setDebugName(device, earlyGraphicsCommands, std::format("early_graphics_{}", frame));
+    util::setDebugName(device, mainGraphicsCommands, std::format("main_graphics_{}", frame));
+    util::setDebugName(device, independentGraphicsCommands, std::format("independent_graphics_{}", frame));
+    util::setDebugName(device, asyncComputeCommands, std::format("async_compute_{}", frame));
+    util::setDebugName(device, nonAsyncComputeCommands, std::format("non_async_compute_{}", frame));
+    util::setDebugName(device, *inFlightFence, std::format("in_flight_{}", frame));
+    util::setDebugName(device, *imageAvailableSemaphore, std::format("image_available_{}", frame));
+    util::setDebugName(device, *asyncComputeFinishedSemaphore, std::format("async_compute_finished_{}", frame));
+    util::setDebugName(device, *earlyGraphicsFinishedSemaphore, std::format("early_graphics_finished{}", frame));
+}
+
 RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mImguiBackend = std::make_unique<ImGuiBackend>(
             context->instance(), context->device(), context->physicalDevice(), context->window(), context->swapchain(),
             context->mainQueue, context->swapchain().depthFormat()
     );
-    mCommandPool = context->device().createCommandPoolUnique({
+    mGraphicsCommandPool = context->device().createCommandPoolUnique({
         .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
         .queueFamilyIndex = context->mainQueue,
+    });
+    mComputeCommandPool = context->device().createCommandPoolUnique({
+        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+        .queueFamilyIndex = context->computeQueue,
     });
     mStaticDescriptorAllocator = UniqueDescriptorAllocator(context->device());
 
@@ -38,7 +67,6 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
 void RenderSystem::recreate(const Settings &settings) {
     const auto &swapchain = mContext->swapchain();
     const auto &device = mContext->device();
-    const auto &cmd_pool = *mCommandPool;
 
     vk::Extent2D screen_extent = mContext->swapchain().area().extent;
     vk::Extent2D screen_half_extent = {screen_extent.width / 2, screen_extent.height / 2};
@@ -63,7 +91,8 @@ void RenderSystem::recreate(const Settings &settings) {
                 .aspects = vk::ImageAspectFlagBits::eDepth,
                 .width = screen_extent.width,
                 .height = screen_extent.height,
-                .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
+                .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled |
+                         vk::ImageUsageFlagBits::eTransferSrc,
                 .device = vma::MemoryUsage::eGpuOnly,
             }
     );
@@ -77,7 +106,7 @@ void RenderSystem::recreate(const Settings &settings) {
     mSsaoIntermediaryImage = ImageWithView::create(
             device, mContext->allocator(),
             {
-                .format = vk::Format::eR8Unorm,
+                .format = vk::Format::eR8G8B8A8Unorm,
                 .aspects = vk::ImageAspectFlagBits::eColor,
                 .width = ao_size.width,
                 .height = ao_size.height,
@@ -85,22 +114,38 @@ void RenderSystem::recreate(const Settings &settings) {
                 .device = vma::MemoryUsage::eGpuOnly,
             }
     );
-    util::setDebugName(device, *mSsaoIntermediaryImage.image, "ao_intermediary_attachment_image");
-    util::setDebugName(device, *mSsaoIntermediaryImage.view, "ao_intermediary_attachment_image_view");
+    util::setDebugName(device, *mSsaoIntermediaryImage.image, "ao_intermediary_image");
+    util::setDebugName(device, *mSsaoIntermediaryImage.view, "ao_intermediary_image_view");
 
     mSsaoResultImage = ImageWithView::create(
             device, mContext->allocator(),
             {
-                .format = vk::Format::eR8Unorm,
+                .format = vk::Format::eR8G8B8A8Unorm,
                 .aspects = vk::ImageAspectFlagBits::eColor,
                 .width = ao_size.width,
                 .height = ao_size.height,
                 .usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
                 .device = vma::MemoryUsage::eGpuOnly,
+                .sharedQueues = {mContext->mainQueue, mContext->computeQueue},
             }
     );
-    util::setDebugName(device, *mSsaoResultImage.image, "ao_result_attachment_image");
-    util::setDebugName(device, *mSsaoResultImage.view, "ao_result_attachment_image_view");
+    util::setDebugName(device, *mSsaoResultImage.image, "ao_result_image");
+    util::setDebugName(device, *mSsaoResultImage.view, "ao_result_image_view");
+
+    mComputeDepthCopyImage = ImageWithView::create(
+            device, mContext->allocator(),
+            {
+                .format = mHdrFramebuffer.depthFormat(),
+                .aspects = vk::ImageAspectFlagBits::eDepth,
+                .width = screen_extent.width,
+                .height = screen_extent.height,
+                .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+                .device = vma::MemoryUsage::eGpuOnly,
+                .sharedQueues = {mContext->mainQueue, mContext->computeQueue},
+            }
+    );
+    util::setDebugName(device, *mComputeDepthCopyImage.image, "compute_depth_copy_image");
+    util::setDebugName(device, *mComputeDepthCopyImage.view, "compute_depth_copy_image_view");
 
     // I don't really like that recrate has to be called explicitly.
     // I'd prefer an implicit solution, but I couldn't think of a good one right now.
@@ -110,28 +155,47 @@ void RenderSystem::recreate(const Settings &settings) {
     mBlobRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mSkyboxRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mFrustumCuller->recreate(device, mShaderLoader);
-    mSSAORenderer->recreate(device, mShaderLoader, settings.ssao.slices, settings.ssao.samples);
+    mSSAORenderer->recreate(device, mShaderLoader, settings.ssao.slices, settings.ssao.samples, settings.ssao.bentNormals);
     mDepthPrePassRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mLightRenderer->recreate(device, mShaderLoader);
 
-    // These have to match the max frames in flight count but an be more
-    mFramesInFlightSyncObjects.create(util::MaxFramesInFlight, [&] {
-        return FramesInFlightSyncObjects{
-            .availableSemaphore = device.createSemaphoreUnique({}),
-            .inFlightFence = device.createFenceUnique({.flags = vk::FenceCreateFlagBits::eSignaled}),
-        };
-    });
+    // These have to match the max frames in flight count but can be more
+    if (!mPerFrameObjects.initialized()) {
+        mPerFrameObjects.create(util::MaxFramesInFlight, [&](int i) {
+           auto graphics_cmd_bufs = device.allocateCommandBuffers(
+                   {.commandPool = *mGraphicsCommandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 4}
+           );
+           auto compute_cmd_bufs = device.allocateCommandBuffers(
+                   {.commandPool = *mComputeCommandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1}
+           );
+
+           PerFrameObjects result = {
+               .earlyGraphicsCommands = graphics_cmd_bufs[0],
+               .mainGraphicsCommands = graphics_cmd_bufs[1],
+               .independentGraphicsCommands = graphics_cmd_bufs[2],
+               .asyncComputeCommands = compute_cmd_bufs[0],
+               .nonAsyncComputeCommands = graphics_cmd_bufs[3],
+               .earlyGraphicsFinishedSemaphore = device.createSemaphoreUnique({}),
+               .asyncComputeFinishedSemaphore = device.createSemaphoreUnique({}),
+               .imageAvailableSemaphore = device.createSemaphoreUnique({}),
+               .inFlightFence = device.createFenceUnique({.flags = vk::FenceCreateFlagBits::eSignaled}),
+               .descriptorAllocator = UniqueDescriptorAllocator(device),
+               .transientBufferAllocator = UniqueTransientBufferAllocator(mContext->device(), mContext->allocator()),
+           };
+           result.setDebugLabels(device, i);
+           return result;
+       });
+    }
 
     // These have to match the swapchain image count exactly
-    mRenderFinishedSemaphores.create(swapchain.imageCount(), [&] { return device.createSemaphoreUnique({}); });
-    mCommandBuffers.create(swapchain.imageCount(), [&](int i) {
-        auto buf = device.allocateCommandBuffers({.commandPool = cmd_pool,
-                                                  .level = vk::CommandBufferLevel::ePrimary,
-                                                  .commandBufferCount = 1})
-                           .at(0);
-        util::setDebugName(device, buf, std::format("per_frame_command_buffer_{}", i));
-        return buf;
-    });
+    if (!mRenderFinishedSemaphore.initialized()) {
+        mRenderFinishedSemaphore.create(swapchain.imageCount(), [&](int i) {
+            auto result = device.createSemaphoreUnique({});
+            util::setDebugName(device, *result, std::format("render_finished_semaphore_{}", i));
+            return result;
+        });
+    }
+
     mSwapchainFramebuffers.create(swapchain.imageCount(), [&](int i) {
         auto fb = Framebuffer(swapchain.area());
         fb.colorAttachments = {ImageViewPair(swapchain.colorImage(i), swapchain.colorViewLinear(i))};
@@ -141,10 +205,6 @@ void RenderSystem::recreate(const Settings &settings) {
         );
         fb.depthAttachment = ImageViewPair(mContext->swapchain().depthImage(), mContext->swapchain().depthView());
         return fb;
-    });
-    mDescriptorAllocators.create(swapchain.imageCount(), [&] { return UniqueDescriptorAllocator(device); });
-    mTransientBufferAllocators.create(swapchain.imageCount(), [&] {
-        return UniqueTransientBufferAllocator(mContext->device(), mContext->allocator());
     });
 
     size_t light_tile_stride = 256; // has to match shader
@@ -192,7 +252,7 @@ void RenderSystem::updateInstanceTransforms(const scene::GpuData &gpu_scene_data
     std::memcpy(mapped, updated_transforms.data(), required_size);
     mContext->allocator().unmapMemory(staging_buffer.allocation.get());
 
-    vk::CommandBuffer &cmd = mCommandBuffers.get();
+    vk::CommandBuffer &cmd = mPerFrameObjects.get().mainGraphicsCommands;
 
     vk::DeviceSize dstOffset =
             static_cast<vk::DeviceSize>(gpu_scene_data.instances.size - updated_transforms.size() * sizeof(glm::mat4));
@@ -203,135 +263,230 @@ void RenderSystem::updateInstanceTransforms(const scene::GpuData &gpu_scene_data
 }
 
 void RenderSystem::draw(const RenderData &rd) {
-    const auto &cmd_buf = mCommandBuffers.get();
-    const auto &desc_alloc = mDescriptorAllocators.get();
-    const auto &buf_alloc = mTransientBufferAllocators.get();
+    const auto &frame_objects = mPerFrameObjects.get();
+    const auto &desc_alloc = frame_objects.descriptorAllocator;
+    const auto &buf_alloc = frame_objects.transientBufferAllocator;
     const auto &swapchain = mContext->swapchain();
+
+    const auto &cmd_buf_compute = rd.settings.rendering.asyncCompute ? frame_objects.asyncComputeCommands
+                                                                     : frame_objects.nonAsyncComputeCommands;
 
     // Framebuffer needs to be synced to swapchain, so get it explicitly
     Framebuffer &swapchain_fb = mSwapchainFramebuffers.get(swapchain.activeImageIndex());
 
-    util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Depth PrePass");
-    // Depth pre-pass
-    mDepthPrePassRenderer->enableCulling = rd.settings.rendering.enableFrustumCulling;
-    mDepthPrePassRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
-    mDepthPrePassRenderer->execute(
-            mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene, *mFrustumCuller
-    );
+    // Early graphics
+    {
+        const auto &cmd_buf = frame_objects.earlyGraphicsCommands;
+        cmd_buf.begin(vk::CommandBufferBeginInfo{});
+        util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Early Graphics");
 
-    dbg_cmd_label_region.swap("SSAO Pass");
-    mSSAORenderer->radius = rd.settings.ssao.radius;
-    mSSAORenderer->exponent = rd.settings.ssao.exponent;
-    mSSAORenderer->bias = rd.settings.ssao.bias;
-    mSSAORenderer->filterSharpness = rd.settings.ssao.filterSharpness;
-    mSSAORenderer->execute(
-            mContext->device(), desc_alloc, cmd_buf, rd.camera.projectionMatrix(), rd.camera.nearPlane(),
-            mHdrFramebuffer.depthAttachment, mSsaoIntermediaryImage, mSsaoResultImage
-    );
+        dbg_cmd_label_region.swap("Depth PrePass");
 
-    dbg_cmd_label_region.swap("Light Pass");
-    mLightRenderer->lightRangeFactor = rd.settings.rendering.lightRangeFactor;
-    mLightRenderer->execute(
-            mContext->device(), desc_alloc, cmd_buf, rd.gltfScene, rd.camera.projectionMatrix(), rd.camera.viewMatrix(),
-            rd.camera.nearPlane(), mHdrFramebuffer.depthAttachment, mTileLightIndicesBuffers.next()
-    );
+        // Depth pre-pass
+        mDepthPrePassRenderer->enableCulling = rd.settings.rendering.enableFrustumCulling;
+        mDepthPrePassRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
+        mDepthPrePassRenderer->execute(
+                mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene, *mFrustumCuller
+        );
 
-    // Shadow pass
-    if (rd.settings.shadowCascade.update) {
-        dbg_cmd_label_region.swap("Shadow Pass");
-        for (auto &caster: rd.sunShadowCasterCascade.cascades()) {
-            mShadowRenderer->execute(mContext->device(), desc_alloc, buf_alloc, cmd_buf, rd.gltfScene, *mFrustumCuller, caster);
+        mHdrFramebuffer.depthAttachment.image().barrier(cmd_buf, ImageResourceAccess::TransferRead);
+        mComputeDepthCopyImage.barrier(cmd_buf, ImageResourceAccess::TransferWrite);
+        cmd_buf.copyImage(
+                mHdrFramebuffer.depthAttachment.image(), ImageResourceAccess::TransferRead.layout,
+                mComputeDepthCopyImage, ImageResourceAccess::TransferWrite.layout,
+                vk::ImageCopy{
+                    .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .layerCount = 1},
+                    .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .layerCount = 1},
+                    .extent = {.width = mHdrFramebuffer.extent().width, .height = mHdrFramebuffer.extent().height, .depth = 1}
+                }
+        );
+    }
+
+    // Async compute
+    {
+        const auto &cmd_buf_early_graphics = frame_objects.earlyGraphicsCommands;
+        cmd_buf_compute.begin(vk::CommandBufferBeginInfo{});
+        util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf_compute, "Async Compute");
+
+        if (rd.settings.ssao.update) {
+            dbg_cmd_label_region.swap("SSAO Pass");
+
+            // Transfer graphics -> compute queue
+            // The compute queue doesn't allow issuing a barrier "from" a graphics stage. So do it prematurely.
+            if (rd.settings.rendering.asyncCompute) {
+                mSsaoResultImage.barrier(cmd_buf_early_graphics, ImageResourceAccess::ComputeShaderStageOnly);
+            }
+
+            mSSAORenderer->radius = rd.settings.ssao.radius;
+            mSSAORenderer->exponent = rd.settings.ssao.exponent;
+            mSSAORenderer->bias = rd.settings.ssao.bias;
+            mSSAORenderer->filterSharpness = rd.settings.ssao.filterSharpness;
+            mSSAORenderer->execute(
+                    mContext->device(), desc_alloc, cmd_buf_compute, rd.camera.projectionMatrix(),
+                    rd.camera.nearPlane(), mComputeDepthCopyImage, mSsaoIntermediaryImage, mSsaoResultImage
+            );
+        }
+
+        dbg_cmd_label_region.swap("Light Pass");
+        auto &tile_light_indices_buffer = mTileLightIndicesBuffers.next();
+        if (rd.settings.rendering.asyncCompute) {
+            tile_light_indices_buffer.barrier(cmd_buf_early_graphics, BufferResourceAccess::ComputeShaderStageOnly);
+        }
+        mLightRenderer->lightRangeFactor = rd.settings.rendering.lightRangeFactor;
+        mLightRenderer->execute(
+                mContext->device(), desc_alloc, cmd_buf_compute, rd.gltfScene, rd.camera.projectionMatrix(),
+                rd.camera.viewMatrix(), rd.camera.nearPlane(), mComputeDepthCopyImage, tile_light_indices_buffer
+        );
+    }
+
+    // """Async""" Graphics (Graphics that can run independently)
+    {
+        const auto &cmd_buf = frame_objects.independentGraphicsCommands;
+        cmd_buf.begin(vk::CommandBufferBeginInfo{});
+        util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Async Graphics");
+
+        // Shadow pass
+        if (rd.settings.shadowCascade.update) {
+            dbg_cmd_label_region.swap("Shadow Pass");
+            for (auto &caster: rd.sunShadowCasterCascade.cascades()) {
+                mShadowRenderer->execute(
+                        mContext->device(), desc_alloc, buf_alloc, cmd_buf, rd.gltfScene, *mFrustumCuller, caster
+                );
+            }
         }
     }
 
-    // Main render pass
-    dbg_cmd_label_region.swap("Main Pass");
-    mPbrSceneRenderer->enableCulling = rd.settings.rendering.enableFrustumCulling;
-    mPbrSceneRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
-    mPbrSceneRenderer->execute(
-            mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene, *mFrustumCuller,
-            rd.sunLight, rd.sunShadowCasterCascade.cascades(), mSsaoResultImage, mTileLightIndicesBuffers.get(), rd.settings
-    );
-
-    // Blob render pass
-    if (rd.settings.blob.render) {
-        dbg_cmd_label_region.swap("Blob Pass");
-        mBlobRenderer->execute(mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.blobModel);
-    }
-
-    // Skybox render pass (render late to reduce overdraw)
-    dbg_cmd_label_region.swap("Skybox Pass");
-    mSkyboxRenderer->execute(
-            mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.skybox, rd.settings.sky.exposure,
-            rd.settings.sky.tint
-    );
-
-    // Post-processing pass
-    dbg_cmd_label_region.swap("Post-Process Pass");
-    mFinalizeRenderer->execute(
-            mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer.colorAttachments[0],
-            swapchain_fb.colorAttachments[0], rd.settings.agx
-    );
-
-    // ImGui render pass
-    dbg_cmd_label_region.swap("ImGUI Pass");
+    // Main Graphics
     {
-        swapchain_fb.colorAttachments[0].image().barrier(
-                cmd_buf, ImageResourceAccess::ColorAttachmentLoad, ImageResourceAccess::ColorAttachmentWrite
+        const auto &cmd_buf = frame_objects.mainGraphicsCommands;
+        // command buffer begin already called
+        util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Main Graphics");
+
+        // Main render pass
+        dbg_cmd_label_region.swap("Main Pass");
+        mPbrSceneRenderer->enableCulling = rd.settings.rendering.enableFrustumCulling;
+        mPbrSceneRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
+        mPbrSceneRenderer->execute(
+                mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene,
+                *mFrustumCuller, rd.sunLight, rd.sunShadowCasterCascade.cascades(), mSsaoResultImage,
+                mTileLightIndicesBuffers.get(), rd.settings
         );
-        // temporarily change view to linear format to fix an ImGui issue.
-        Framebuffer imgui_fb = swapchain_fb;
-        imgui_fb.colorAttachments[0] = ImageViewPair(swapchain_fb.colorAttachments[0].image(), swapchain.colorViewLinear());
-        cmd_buf.beginRendering(imgui_fb.renderingInfo({}));
-        mImguiBackend->render(cmd_buf);
-        cmd_buf.endRendering();
+
+        // Blob render pass
+        if (rd.settings.blob.render) {
+            dbg_cmd_label_region.swap("Blob Pass");
+            mBlobRenderer->execute(mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.blobModel);
+        }
+
+        // Skybox render pass (render late to reduce overdraw)
+        dbg_cmd_label_region.swap("Skybox Pass");
+        mSkyboxRenderer->execute(
+                mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.skybox,
+                rd.settings.sky.exposure, rd.settings.sky.tint
+        );
+
+        // Post-processing pass
+        dbg_cmd_label_region.swap("Post-Process Pass");
+        mFinalizeRenderer->execute(
+                mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer.colorAttachments[0],
+                swapchain_fb.colorAttachments[0], rd.settings.agx
+        );
+
+        // ImGui render pass
+        dbg_cmd_label_region.swap("ImGUI Pass");
+        {
+            swapchain_fb.colorAttachments[0].image().barrier(
+                    cmd_buf, ImageResourceAccess::ColorAttachmentLoad, ImageResourceAccess::ColorAttachmentWrite
+            );
+            // temporarily change view to linear format to fix an ImGui issue.
+            Framebuffer imgui_fb = swapchain_fb;
+            imgui_fb.colorAttachments[0] =
+                    ImageViewPair(swapchain_fb.colorAttachments[0].image(), swapchain.colorViewLinear());
+            cmd_buf.beginRendering(imgui_fb.renderingInfo({}));
+            mImguiBackend->render(cmd_buf);
+            cmd_buf.endRendering();
+        }
+
+        swapchain_fb.colorAttachments[0].image().barrier(cmd_buf, ImageResourceAccess::PresentSrc);
     }
 
-    dbg_cmd_label_region.end();
+    // Submit early graphics work
+    {
+        frame_objects.earlyGraphicsCommands.end();
+        std::array signal = {*frame_objects.earlyGraphicsFinishedSemaphore};
+        auto submit_info = vk::SubmitInfo().setCommandBuffers(frame_objects.earlyGraphicsCommands);
+        if (rd.settings.rendering.asyncCompute) {
+            submit_info.setSignalSemaphores(signal);
+        }
+        mContext->mainQueue->submit(submit_info);
+    }
 
-    swapchain_fb.colorAttachments[0].image().barrier(cmd_buf, ImageResourceAccess::PresentSrc);
+    // Submit async compute
+    {
+        cmd_buf_compute.end();
+        vk::PipelineStageFlags wait_mask = vk::PipelineStageFlagBits::eComputeShader;
+        std::array wait = {*frame_objects.earlyGraphicsFinishedSemaphore};
+        std::array signal = {*frame_objects.asyncComputeFinishedSemaphore};
+        auto submit_info = vk::SubmitInfo().setCommandBuffers(cmd_buf_compute);
+        if (rd.settings.rendering.asyncCompute) {
+            submit_info.setWaitSemaphores(wait).setWaitDstStageMask(wait_mask).setSignalSemaphores(signal);
+            mContext->computeQueue->submit(submit_info);
+        } else {
+            mContext->mainQueue->submit(submit_info);
+        }
+    }
+
+    // Sumit """async""" graphics
+    {
+        frame_objects.independentGraphicsCommands.end();
+        // Don't need to wait because submission is on the same queue as early graphics
+        // For the same reason it doesn't need to signal for the main graphics
+        mContext->mainQueue->submit(vk::SubmitInfo().setCommandBuffers(frame_objects.independentGraphicsCommands));
+    }
 }
 
 void RenderSystem::advance(const Settings &settings) {
     auto &swapchain = mContext->swapchain();
-    const auto &sync_objects = mFramesInFlightSyncObjects.next();
+    auto &frame_objects = mPerFrameObjects.next();
 
-    while (mContext->device().waitForFences(*sync_objects.inFlightFence, true, UINT64_MAX) == vk::Result::eTimeout) {
+    while (mContext->device().waitForFences(*frame_objects.inFlightFence, true, UINT64_MAX) == vk::Result::eTimeout) {
     }
-    mContext->device().resetFences(*sync_objects.inFlightFence);
 
-    if (!swapchain.advance(*sync_objects.availableSemaphore)) {
+    if (!swapchain.advance(*frame_objects.imageAvailableSemaphore)) {
         recreate(settings);
     }
 
-    mCommandBuffers.next();
-    mDescriptorAllocators.next().reset();
-    mTransientBufferAllocators.next().reset();
     mInstanceTransformUpdates.next();
 }
 
 void RenderSystem::begin() {
-    vk::CommandBuffer &cmd_buf = mCommandBuffers.get();
-    cmd_buf.reset();
-    cmd_buf.begin(vk::CommandBufferBeginInfo{});
+    mPerFrameObjects.get().reset(mContext->device());
+
+    // the main graphics commands are used elsewhere, so begin them early
+    mPerFrameObjects.get().mainGraphicsCommands.begin(vk::CommandBufferBeginInfo{});
 }
 
 void RenderSystem::submit(const Settings &settings) {
-    const auto &cmd_buf = mCommandBuffers.get();
-    const auto &sync_objects = mFramesInFlightSyncObjects.get();
-    // These must correspond to the active swapchain image index
-    const auto &render_finished_semaphore = mRenderFinishedSemaphores.get(mContext->swapchain().activeImageIndex());
+    const auto &frame_objects = mPerFrameObjects.get();
+    // These must correspond to the active swapchain image index, because the semaphore only becomes unsignaled
+    // once the swapchain image is released (and acquired)
+    const auto &render_finished_semaphore = mRenderFinishedSemaphore.get(mContext->swapchain().activeImageIndex());
 
-    cmd_buf.end();
+    frame_objects.mainGraphicsCommands.end();
 
-    vk::PipelineStageFlags pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    vk::SubmitInfo submit_info = vk::SubmitInfo()
-                                         .setCommandBuffers(cmd_buf)
-                                         .setWaitSemaphores(*sync_objects.availableSemaphore)
-                                         .setWaitDstStageMask(pipe_stage_flags)
-                                         .setSignalSemaphores(*render_finished_semaphore);
+    util::static_vector<vk::Semaphore, 2> wait_semaphores = {*frame_objects.imageAvailableSemaphore};
+    util::static_vector<vk::PipelineStageFlags, 2> wait_masks = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
+    if (settings.rendering.asyncCompute) {
+        wait_semaphores.push_back(*frame_objects.asyncComputeFinishedSemaphore);
+        wait_masks.push_back(vk::PipelineStageFlagBits::eTopOfPipe);
+    }
+    auto submit_info = vk::SubmitInfo()
+                               .setCommandBuffers(frame_objects.mainGraphicsCommands)
+                               .setWaitSemaphores(wait_semaphores)
+                               .setWaitDstStageMask(wait_masks)
+                               .setSignalSemaphores(*render_finished_semaphore);
 
-    mContext->mainQueue->submit({submit_info}, *sync_objects.inFlightFence);
+    mContext->mainQueue->submit({submit_info}, *frame_objects.inFlightFence);
 
     if (!mContext->swapchain().present(
                 mContext->presentQueue, vk::PresentInfoKHR().setWaitSemaphores(*render_finished_semaphore)

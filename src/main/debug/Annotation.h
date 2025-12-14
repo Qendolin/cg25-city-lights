@@ -21,15 +21,19 @@ namespace util {
         ~ScopedCommandLabel();
 
         void start(const char *label) const {
+#ifndef NDEBUG
             mCount++;
             vk::DebugUtilsLabelEXT info;
             info.pLabelName = label;
             mCmd.beginDebugUtilsLabelEXT(info);
+#endif
         }
 
         void end() const {
+#ifndef NDEBUG
             mCount--;
             mCmd.endDebugUtilsLabelEXT();
+#endif
         }
 
         void swap(std::string_view new_label) const {
@@ -40,6 +44,7 @@ namespace util {
 
     template <typename T>
     void setDebugName(const vk::Device& device, T object, const std::string& name) {
+#ifndef NDEBUG
         // Extract the C-API handle type (e.g., VkBuffer or VkCommandBuffer)
         using CType = typename T::CType;
         uint64_t handle = reinterpret_cast<uint64_t>(static_cast<CType>(object));
@@ -51,5 +56,6 @@ namespace util {
         nameInfo.pObjectName  = name.c_str();
 
         device.setDebugUtilsObjectNameEXT(nameInfo);
+#endif
     }
 } // namespace util

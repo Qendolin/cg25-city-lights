@@ -61,7 +61,6 @@ void SSAORenderer::execute(
         const ImageViewPairBase &ao_intermediary,
         const ImageViewPairBase &ao_result
 ) {
-    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
     util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Sampling");
 
     depth_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
@@ -178,12 +177,12 @@ void SSAORenderer::filterPass(
 }
 
 
-void SSAORenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, int slices, int samples) {
+void SSAORenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, int slices, int samples, bool bentNormals) {
     auto comp_sh_sampler = shader_loader.loadFromSource(device, "resources/shaders/ssao.comp");
     ComputePipelineConfig pipeline_config_sampler = {
         .descriptorSetLayouts = {mSamplerShaderParamsDescriptorLayout}, .pushConstants = {}
     };
-    auto specialization_constants = SpecializationConstantsBuilder().add(0, slices).add(1, samples).build();
+    auto specialization_constants = SpecializationConstantsBuilder().add(0, slices).add(1, samples).add(2, static_cast<uint32_t>(bentNormals)).build();
     mSamplerPipeline = createComputePipeline(device, pipeline_config_sampler, *comp_sh_sampler, specialization_constants);
 
     auto comp_sh_filter = shader_loader.loadFromSource(device, "resources/shaders/ssao_filter.comp");
@@ -193,7 +192,8 @@ void SSAORenderer::createPipeline(const vk::Device &device, const ShaderLoader &
             .stageFlags = vk::ShaderStageFlagBits::eCompute, .offset = 0, .size = sizeof(FilterShaderPushConstants)
         }}
     };
-    mFilterPipeline = createComputePipeline(device, pipeline_config_filter, *comp_sh_filter);
+    specialization_constants = SpecializationConstantsBuilder().add(0, static_cast<uint32_t>(bentNormals)).build();
+    mFilterPipeline = createComputePipeline(device, pipeline_config_filter, *comp_sh_filter, specialization_constants);
 }
 
 void SSAORenderer::calculateInverseProjectionConstants(

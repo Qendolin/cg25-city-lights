@@ -31,21 +31,38 @@ struct RenderData {
 
 class RenderSystem {
 
-    struct FramesInFlightSyncObjects {
-        vk::UniqueSemaphore availableSemaphore;
+    struct PerFrameObjects {
+        vk::CommandBuffer earlyGraphicsCommands;
+        vk::CommandBuffer mainGraphicsCommands;
+        vk::CommandBuffer independentGraphicsCommands;
+        vk::CommandBuffer asyncComputeCommands;
+        vk::CommandBuffer nonAsyncComputeCommands;
+
+        vk::UniqueSemaphore earlyGraphicsFinishedSemaphore;
+        vk::UniqueSemaphore asyncComputeFinishedSemaphore;
+        vk::UniqueSemaphore imageAvailableSemaphore;
+
         vk::UniqueFence inFlightFence;
+
+        UniqueDescriptorAllocator descriptorAllocator;
+        UniqueTransientBufferAllocator transientBufferAllocator;
+
+        void reset(const vk::Device& device);
+        void setDebugLabels(const vk::Device& device, int frame);
     };
 
     VulkanContext *mContext;
 
-    vk::UniqueCommandPool mCommandPool;
+    vk::UniqueCommandPool mGraphicsCommandPool;
+    vk::UniqueCommandPool mComputeCommandPool;
 
-    util::PerFrame<FramesInFlightSyncObjects> mFramesInFlightSyncObjects;
-    util::PerFrame<vk::UniqueSemaphore> mRenderFinishedSemaphores;
-    util::PerFrame<vk::CommandBuffer> mCommandBuffers;
+    // Per frame in flight
+    util::PerFrame<PerFrameObjects> mPerFrameObjects;
+    // Per swapchain image
+    util::PerFrame<vk::UniqueSemaphore> mRenderFinishedSemaphore;
+    // Per swapchain image
     util::PerFrame<Framebuffer> mSwapchainFramebuffers;
-    util::PerFrame<UniqueDescriptorAllocator> mDescriptorAllocators;
-    util::PerFrame<UniqueTransientBufferAllocator> mTransientBufferAllocators;
+
     util::PerFrame<Buffer> mInstanceTransformUpdates;
 
     // This descriptor allocator is never reset
@@ -57,6 +74,7 @@ class RenderSystem {
     ImageWithView mHdrDepthAttachment;
     ImageWithView mSsaoIntermediaryImage;
     ImageWithView mSsaoResultImage;
+    ImageWithView mComputeDepthCopyImage;
     util::PerFrame<Buffer> mTileLightIndicesBuffers;
 
     std::unique_ptr<ImGuiBackend> mImguiBackend;

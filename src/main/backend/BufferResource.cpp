@@ -10,6 +10,11 @@ constexpr BufferResourceAccess BufferResourceAccess::TransferRead = {
     .access = vk::AccessFlagBits2::eTransferRead,
 };
 
+constexpr BufferResourceAccess BufferResourceAccess::ComputeShaderStageOnly = {
+    .stage = vk::PipelineStageFlagBits2::eComputeShader,
+    .access = {},
+};
+
 constexpr BufferResourceAccess BufferResourceAccess::ComputeShaderWrite = {
     .stage = vk::PipelineStageFlagBits2::eComputeShader,
     .access = vk::AccessFlagBits2::eShaderWrite,

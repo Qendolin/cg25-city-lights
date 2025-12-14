@@ -22,6 +22,10 @@ public:
     /// </summary>
     DeviceQueue mainQueue = {};
     /// <summary>
+    /// The queue for async compute operations.
+    /// </summary>
+    DeviceQueue computeQueue = {};
+    /// <summary>
     /// The queue for presenting to the screen.
     /// </summary>
     DeviceQueue presentQueue = {};
@@ -92,11 +96,11 @@ public:
 
     VulkanContext(const VulkanContext &other) = delete;
 
-    VulkanContext(VulkanContext &&other) noexcept;
+    VulkanContext(VulkanContext &&other) noexcept = default;
 
     VulkanContext &operator=(const VulkanContext &other) = delete;
 
-    VulkanContext &operator=(VulkanContext &&other) noexcept;
+    VulkanContext &operator=(VulkanContext &&other) noexcept = default;
 
     /// <summary>
     /// Creates a new VulkanContext.
@@ -126,6 +130,7 @@ private:
         vk::UniqueSurfaceKHR &&surface,
         std::unique_ptr<Swapchain> &&swapchain,
         const DeviceQueue &main_queue,
+        const DeviceQueue &compute_queue,
         const DeviceQueue &present_queue,
         const DeviceQueue &transfer_queue);
 };

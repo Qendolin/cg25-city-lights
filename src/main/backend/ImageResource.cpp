@@ -16,6 +16,12 @@ constexpr ImageResourceAccess ImageResourceAccess::TransferRead = {
     .layout = vk::ImageLayout::eTransferSrcOptimal
 };
 
+constexpr ImageResourceAccess ImageResourceAccess::ComputeShaderStageOnly = {
+    .stage = vk::PipelineStageFlagBits2::eComputeShader,
+    .access = {},
+    .layout = vk::ImageLayout::eUndefined
+};
+
 constexpr ImageResourceAccess ImageResourceAccess::ComputeShaderWriteGeneral = {
     .stage = vk::PipelineStageFlagBits2::eComputeShader,
     .access = vk::AccessFlagBits2::eShaderWrite,
@@ -71,7 +77,7 @@ constexpr ImageResourceAccess ImageResourceAccess::DepthAttachmentLateOps = {
 
 constexpr ImageResourceAccess ImageResourceAccess::PresentSrc = {
     .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-    .access = vk::AccessFlagBits2::eMemoryRead,
+    .access = {}, // apparently 0 is correct, not read
     .layout = vk::ImageLayout::ePresentSrcKHR
 };
 
@@ -97,7 +103,7 @@ void ImageResource::barrier(
         .dstStageMask = begin.stage,
         .dstAccessMask = begin.access,
         .oldLayout = mPrevAccess.layout,
-        .newLayout = begin.layout,
+        .newLayout = begin.layout == vk::ImageLayout::eUndefined ? mPrevAccess.layout : begin.layout,
         .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
         .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
         .image = image,
@@ -108,7 +114,10 @@ void ImageResource::barrier(
         .imageMemoryBarrierCount = 1,
         .pImageMemoryBarriers = &barrier,
     });
-    mPrevAccess = end;
+
+    mPrevAccess.stage = end.stage;
+    mPrevAccess.access = end.access;
+    mPrevAccess.layout = end.layout == vk::ImageLayout::eUndefined ? mPrevAccess.layout : end.layout;
 }
 
 

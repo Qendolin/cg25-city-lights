@@ -76,8 +76,8 @@ public:
             const FilterShaderPushConstants &filter_params
     );
 
-    void recreate(const vk::Device &device, const ShaderLoader &shader_loader, int slices, int samples) {
-        createPipeline(device, shader_loader, slices, samples);
+    void recreate(const vk::Device &device, const ShaderLoader &shader_loader, int slices, int samples, bool bentNormals) {
+        createPipeline(device, shader_loader, slices, samples, bentNormals);
     }
 
     void execute(
@@ -92,7 +92,7 @@ public:
     );
 
 private:
-    void createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, int slices, int samples);
+    void createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, int slices, int samples, bool bentNormals);
 
     static void calculateInverseProjectionConstants(
             const glm::mat4 &projectionMatrix, float textureWidth, float textureHeight, glm::vec2 &viewScale, glm::vec2 &viewOffset

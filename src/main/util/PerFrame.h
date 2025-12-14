@@ -74,6 +74,12 @@ namespace util {
         /// <returns>A const reference to the object at the specified index.</returns>
         [[nodiscard]] T &get(size_t index) const { return mPool.at(index); }
 
+        [[nodiscard]] size_t size() const { return mFrames; }
+
+        [[nodiscard]] int32_t index() const { return mIndex; }
+
+        [[nodiscard]] bool initialized() const { return mIndex >= 0; }
+
     private:
         /// <summary>
         /// The pool of objects.
@@ -82,7 +88,7 @@ namespace util {
         /// <summary>
         /// The index of the current frame.
         /// </summary>
-        size_t mIndex = static_cast<size_t>(-1);
+        int32_t mIndex = -1;
         /// <summary>
         /// The total number of frames/objects in the pool.
         /// </summary>

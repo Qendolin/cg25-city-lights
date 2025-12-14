@@ -21,8 +21,6 @@ void ShadowRenderer::execute(
         const FrustumCuller &frustum_culler,
         const ShadowCaster &shadow_caster
 ) {
-    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
-
     // Culling
     util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Culling");
 
@@ -56,7 +54,7 @@ void ShadowRenderer::execute(
     cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0, {gpu_data.sceneDescriptor}, {});
     cmd_buf.bindIndexBuffer(*gpu_data.indices, 0, vk::IndexType::eUint32);
     cmd_buf.bindVertexBuffers(
-            0, {*gpu_data.positions, *gpu_data.normals, *gpu_data.tangents, *gpu_data.texcoords}, {0, 0, 0, 0}
+            0, {*gpu_data.positions, *gpu_data.normals}, {0, 0}
     );
 
     ShaderParamsPushConstants shader_params = {

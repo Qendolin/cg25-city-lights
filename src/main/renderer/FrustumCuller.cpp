@@ -20,8 +20,6 @@ UnmanagedBuffer FrustumCuller::execute(
         const scene::GpuData &gpu_data,
         const glm::mat4 &view_projection_matrix
 ) const {
-    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
-
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eCompute, *mPipeline.pipeline);
 
     size_t draw_command_buffer_size = gpu_data.drawCommandCount * sizeof(vk::DrawIndexedIndirectCommand);

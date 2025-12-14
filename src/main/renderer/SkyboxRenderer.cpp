@@ -33,8 +33,6 @@ void SkyboxRenderer::execute(
         float exposure,
         const glm::vec3& tint
 ) {
-    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
-
     cmd_buf.beginRendering(framebuffer.renderingInfo({
         .enableColorAttachments = true,
         .enableDepthAttachment = true,

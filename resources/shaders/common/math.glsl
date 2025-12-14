@@ -4,6 +4,7 @@
 const float PI = 3.14159265359;
 const float TWO_PI = 6.28318530718;
 const float PI_HALF = 1.57079632679;
+const float HALF_PI = 1.57079632679;
 const float INV_PI = 1.0 / 3.14159265359;
 
 float saturate(in float x) {

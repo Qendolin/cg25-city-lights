@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
+#include "../util/static_vector.h"
 #include "ImageResource.h"
 
 
@@ -194,6 +195,8 @@ struct ImageCreateInfo {
     vma::MemoryUsage device = vma::MemoryUsage::eAuto;
     vk::MemoryPropertyFlags requiredProperties = vk::MemoryPropertyFlagBits::eDeviceLocal;
     vk::MemoryPropertyFlags preferredProperties = {};
+
+    util::static_vector<uint32_t, 4> sharedQueues = {};
 
     constexpr operator ImageInfo() const { // NOLINT(*-explicit-constructor)
         return {format, aspects, type, width, height, depth, levels, layers};

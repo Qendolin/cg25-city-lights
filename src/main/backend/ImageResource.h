@@ -16,6 +16,7 @@ struct ImageResourceAccess {
 
     static const ImageResourceAccess TransferWrite;
     static const ImageResourceAccess TransferRead;
+    static const ImageResourceAccess ComputeShaderStageOnly;
     static const ImageResourceAccess ComputeShaderWriteGeneral;
     static const ImageResourceAccess ComputeShaderReadGeneral;
     static const ImageResourceAccess ComputeShaderReadOptimal;
@@ -44,6 +45,7 @@ protected:
     /// <summary>
     /// Inserts an image memory barrier into the command buffer.
     /// </summary>
+    /// <remarks>If image layout is eUndegined the previous layout will be used.</remarks>
     /// <param name="image">The image to which the barrier applies.</param>
     /// <param name="range">The subresource range of the image.</param>
     /// <param name="cmd_buf">The command buffer to record the barrier to.</param>

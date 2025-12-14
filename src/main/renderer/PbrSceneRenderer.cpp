@@ -52,8 +52,6 @@ void PbrSceneRenderer::execute(
         const BufferBase &tile_light_indices_buffer,
         const Settings &settings
 ) {
-    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf);
-
     Logger::check(sun_shadow_cascades.size() == Settings::SHADOW_CASCADE_COUNT, "Shadow cascade size doesn't match");
 
     // Culling

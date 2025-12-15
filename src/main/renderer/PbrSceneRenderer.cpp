@@ -19,11 +19,10 @@ PbrSceneRenderer::PbrSceneRenderer(const vk::Device &device) {
     mShadowSampler = device.createSamplerUnique({
         .magFilter = vk::Filter::eLinear,
         .minFilter = vk::Filter::eLinear,
-        .addressModeU = vk::SamplerAddressMode::eClampToBorder,
-        .addressModeV = vk::SamplerAddressMode::eClampToBorder,
+        .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+        .addressModeV = vk::SamplerAddressMode::eClampToEdge,
         .compareEnable = true,
         .compareOp = vk::CompareOp::eGreaterOrEqual,
-        .borderColor = vk::BorderColor::eFloatTransparentBlack,
     });
     mAoSampler = device.createSamplerUnique({
         .magFilter = vk::Filter::eLinear,
@@ -76,17 +75,26 @@ void PbrSceneRenderer::execute(
     // Descriptor Update
     dbg_cmd_label_region.swap("Descriptor Update");
 
+    glm::mat3 sun_rotation = sun_light.rotation();
     std::array<ShadowCascadeUniformBlock, Settings::SHADOW_CASCADE_COUNT> shadow_cascade_uniform_blocks = {};
     for (size_t i = 0; i < sun_shadow_cascades.size(); i++) {
         const auto &cascade = sun_shadow_cascades[i];
         // Divide by resolution to help keep the bias resolution independent
         float normal_bias = cascade.normalBias / static_cast<float>(cascade.resolution());
+
+        glm::vec3 center_ws = -glm::transpose(glm::mat3(cascade.viewMatrix)) * glm::vec3(cascade.viewMatrix[3]);
+        glm::vec3 center_ls = glm::transpose(sun_rotation) * center_ws;
+        float extent_x = 1.0f / cascade.projectionMatrix[0][0];
+        float extent_y = 1.0f / cascade.projectionMatrix[1][1];
+
         shadow_cascade_uniform_blocks[i] = {
             .projectionView = cascade.projectionMatrix * cascade.viewMatrix,
             .sampleBias = cascade.sampleBias,
             .sampleBiasClamp = cascade.sampleBiasClamp,
             .normalBias = normal_bias,
-            .distance = cascade.distance
+            .splitDistance = cascade.distance,
+            .boundsMin = glm::vec2(center_ls.x - extent_x, center_ls.y - extent_y),
+            .boundsMax = glm::vec2(center_ls.x + extent_x, center_ls.y + extent_y),
         };
     }
 
@@ -110,7 +118,9 @@ void PbrSceneRenderer::execute(
         .sun =
                 {
                     .radiance = glm::vec4{sun_light.radiance(), 0.0},
-                    .direction = glm::vec4{sun_light.direction(), 0.0},
+                    .right = glm::vec4{sun_rotation[0], 0.0},
+                    .up = glm::vec4{sun_rotation[1], 0.0},
+                    .forward = glm::vec4{sun_rotation[2], 0.0},
                 },
         .ambient = glm::vec4(settings.rendering.ambient, 1.0),
     };

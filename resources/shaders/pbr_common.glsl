@@ -10,6 +10,15 @@ struct ShadowCascade {
     float sampleBiasClamp;
     float normalBias;
     float splitDistance;
+    vec2 boundsMin;
+    vec2 boundsMax;
+};
+
+struct Sun {
+    vec4 radiance;
+    vec4 right;
+    vec4 up;
+    vec4 forward;
 };
 
 layout (std140, set = 1, binding = 0) uniform SceneUniforms {
@@ -17,7 +26,7 @@ layout (std140, set = 1, binding = 0) uniform SceneUniforms {
     mat4 projection;
     vec4 camera;
     vec4 viewport; // viewport size and inverse viewport size
-    DirectionalLight sun;
+    Sun sun;
     vec4 ambient;
 } uParams;
 

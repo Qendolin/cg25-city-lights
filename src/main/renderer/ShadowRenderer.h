@@ -38,7 +38,8 @@ public:
             const vk::CommandBuffer &cmd_buf,
             const scene::GpuData &gpu_data,
             const FrustumCuller &frustum_culler,
-            const ShadowCaster &shadow_caster
+            const ShadowCaster &shadow_caster,
+            const ShadowCaster* inner_shadow_caster = nullptr
     );
 
 private:

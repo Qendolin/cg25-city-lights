@@ -19,7 +19,7 @@ vec3 shadowSamplePosition(in mat4 projectionView, vec3 position, vec3 normal, fl
     // https://web.archive.org/web/20160602232409if_/http://www.dissidentlogic.com/old/images/NormalOffsetShadows/GDC_Poster_NormalOffset.png
     // https://github.com/TheRealMJP/Shadows/blob/8bcc4a4bbe232d5f17eda5907b5a7b5425c54430/Shadows/Mesh.hlsl#L716C8-L716C26
     // https://c0de517e.blogspot.com/2011/05/shadowmap-bias-notes.html
-    float n_dot_l = dot(normal, uParams.sun.direction.xyz);
+    float n_dot_l = dot(normal, uParams.sun.forward.xyz);
     vec3 offset = normalBias * (1.0 - n_dot_l) * normal;
     shadow_ws.xyz += offset;
 

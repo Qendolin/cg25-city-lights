@@ -18,7 +18,9 @@ UnmanagedBuffer FrustumCuller::execute(
         const TransientBufferAllocator &buf_alloc,
         const vk::CommandBuffer &cmd_buf,
         const scene::GpuData &gpu_data,
-        const glm::mat4 &view_projection_matrix
+        const glm::mat4 &view_projection_matrix,
+        const glm::mat4* exclude_frustum,
+        float min_world_radius
 ) const {
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eCompute, *mPipeline.pipeline);
 
@@ -60,9 +62,16 @@ UnmanagedBuffer FrustumCuller::execute(
             vk::PipelineBindPoint::eCompute, *mPipeline.layout, 0, {gpu_data.sceneDescriptor, descriptor_set}, {}
     );
 
+
     // World space frustum planes
     std::array<glm::vec4, 6> frustum_planes = util::extractFrustumPlanes(view_projection_matrix);
-    ShaderParamsPushConstants push_constants = {.planes = frustum_planes};
+    ShaderParamsPushConstants push_constants = {.planes = frustum_planes, .minWorldRadius = min_world_radius};
+
+    if (exclude_frustum) {
+        push_constants.excludePlanes = util::extractFrustumPlanes(*exclude_frustum);
+        push_constants.enableExcludePlanes = true;
+    }
+
     cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(push_constants), &push_constants);
 
     cmd_buf.dispatch(util::divCeil(gpu_data.drawCommandCount, 64u), 1u, 1u);

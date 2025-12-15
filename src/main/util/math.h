@@ -184,4 +184,19 @@ namespace util {
         return glm::normalize(v);
     }
 
+    inline glm::vec3 safeUpVector(const glm::vec3 &direction, glm::vec3 up = {0.0f, 1.0f, 0.0f}) {
+        float dot = glm::dot(direction, up);
+        if (dot < -0.99 || dot > 0.99) {
+            // direction is too close to up vector, pick another one
+            glm::vec3 abs = glm::abs(up);
+            if (abs.x < abs.y && abs.x < abs.z)
+                up = {1, 0, 0};
+            else if (abs.y < abs.z)
+                up = {0, 1, 0};
+            else
+                up = {0, 0, 1};
+        }
+        return up;
+    }
+
 } // namespace util

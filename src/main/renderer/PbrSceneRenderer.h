@@ -12,7 +12,6 @@ struct ImageViewPairBase;
 class CascadedShadowCaster;
 class FrustumCuller;
 class ShadowCaster;
-struct DirectionalLight;
 class Camera;
 namespace scene {
     struct GpuData;
@@ -23,15 +22,17 @@ class ShaderLoader;
 class PbrSceneRenderer {
 public:
     struct alignas(16) ShaderParamsInlineUniformBlock {
-        struct alignas(16) DirectionalLight {
+        struct alignas(16) Sun {
             glm::vec4 radiance;
-            glm::vec4 direction;
+            glm::vec4 right;
+            glm::vec4 up;
+            glm::vec4 forward;
         };
         glm::mat4 view;
         glm::mat4 projection;
         glm::vec4 camera; // Padded to 16 bytes
         glm::vec4 viewport;
-        DirectionalLight sun;
+        Sun sun;
         glm::vec4 ambient;
     };
 
@@ -54,7 +55,9 @@ public:
         float sampleBias;
         float sampleBiasClamp;
         float normalBias;
-        float distance;
+        float splitDistance;
+        glm::vec2 boundsMin;
+        glm::vec2 boundsMax;
     };
 
     struct ShaderParamsDescriptorLayout : DescriptorSetLayout {

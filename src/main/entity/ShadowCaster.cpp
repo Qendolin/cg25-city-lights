@@ -4,21 +4,7 @@
 #include <glm/ext/matrix_transform.hpp>
 
 #include "../debug/Annotation.h"
-
-inline glm::vec3 pickSafeUpVector(const glm::vec3 &direction, glm::vec3 up = {0.0f, 1.0f, 0.0f}) {
-    float dot = glm::dot(direction, up);
-    if (dot < -0.99 || dot > 0.99) {
-        // direction is too close to up vector, pick another one
-        glm::vec3 abs = glm::abs(up);
-        if (abs.x < abs.y && abs.x < abs.z)
-            up = {1, 0, 0};
-        else if (abs.y < abs.z)
-            up = {0, 1, 0};
-        else
-            up = {0, 0, 1};
-    }
-    return up;
-}
+#include "../util/math.h"
 
 ShadowCaster::ShadowCaster(const vk::Device &device, const vma::Allocator &allocator, uint32_t resolution)
     : mResolution(resolution) {
@@ -80,7 +66,7 @@ void SimpleShadowCaster::updateProjectionMatrix() {
 }
 
 void SimpleShadowCaster::lookAt(const glm::vec3 &target, const glm::vec3 &direction, float distance, const glm::vec3 &up_) {
-    glm::vec3 up = pickSafeUpVector(direction, up_);
+    glm::vec3 up = util::safeUpVector(direction, up_);
     glm::vec3 eye = target - glm::normalize(direction) * distance;
     // add 'direction' to 'target' to make it work for distance = 0
     viewMatrix = glm::lookAt(eye, target + direction, up);
@@ -111,6 +97,8 @@ void ShadowCascade::update(float frustum_fov, float frustum_aspect, glm::mat4 vi
     // cannot use camera projection matrix directly because it has an infinite far plane
     glm::mat4 camera_projection = glm::perspective(frustum_fov, frustum_aspect, near_clip, far_clip);
     glm::mat4 camera_inverse = glm::inverse(camera_projection * view_matrix);
+
+    // NOTE: I'm not 100% that this code is working correctly. May not produce optimal results.
 
     size_t count = mCascades.size();
     float last_split_dist = 0.0f;
@@ -177,7 +165,7 @@ float ShadowCascade::calculateSplitDistance(float lambda, float near_clip, float
 glm::mat4 ShadowCascade::createTexelAlignedViewMatrix(
         glm::vec3 light_dir, uint32_t resolution, float radius, glm::vec3 frustum_center
 ) {
-    glm::vec3 up = pickSafeUpVector(light_dir);
+    glm::vec3 up = util::safeUpVector(light_dir);
     glm::mat4 zero_view = glm::lookAt(glm::vec3(0.0f), -light_dir, up);
 
     glm::vec4 center_light_space = zero_view * glm::vec4(frustum_center, 1.0f);

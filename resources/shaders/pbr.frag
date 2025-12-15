@@ -105,9 +105,17 @@ void main() {
     bsdf_params.f0 = mix(bsdf_params.f0, bsdf_params.albedo.rgb, bsdf_params.metalness);
 
     int shadow_index = SHADOW_CASCADE_COUNT-1;
-    for (int i = SHADOW_CASCADE_COUNT - 1; i >= 0; i--) {
-        if (bsdf_params.V.w < uShadowCascades[i].splitDistance) {
-            shadow_index = i;
+    {
+        // Project into light space
+        float lx = dot(bsdf_params.P, uParams.sun.right.xyz);
+        float ly = dot(bsdf_params.P, uParams.sun.up.xyz);
+
+        for (int i = 0; i < SHADOW_CASCADE_COUNT; ++i) {
+            if (lx >= uShadowCascades[i].boundsMin.x && ly >= uShadowCascades[i].boundsMin.y
+            && lx <= uShadowCascades[i].boundsMax.x && ly <= uShadowCascades[i].boundsMax.y) {
+                shadow_index = i;
+                break;
+            }
         }
     }
 
@@ -115,11 +123,21 @@ void main() {
 
     // directional light
     {
-        float n_dot_l = dot(bsdf_params.geoN, uParams.sun.direction.xyz);
-        float shadow = sampleShadowPoisson(uShadowCascades[shadow_index], uSunShadowMaps[shadow_index], in_shadow_position_ndc[shadow_index], n_dot_l, bsdf_params.V.w);
+        float n_dot_l = dot(bsdf_params.geoN, uParams.sun.forward.xyz);
+
+        float split = uShadowCascades[shadow_index].splitDistance;
+        float blend_start = split * 0.5f;
+        float blend_end   = split;
+        float shadow_kernel_scale = 1.0f + 1.0f * saturate((bsdf_params.V.w - blend_start) / (blend_end - blend_start));
+        shadow_kernel_scale *= 1.25;
+
+        float shadow = 1.0f;
+        if (shadow_index >= 0) {
+            shadow = sampleShadowPoisson(uShadowCascades[shadow_index], uSunShadowMaps[shadow_index], in_shadow_position_ndc[shadow_index], n_dot_l, shadow_kernel_scale);
+        }
         vec3 radiance = uParams.sun.radiance.xyz * shadow;
         if (any(greaterThan(radiance, LIGHT_EPSILON))) {
-            Lo += bsdf(bsdf_params, uParams.sun.direction.xyz, radiance);
+            Lo += bsdf(bsdf_params, uParams.sun.forward.xyz, radiance);
         }
     }
 
@@ -138,7 +156,7 @@ void main() {
     {
         vec2 screen_uv = vec2(gl_FragCoord.xy) * uParams.viewport.zw;
         vec4 ao_raw = textureLod(uAmbientOcclusion, screen_uv, 0);
-        vec3 bent_normal_vs = octahedronDecode(ao_raw.yz); // still unused
+        vec3 bent_normal_vs = octahedronDecode(ao_raw.yz);// still unused
         float ao_combined = ao_raw.x * bsdf_params.occlusion;
         vec3 ao_multi_bounce = gtaoMultibounce(ao_combined, bsdf_params.albedo.rgb);
 

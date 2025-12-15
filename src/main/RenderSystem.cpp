@@ -350,10 +350,13 @@ void RenderSystem::draw(const RenderData &rd) {
         // Shadow pass
         if (rd.settings.shadowCascade.update) {
             dbg_cmd_label_region.swap("Shadow Pass");
+            const ShadowCaster* inner = nullptr;
             for (auto &caster: rd.sunShadowCasterCascade.cascades()) {
+                // Objects contained in the inner cascade are culled form the outer cascade
                 mShadowRenderer->execute(
-                        mContext->device(), desc_alloc, buf_alloc, cmd_buf, rd.gltfScene, *mFrustumCuller, caster
+                        mContext->device(), desc_alloc, buf_alloc, cmd_buf, rd.gltfScene, *mFrustumCuller, caster, inner
                 );
+                inner = &caster;
             }
         }
     }

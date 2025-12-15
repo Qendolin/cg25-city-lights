@@ -19,19 +19,36 @@ void ShadowRenderer::execute(
         const vk::CommandBuffer &cmd_buf,
         const scene::GpuData &gpu_data,
         const FrustumCuller &frustum_culler,
-        const ShadowCaster &shadow_caster
+        const ShadowCaster &shadow_caster,
+        const ShadowCaster *inner_shadow_caster
 ) {
     // Culling
     util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Culling");
 
     glm::mat4 frustum_matrix = shadow_caster.projectionMatrix * shadow_caster.viewMatrix;
-    UnmanagedBuffer culled_commands = frustum_culler.execute(device, desc_alloc, buf_alloc, cmd_buf, gpu_data, frustum_matrix);
+    glm::mat4 *exclude_matrix = nullptr;
+    if (inner_shadow_caster) {
+        glm::mat4 inner_frustum_matrix = inner_shadow_caster->projectionMatrix * inner_shadow_caster->viewMatrix;
+        exclude_matrix = &inner_frustum_matrix;
+    }
+
+    // Cull objects smaller than ~1 texel
+    float scale_x = shadow_caster.projectionMatrix[0][0];
+    float scale_y = shadow_caster.projectionMatrix[1][1];
+    float half_extent = std::max(1.0f / scale_x, 1.0f / scale_y);
+    float min_world_radius = half_extent / shadow_caster.resolution();
+
+    UnmanagedBuffer culled_commands = frustum_culler.execute(
+            device, desc_alloc, buf_alloc, cmd_buf, gpu_data, frustum_matrix, exclude_matrix, min_world_radius
+    );
     culled_commands.barrier(cmd_buf, BufferResourceAccess::IndirectCommandRead);
 
     // Rendering
     dbg_cmd_label_region.swap("Rendering");
 
-    shadow_caster.framebuffer().depthAttachment.image().barrier(cmd_buf, ImageResourceAccess::DepthAttachmentEarlyOps, ImageResourceAccess::DepthAttachmentLateOps);
+    shadow_caster.framebuffer().depthAttachment.image().barrier(
+            cmd_buf, ImageResourceAccess::DepthAttachmentEarlyOps, ImageResourceAccess::DepthAttachmentLateOps
+    );
 
     const Framebuffer &fb = shadow_caster.framebuffer();
     cmd_buf.beginRendering(fb.renderingInfo({
@@ -53,9 +70,7 @@ void ShadowRenderer::execute(
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics, *mPipeline.pipeline);
     cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0, {gpu_data.sceneDescriptor}, {});
     cmd_buf.bindIndexBuffer(*gpu_data.indices, 0, vk::IndexType::eUint32);
-    cmd_buf.bindVertexBuffers(
-            0, {*gpu_data.positions, *gpu_data.normals}, {0, 0}
-    );
+    cmd_buf.bindVertexBuffers(0, {*gpu_data.positions, *gpu_data.normals}, {0, 0});
 
     ShaderParamsPushConstants shader_params = {
         .projectionViewMatrix = frustum_matrix,

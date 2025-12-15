@@ -1,7 +1,8 @@
 #pragma once
 
 #include <glm/glm.hpp>
-#include <glm/gtc/constants.hpp>
+
+#include "../util/math.h"
 
 struct DirectionalLight {
     // degrees
@@ -19,6 +20,14 @@ struct DirectionalLight {
             glm::sin(el_rad),
             glm::cos(az_rad) * glm::cos(el_rad),
         };
+    }
+
+    [[nodiscard]] glm::mat3 rotation() const {
+        glm::vec3 forward = direction();
+        glm::vec3 world_up = util::safeUpVector(forward);
+        glm::vec3 right = glm::normalize(glm::cross(forward, world_up));
+        glm::vec3 up = glm::cross(right, forward);
+        return glm::mat3(right, up, forward);
     }
 
     [[nodiscard]] glm::vec3 radiance() const {

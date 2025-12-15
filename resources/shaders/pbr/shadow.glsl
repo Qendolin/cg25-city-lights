@@ -31,7 +31,7 @@ float sampleShadowGpuGems(in ShadowCascade cascade, in sampler2DShadow shadow_ma
 }
 
 // Higher quality than GpuGems
-float sampleShadowPoisson(in ShadowCascade cascade, in sampler2DShadow shadow_map, vec3 P_shadow_ndc, float n_dot_l, float distance_vs) {
+float sampleShadowPoisson(in ShadowCascade cascade, in sampler2DShadow shadow_map, vec3 P_shadow_ndc, float n_dot_l, float kernel_scale) {
     vec2 texel_size = vec2(1.0f) / textureSize(shadow_map, 0).xy;
     // z is seperate because we are using 0..1 depth
     vec3 shadow_uvz = vec3(P_shadow_ndc.xy * 0.5f + 0.5f, P_shadow_ndc.z);
@@ -40,11 +40,6 @@ float sampleShadowPoisson(in ShadowCascade cascade, in sampler2DShadow shadow_ma
     n_dot_l = max(n_dot_l, 1e-5f);
     float bias = cascade.sampleBias * texel_size.x * sqrt(1.0f - n_dot_l * n_dot_l) / n_dot_l;
     bias = clamp(bias, 0.0f, cascade.sampleBiasClamp * texel_size.x);
-
-    float split = cascade.splitDistance;
-    float blend_start = split * 0.5f;
-    float blend_end   = split;
-    float kernel_scale = 1.0f + 1.0f * saturate((distance_vs - blend_start) / (blend_end - blend_start));
 
     float result = 0.0f;
     for (int i = 0; i < 9; ++i) {

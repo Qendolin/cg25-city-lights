@@ -15,6 +15,9 @@ layout(local_size_x = LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
 // ------------------------------------------------------------------
 layout (push_constant) uniform ShaderParamConstants {
     vec4 planes[6];
+    vec4 excludePlanes[6];
+    float minWorldRadius;
+    uint enableExcludePlanes;
 } cParams;
 
 struct BoundingBox {
@@ -61,6 +64,50 @@ shared uint sGlobalBaseIndex;
 // LOGIC
 // ------------------------------------------------------------------
 
+float computeWorldRadius(vec3 extent_local, mat4 model)
+{
+    // Conservative bounding sphere
+    vec3 scaledExtent = extent_local * vec3(
+    length(model[0].xyz),
+    length(model[1].xyz),
+    length(model[2].xyz)
+    );
+
+    return length(scaledExtent);
+}
+
+// This test only makes sense for orthographic projections
+bool isTooSmallWorldSpace(vec3 extent_local, mat4 model) {
+    float radius = computeWorldRadius(extent_local, model);
+    return radius < cParams.minWorldRadius;
+}
+
+bool isObbFullyInsideFrustum(vec3 center, vec3 extent, mat4 model, vec4 planes[6]) {
+    vec3 right = model[0].xyz;
+    vec3 up    = model[1].xyz;
+    vec3 fwd   = model[2].xyz;
+
+    for (int i = 0; i < 6; i++) {
+        vec3 n = planes[i].xyz;
+        float d = planes[i].w;
+
+        float r = dot(extent, abs(vec3(
+        dot(n, right),
+        dot(n, up),
+        dot(n, fwd)
+        )));
+
+        float dist = dot(n, center) + d;
+
+        // If the furthest point is still behind the plane -> not fully inside
+        if (dist - r < 0.0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+
 // Returns true if the OBB is completely BEHIND the plane (Cull it)
 bool isObbOutsidePlane(vec3 center, vec3 extent, vec3 planeNormal, float planeDist, mat4 model)
 {
@@ -74,10 +121,10 @@ bool isObbOutsidePlane(vec3 center, vec3 extent, vec3 planeNormal, float planeDi
     // Projected Radius (Separating Axis Theorem)
     // r = sum of projected extents onto the plane normal
     float r = dot(extent, abs(vec3(
-                              dot(planeNormal, right),
-                              dot(planeNormal, up),
-                              dot(planeNormal, fwd)
-                              )));
+    dot(planeNormal, right),
+    dot(planeNormal, up),
+    dot(planeNormal, fwd)
+    )));
 
     // Distance from box center to plane
     float dist = dot(planeNormal, center) + planeDist;
@@ -96,17 +143,28 @@ bool checkVisibility(uint id) {
     vec3 center_local = (box.min.xyz + box.max.xyz) * 0.5;
     vec3 extent_local = (box.max.xyz - box.min.xyz) * 0.5;
 
+    // Fast test to reject objects that are too small. Used for shadow map culling
+    if (cParams.minWorldRadius >= 0 && isTooSmallWorldSpace(extent_local, model)){
+        return false;
+    }
+
     // Transform Center to World Space
     vec3 center_world = (model * vec4(center_local, 1.0)).xyz;
+
+    // Exclude objects fully inside exclude frustum
+    // Used for CSM to exclude all objects fully contained in the previous cascade
+    if (cParams.enableExcludePlanes != 0 && isObbFullyInsideFrustum(center_world, extent_local, model, cParams.excludePlanes)) {
+        return false;
+    }
 
     // Test against all 6 planes
     for (int i = 0; i < 6; i++) {
         vec4 plane = cParams.planes[i];
         if (isObbOutsidePlane(center_world, extent_local, plane.xyz, plane.w, model)) {
-            return false; // Culled (Invisible)
+            return false;// Culled (Invisible)
         }
     }
-    return true; // Visible
+    return true;// Visible
 }
 
 void main() {
@@ -138,13 +196,13 @@ void main() {
             temp = sScan[local_id - offset];
         }
 
-        barrier(); // Wait for all threads to read
+        barrier();// Wait for all threads to read
 
         if (local_id >= offset) {
             sScan[local_id] += temp;
         }
 
-        barrier(); // Wait for all threads to write
+        barrier();// Wait for all threads to write
     }
 
     // --- 3. GLOBAL ALLOCATION ---

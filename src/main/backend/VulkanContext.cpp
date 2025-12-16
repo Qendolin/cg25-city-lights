@@ -17,9 +17,10 @@
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
 template<typename T, typename... Args>
-static auto makeUniqueHandle(const T &t, Args &&... args) {
+static auto makeUniqueHandle(const T &t, Args &&...args) {
     return vk::UniqueHandle<T, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>(
-        t, vk::UniqueHandleTraits<T, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>::deleter(std::forward<Args>(args)...));
+            t, vk::UniqueHandleTraits<T, VULKAN_HPP_DEFAULT_DISPATCHER_TYPE>::deleter(std::forward<Args>(args)...)
+    );
 }
 
 static glfw::UniqueWindow createWindow(const glfw::WindowCreateInfo &window_create_info) {
@@ -34,9 +35,9 @@ static vkb::Instance createInstance() {
     uint32_t required_glfw_extension_count = 0;
     auto required_glfw_extensions = glfwGetRequiredInstanceExtensions(&required_glfw_extension_count);
     auto instance_builder = vkb::InstanceBuilder{}
-            .require_api_version(1, 3, 0)
-            .enable_extension(vk::KHRGetSurfaceCapabilities2ExtensionName)
-            .enable_extensions(required_glfw_extension_count, required_glfw_extensions);
+                                    .require_api_version(1, 3, 0)
+                                    .enable_extension(vk::KHRGetSurfaceCapabilities2ExtensionName)
+                                    .enable_extensions(required_glfw_extension_count, required_glfw_extensions);
 #ifndef NDEBUG
     Logger::info("Using validation layers");
     instance_builder.enable_validation_layers(true);
@@ -57,7 +58,7 @@ void printSystemInformation(const vk::Instance &instance) {
     Logger::info("Available layers:");
     for (auto layer_property: vk::enumerateInstanceLayerProperties()) {
         Logger::info(std::format(
-            "- {}: {}", std::string(layer_property.layerName.data()), std::string(layer_property.description.data())
+                "- {}: {}", std::string(layer_property.layerName.data()), std::string(layer_property.description.data())
         ));
     }
 
@@ -69,63 +70,75 @@ void printSystemInformation(const vk::Instance &instance) {
         for (size_t i = 0; i < queues.size(); i++) {
             auto &queue = queues.at(i);
             std::vector<std::string> caps;
-            if (queue.queueFlags & vk::QueueFlagBits::eGraphics) caps.emplace_back("Graphics");
-            if (queue.queueFlags & vk::QueueFlagBits::eTransfer) caps.emplace_back("Transfer");
-            if (queue.queueFlags & vk::QueueFlagBits::eCompute) caps.emplace_back("Compute");
-            if (queue.queueFlags & vk::QueueFlagBits::eOpticalFlowNV) caps.emplace_back("OpticalFlow");
-            if (queue.queueFlags & vk::QueueFlagBits::eVideoDecodeKHR) caps.emplace_back("VideoDecode");
-            if (queue.queueFlags & vk::QueueFlagBits::eVideoEncodeKHR) caps.emplace_back("VideoEncode");
-            if (queue.queueFlags & vk::QueueFlagBits::eProtected) caps.emplace_back("Protected");
-            if (queue.queueFlags & vk::QueueFlagBits::eSparseBinding) caps.emplace_back("SparseBinding");
-            if (glfwGetPhysicalDevicePresentationSupport(instance, device, i)) caps.emplace_back("Present");
+            if (queue.queueFlags & vk::QueueFlagBits::eGraphics)
+                caps.emplace_back("Graphics");
+            if (queue.queueFlags & vk::QueueFlagBits::eTransfer)
+                caps.emplace_back("Transfer");
+            if (queue.queueFlags & vk::QueueFlagBits::eCompute)
+                caps.emplace_back("Compute");
+            if (queue.queueFlags & vk::QueueFlagBits::eOpticalFlowNV)
+                caps.emplace_back("OpticalFlow");
+            if (queue.queueFlags & vk::QueueFlagBits::eVideoDecodeKHR)
+                caps.emplace_back("VideoDecode");
+            if (queue.queueFlags & vk::QueueFlagBits::eVideoEncodeKHR)
+                caps.emplace_back("VideoEncode");
+            if (queue.queueFlags & vk::QueueFlagBits::eProtected)
+                caps.emplace_back("Protected");
+            if (queue.queueFlags & vk::QueueFlagBits::eSparseBinding)
+                caps.emplace_back("SparseBinding");
+            if (glfwGetPhysicalDevicePresentationSupport(instance, device, i))
+                caps.emplace_back("Present");
             Logger::info(std::format("  Queue Family: {} x {}", queue.queueCount, caps));
         }
     }
 }
 
 vkb::PhysicalDevice createPhysicalDevice(const vkb::Instance &instance, const vk::SurfaceKHR &surface) {
-    auto phys_device_selector = vkb::PhysicalDeviceSelector(instance)
-            .set_surface(surface)
-            .set_required_features({
-                .multiDrawIndirect = true,
-                .depthClamp = true,
-                .depthBiasClamp = true,
-                .samplerAnisotropy = true,
-            })
-            .set_required_features_12({
-                .drawIndirectCount = true,
-                .descriptorIndexing = true,
-                .shaderUniformBufferArrayNonUniformIndexing = true,
-                .shaderSampledImageArrayNonUniformIndexing = true,
-                .shaderStorageBufferArrayNonUniformIndexing = true,
-                //.descriptorBindingUniformBufferUpdateAfterBind = true,
-                .descriptorBindingSampledImageUpdateAfterBind = true,
-                .descriptorBindingStorageBufferUpdateAfterBind = true,
-                .descriptorBindingPartiallyBound = true,
-                .descriptorBindingVariableDescriptorCount = false, // maybe later
-                .runtimeDescriptorArray = true,
-                .scalarBlockLayout = true,
-                .uniformBufferStandardLayout = true,
-                .timelineSemaphore = true,
-                .bufferDeviceAddress = false, // maybe later
-                .bufferDeviceAddressCaptureReplay = false,
-                .bufferDeviceAddressMultiDevice = false,
-            })
-            .set_required_features_13({
-                .robustImageAccess = true,
-                .inlineUniformBlock = true,
-                .synchronization2 = true,
-                .dynamicRendering = true,
-            })
-            .add_required_extension(vk::KHRSwapchainExtensionName)
-            .add_required_extension(vk::EXTMemoryBudgetExtensionName)
-            .add_required_extension(vk::KHRSwapchainMutableFormatExtensionName)
-            .add_required_extension_features(vk::PhysicalDeviceShaderDrawParametersFeatures{
-                .shaderDrawParameters = true
-            })
-            .prefer_gpu_device_type(vkb::PreferredDeviceType::discrete)
-            .allow_any_gpu_device_type(false)
-            .require_present();
+    auto phys_device_selector =
+            vkb::PhysicalDeviceSelector(instance)
+                    .set_surface(surface)
+                    .set_required_features({
+                        .multiDrawIndirect = true,
+                        .depthClamp = true,
+                        .depthBiasClamp = true,
+                        .samplerAnisotropy = true,
+                    })
+                    .set_required_features_12({
+                        .drawIndirectCount = true,
+                        .descriptorIndexing = true,
+                        .shaderUniformBufferArrayNonUniformIndexing = true,
+                        .shaderSampledImageArrayNonUniformIndexing = true,
+                        .shaderStorageBufferArrayNonUniformIndexing = true,
+                        //.descriptorBindingUniformBufferUpdateAfterBind = true,
+                        .descriptorBindingSampledImageUpdateAfterBind = true,
+                        .descriptorBindingStorageBufferUpdateAfterBind = true,
+                        .descriptorBindingPartiallyBound = true,
+                        .descriptorBindingVariableDescriptorCount = false, // maybe later
+                        .runtimeDescriptorArray = true,
+                        .scalarBlockLayout = true,
+                        .uniformBufferStandardLayout = true,
+                        .timelineSemaphore = true,
+                        .bufferDeviceAddress = false, // maybe later
+                        .bufferDeviceAddressCaptureReplay = false,
+                        .bufferDeviceAddressMultiDevice = false,
+                    })
+                    .set_required_features_13({
+                        .robustImageAccess = true,
+                        .inlineUniformBlock = true,
+                        .synchronization2 = true,
+                        .dynamicRendering = true,
+                        .maintenance4 = true, // allows using temporary pipeline layouts for pipeline creation
+                    })
+                    .add_required_extension(vk::KHRSwapchainExtensionName)
+                    .add_required_extension(vk::EXTMemoryBudgetExtensionName)
+                    .add_required_extension(vk::KHRSwapchainMutableFormatExtensionName)
+                    .add_required_extension(vk::KHRMaintenance4ExtensionName)
+                    .add_required_extension_features(
+                            vk::PhysicalDeviceShaderDrawParametersFeatures{.shaderDrawParameters = true}
+                    )
+                    .prefer_gpu_device_type(vkb::PreferredDeviceType::discrete)
+                    .allow_any_gpu_device_type(false)
+                    .require_present();
 
     auto phys_device_ret = phys_device_selector.select(vkb::DeviceSelectionMode::only_fully_suitable);
     if (!phys_device_ret) {
@@ -143,7 +156,9 @@ vkb::Device createDevice(const vkb::PhysicalDevice &physical_device) {
     return device_ret.value();
 }
 
-vma::UniqueAllocator createVmaAllocator(const vk::Instance &instance, const vk::Device &device, const vk::PhysicalDevice &physical_device) {
+vma::UniqueAllocator createVmaAllocator(
+        const vk::Instance &instance, const vk::Device &device, const vk::PhysicalDevice &physical_device
+) {
     vma::VulkanFunctions vma_vulkan_functions = {
         .vkGetInstanceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr,
         .vkGetDeviceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr
@@ -158,27 +173,27 @@ vma::UniqueAllocator createVmaAllocator(const vk::Instance &instance, const vk::
     });
 }
 
-void createQueues(const vkb::Device &device, DeviceQueue &out_graphics_queue, DeviceQueue &out_compute_queue, DeviceQueue &out_transfer_queue, DeviceQueue &out_present_queue) {
+void createQueues(
+        const vkb::Device &device,
+        DeviceQueue &out_graphics_queue,
+        DeviceQueue &out_compute_queue,
+        DeviceQueue &out_transfer_queue,
+        DeviceQueue &out_present_queue
+) {
     auto gq_ret = device.get_queue(vkb::QueueType::graphics);
     auto gq_family_ret = device.get_queue_index(vkb::QueueType::graphics);
     if (!gq_ret.has_value() || !gq_family_ret.has_value()) {
         Logger::fatal("failed to get graphics queue: " + gq_ret.error().message());
     }
-    out_graphics_queue = {
-        gq_ret.value(),
-        gq_family_ret.value()
-    };
+    out_graphics_queue = {gq_ret.value(), gq_family_ret.value()};
 
     auto cq_ret = device.get_queue(vkb::QueueType::compute);
     auto cq_family_ret = device.get_queue_index(vkb::QueueType::compute);
     if (!cq_ret.has_value() || !cq_family_ret.has_value()) {
-        Logger::warning("No dedicated compute queue available: " +  cq_ret.error().message());
+        Logger::warning("No dedicated compute queue available: " + cq_ret.error().message());
         out_compute_queue = {};
     } else {
-        out_compute_queue = {
-            cq_ret.value(),
-            cq_family_ret.value()
-        };
+        out_compute_queue = {cq_ret.value(), cq_family_ret.value()};
     }
 
     auto pq_ret = device.get_queue(vkb::QueueType::present);
@@ -186,20 +201,14 @@ void createQueues(const vkb::Device &device, DeviceQueue &out_graphics_queue, De
     if (!pq_ret.has_value() || !pq_family_ret.has_value()) {
         Logger::fatal("failed to get present queue: " + pq_ret.error().message());
     }
-    out_present_queue = {
-        pq_ret.value(),
-        pq_family_ret.value()
-    };
+    out_present_queue = {pq_ret.value(), pq_family_ret.value()};
 
     auto tq_ret = device.get_dedicated_queue(vkb::QueueType::transfer);
     auto tq_family_ret = device.get_dedicated_queue_index(vkb::QueueType::transfer);
     if (!tq_ret.has_value() || !tq_family_ret.has_value()) {
         Logger::fatal("failed to get transfer queue: " + tq_ret.error().message());
     }
-    out_transfer_queue = {
-        tq_ret.value(),
-        tq_family_ret.value()
-    };
+    out_transfer_queue = {tq_ret.value(), tq_family_ret.value()};
 }
 
 
@@ -239,13 +248,8 @@ VulkanContext VulkanContext::create(const glfw::WindowCreateInfo &window_create_
         util::setDebugName(device.device, present_queue.queue, "present");
 
     // Step 7: Create Swapchain
-    auto swapchain = std::make_unique<Swapchain>(
-        device.device,
-        physical_device.physical_device,
-        *surface,
-        *window,
-        *allocator
-    );
+    auto swapchain =
+            std::make_unique<Swapchain>(device.device, physical_device.physical_device, *surface, *window, *allocator);
 
     return VulkanContext{
         makeUniqueHandle(vk::Instance(instance.instance), nullptr),
@@ -264,18 +268,19 @@ VulkanContext VulkanContext::create(const glfw::WindowCreateInfo &window_create_
 }
 
 VulkanContext::VulkanContext(
-    vk::UniqueInstance &&instance,
-    vk::UniqueDebugUtilsMessengerEXT &&debug_messenger,
-    const vk::PhysicalDevice &physical_device,
-    vk::UniqueDevice &&device,
-    vma::UniqueAllocator &&allocator,
-    std::unique_ptr<glfw::Window> &&window,
-    vk::UniqueSurfaceKHR &&surface,
-    std::unique_ptr<Swapchain> &&swapchain,
-    const DeviceQueue &main_queue,
-    const DeviceQueue &compute_queue,
-    const DeviceQueue &present_queue,
-    const DeviceQueue &transfer_queue)
+        vk::UniqueInstance &&instance,
+        vk::UniqueDebugUtilsMessengerEXT &&debug_messenger,
+        const vk::PhysicalDevice &physical_device,
+        vk::UniqueDevice &&device,
+        vma::UniqueAllocator &&allocator,
+        std::unique_ptr<glfw::Window> &&window,
+        vk::UniqueSurfaceKHR &&surface,
+        std::unique_ptr<Swapchain> &&swapchain,
+        const DeviceQueue &main_queue,
+        const DeviceQueue &compute_queue,
+        const DeviceQueue &present_queue,
+        const DeviceQueue &transfer_queue
+)
     : mainQueue(main_queue),
       computeQueue(compute_queue),
       presentQueue(present_queue),
@@ -287,7 +292,6 @@ VulkanContext::VulkanContext(
       mPhysicalDevice(physical_device),
       mDevice(std::move(device)),
       mAllocator(std::move(allocator)),
-      mSwapchain(std::move(swapchain)) {
-}
+      mSwapchain(std::move(swapchain)) {}
 
 VulkanContext::~VulkanContext() = default;

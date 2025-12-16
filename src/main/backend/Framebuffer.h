@@ -6,6 +6,12 @@
 #include "Image.h"
 
 
+struct AttachmentResolveInfo {
+    vk::ResolveModeFlagBits mode = vk::ResolveModeFlagBits::eNone;
+    vk::ImageView view = {};
+    vk::ImageLayout layout = {};
+};
+
 /// <summary>
 /// Configuration for dynamic rendering with a framebuffer.
 /// </summary>
@@ -24,6 +30,10 @@ struct FramebufferRenderingConfig {
     vk::AttachmentStoreOp depthStoreOp = vk::AttachmentStoreOp::eStore;
     vk::AttachmentLoadOp stencilLoadOp = vk::AttachmentLoadOp::eLoad;
     vk::AttachmentStoreOp stencilStoreOp = vk::AttachmentStoreOp::eStore;
+
+    util::static_vector<AttachmentResolveInfo, 32> colorResolve = {};
+    AttachmentResolveInfo depthResolve = {};
+    AttachmentResolveInfo stencilResolve = {};
 
     util::static_vector<vk::ClearColorValue, 32> clearColors = {};
     float clearDepth = 0.0f;

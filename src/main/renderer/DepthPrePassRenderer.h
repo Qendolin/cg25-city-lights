@@ -6,6 +6,8 @@
 #include "../backend/Pipeline.h"
 #include "FrustumCuller.h"
 
+
+struct ImageViewPairBase;
 class Camera;
 class Framebuffer;
 class ShaderLoader;
@@ -34,6 +36,7 @@ public:
             const TransientBufferAllocator &buf_alloc,
             const vk::CommandBuffer &cmd_buf,
             const Framebuffer &fb,
+            const ImageViewPairBase& depth_copy,
             const Camera &camera,
             const scene::GpuData &gpu_data,
             const FrustumCuller &frustum_culler

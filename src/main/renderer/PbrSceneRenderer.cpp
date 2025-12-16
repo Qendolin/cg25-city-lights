@@ -256,6 +256,7 @@ void PbrSceneRenderer::createPipeline(const vk::Device &device, const ShaderLoad
                     .compareOp = vk::CompareOp::eEqual,
                 },
     };
+    pipeline_config.rasterizer.samples = fb.depthAttachment.image().info.samples;
 
     mPipeline = createGraphicsPipeline(device, pipeline_config, {*vert_sh, *frag_sh});
 }

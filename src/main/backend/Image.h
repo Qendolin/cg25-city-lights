@@ -141,6 +141,7 @@ struct ImageInfo {
     vk::Format format = vk::Format::eUndefined;
     vk::ImageAspectFlags aspects = {};
     vk::ImageType type = vk::ImageType::e2D;
+    vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1;
     uint32_t width = 1;
     uint32_t height = 1;
     uint32_t depth = 1;
@@ -182,6 +183,7 @@ struct ImageCreateInfo {
     vk::Format format = vk::Format::eUndefined;
     vk::ImageAspectFlags aspects = {};
     vk::ImageType type = vk::ImageType::e2D;
+    vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1;
     uint32_t width = 1;
     uint32_t height = 1;
     uint32_t depth = 1;
@@ -199,7 +201,7 @@ struct ImageCreateInfo {
     util::static_vector<uint32_t, 4> sharedQueues = {};
 
     constexpr operator ImageInfo() const { // NOLINT(*-explicit-constructor)
-        return {format, aspects, type, width, height, depth, levels, layers};
+        return {format, aspects, type, samples, width, height, depth, levels, layers};
     }
 
     static vk::ImageAspectFlags getAspectsFromFormat(const vk::Format &format) {
@@ -400,6 +402,14 @@ struct ImageWithView : Image, ImageView {
     ImageWithView &operator=(ImageWithView &&other) noexcept = default;
 
     ~ImageWithView() override = default;
+
+    [[nodiscard]] ImageInfo imageInfo() const {
+        return static_cast<const ImageBase &>(*this).info;
+    }
+
+    [[nodiscard]] ImageViewInfo viewInfo() const {
+        return static_cast<const ImageViewBase &>(*this).info;
+    }
 
     /// <summary>
     /// Allocates an Image (via VMA) and immediately creates a corresponding ImageView.

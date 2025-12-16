@@ -4,6 +4,7 @@
 
 #include "../backend/Framebuffer.h"
 #include "../backend/ShaderCompiler.h"
+#include "../backend/Image.h"
 #include "../debug/Annotation.h"
 #include "../entity/Camera.h"
 #include "../scene/Scene.h"
@@ -23,6 +24,7 @@ void DepthPrePassRenderer::execute(
         const TransientBufferAllocator &buf_alloc,
         const vk::CommandBuffer &cmd_buf,
         const Framebuffer &fb,
+        const ImageViewPairBase &depth_copy,
         const Camera &camera,
         const scene::GpuData &gpu_data,
         const FrustumCuller &frustum_culler
@@ -51,13 +53,25 @@ void DepthPrePassRenderer::execute(
             cmd_buf, ImageResourceAccess::DepthAttachmentEarlyOps, ImageResourceAccess::DepthAttachmentLateOps
     );
 
-    cmd_buf.beginRendering(fb.renderingInfo({
+    bool msaa = fb.depthAttachment.image().info.samples != vk::SampleCountFlagBits::e1;
+
+    if (msaa) {
+        depth_copy.image().barrier(cmd_buf, ImageResourceAccess::MultisampleResolve);
+    }
+
+    auto render_info = fb.renderingInfo({
         .enableColorAttachments = false,
         .enableDepthAttachment = true,
         .enableStencilAttachment = false,
         .depthLoadOp = vk::AttachmentLoadOp::eClear,
         .depthStoreOp = vk::AttachmentStoreOp::eStore,
-    }));
+        .depthResolve = {
+            .mode = msaa ? vk::ResolveModeFlagBits::eMax : vk::ResolveModeFlagBits::eNone,
+            .view = msaa ? static_cast<vk::ImageView>(depth_copy.view()) : VK_NULL_HANDLE,
+            .layout = ImageResourceAccess::MultisampleResolve.layout,
+        },
+    });
+    cmd_buf.beginRendering(render_info);
 
     mPipeline.config.viewports = {{fb.viewport(true)}};
     mPipeline.config.scissors = {{fb.area()}};
@@ -84,6 +98,21 @@ void DepthPrePassRenderer::execute(
         );
     }
     cmd_buf.endRendering();
+
+    // Simply copy if msaa is disabled
+    if (!msaa) {
+        fb.depthAttachment.image().barrier(cmd_buf, ImageResourceAccess::TransferRead);
+        depth_copy.image().barrier(cmd_buf, ImageResourceAccess::TransferWrite);
+        cmd_buf.copyImage(
+                fb.depthAttachment.image(), ImageResourceAccess::TransferRead.layout,
+                depth_copy.image(), ImageResourceAccess::TransferWrite.layout,
+                vk::ImageCopy{
+                    .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .layerCount = 1},
+                    .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .layerCount = 1},
+                    .extent = {.width = fb.extent().width, .height = fb.extent().height, .depth = 1}
+                }
+        );
+    }
 }
 
 void DepthPrePassRenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader, const Framebuffer &fb) {
@@ -104,6 +133,7 @@ void DepthPrePassRenderer::createPipeline(const vk::Device &device, const Shader
                     .depthFormat = fb.depthFormat(),
                 },
     };
+    pipeline_config.rasterizer.samples = fb.depthAttachment.image().info.samples;
 
     mPipeline = createGraphicsPipeline(device, pipeline_config, {*vert_sh});
 }

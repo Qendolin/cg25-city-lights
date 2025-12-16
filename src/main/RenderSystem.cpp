@@ -71,24 +71,49 @@ void RenderSystem::recreate(const Settings &settings) {
     vk::Extent2D screen_extent = mContext->swapchain().area().extent;
     vk::Extent2D screen_half_extent = {screen_extent.width / 2, screen_extent.height / 2};
 
+    vk::SampleCountFlagBits msaa_samples = vk::SampleCountFlagBits::e1;
+    if (settings.rendering.msaa == 2) msaa_samples = vk::SampleCountFlagBits::e2;
+    else if (settings.rendering.msaa == 4) msaa_samples = vk::SampleCountFlagBits::e4;
+    else if (settings.rendering.msaa == 8) msaa_samples = vk::SampleCountFlagBits::e8;
+
     mHdrColorAttachment = ImageWithView::create(
             device, mContext->allocator(),
             {
                 .format = vk::Format::eR16G16B16A16Sfloat,
                 .aspects = vk::ImageAspectFlagBits::eColor,
+                .samples = msaa_samples,
                 .width = screen_extent.width,
                 .height = screen_extent.height,
-                .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+                .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled |
+                         vk::ImageUsageFlagBits::eTransferSrc,
                 .device = vma::MemoryUsage::eGpuOnly,
             }
     );
     util::setDebugName(device, *mHdrColorAttachment.image, "hdr_color_attachment_image");
     util::setDebugName(device, *mHdrColorAttachment.view, "hdr_color_attachment_image_view");
+    if (msaa_samples != vk::SampleCountFlagBits::e1) {
+        mHdrColorResolveImage = ImageWithView::create(
+                device, mContext->allocator(),
+                {
+                    .format = vk::Format::eR16G16B16A16Sfloat,
+                    .aspects = vk::ImageAspectFlagBits::eColor,
+                    .width = screen_extent.width,
+                    .height = screen_extent.height,
+                    .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+                    .device = vma::MemoryUsage::eGpuOnly,
+                }
+        );
+        util::setDebugName(device, *mHdrColorResolveImage.image, "hdr_color_resolve_image");
+        util::setDebugName(device, *mHdrColorResolveImage.view, "hdr_color_resolve_image_view");
+    } else {
+        mHdrColorResolveImage = {};
+    }
     mHdrDepthAttachment = ImageWithView::create(
             device, mContext->allocator(),
             {
                 .format = vk::Format::eD32Sfloat,
                 .aspects = vk::ImageAspectFlagBits::eDepth,
+                .samples = msaa_samples,
                 .width = screen_extent.width,
                 .height = screen_extent.height,
                 .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled |
@@ -139,7 +164,8 @@ void RenderSystem::recreate(const Settings &settings) {
                 .aspects = vk::ImageAspectFlagBits::eDepth,
                 .width = screen_extent.width,
                 .height = screen_extent.height,
-                .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+                .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst |
+                         vk::ImageUsageFlagBits::eDepthStencilAttachment,
                 .device = vma::MemoryUsage::eGpuOnly,
                 .sharedQueues = {mContext->mainQueue, mContext->computeQueue},
             }
@@ -288,19 +314,8 @@ void RenderSystem::draw(const RenderData &rd) {
         mDepthPrePassRenderer->enableCulling = rd.settings.rendering.enableFrustumCulling;
         mDepthPrePassRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
         mDepthPrePassRenderer->execute(
-                mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene, *mFrustumCuller
-        );
-
-        mHdrFramebuffer.depthAttachment.image().barrier(cmd_buf, ImageResourceAccess::TransferRead);
-        mComputeDepthCopyImage.barrier(cmd_buf, ImageResourceAccess::TransferWrite);
-        cmd_buf.copyImage(
-                mHdrFramebuffer.depthAttachment.image(), ImageResourceAccess::TransferRead.layout,
-                mComputeDepthCopyImage, ImageResourceAccess::TransferWrite.layout,
-                vk::ImageCopy{
-                    .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .layerCount = 1},
-                    .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .layerCount = 1},
-                    .extent = {.width = mHdrFramebuffer.extent().width, .height = mHdrFramebuffer.extent().height, .depth = 1}
-                }
+                mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, mComputeDepthCopyImage, rd.camera,
+                rd.gltfScene, *mFrustumCuller
         );
     }
 
@@ -316,6 +331,7 @@ void RenderSystem::draw(const RenderData &rd) {
             // Transfer graphics -> compute queue
             // The compute queue doesn't allow issuing a barrier "from" a graphics stage. So do it prematurely.
             if (rd.settings.rendering.asyncCompute) {
+                mComputeDepthCopyImage.barrier(cmd_buf_early_graphics, ImageResourceAccess::ComputeShaderStageOnly);
                 mSsaoResultImage.barrier(cmd_buf_early_graphics, ImageResourceAccess::ComputeShaderStageOnly);
             }
 
@@ -350,7 +366,7 @@ void RenderSystem::draw(const RenderData &rd) {
         // Shadow pass
         if (rd.settings.shadowCascade.update) {
             dbg_cmd_label_region.swap("Shadow Pass");
-            const ShadowCaster* inner = nullptr;
+            const ShadowCaster *inner = nullptr;
             for (auto &caster: rd.sunShadowCasterCascade.cascades()) {
                 // Objects contained in the inner cascade are culled form the outer cascade
                 mShadowRenderer->execute(
@@ -368,7 +384,7 @@ void RenderSystem::draw(const RenderData &rd) {
         util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Main Graphics");
 
         // Main render pass
-        dbg_cmd_label_region.swap("Main Pass");
+        dbg_cmd_label_region.swap("PBR Scene Pass");
         mPbrSceneRenderer->enableCulling = rd.settings.rendering.enableFrustumCulling;
         mPbrSceneRenderer->pauseCulling = rd.settings.rendering.pauseFrustumCulling;
         mPbrSceneRenderer->execute(
@@ -390,11 +406,32 @@ void RenderSystem::draw(const RenderData &rd) {
                 rd.settings.sky.exposure, rd.settings.sky.tint
         );
 
+        bool msaa = mHdrColorAttachment.imageInfo().samples != vk::SampleCountFlagBits::e1;
+        if (msaa) {
+            mHdrColorAttachment.barrier(cmd_buf, ImageResourceAccess::TransferRead);
+            mHdrColorResolveImage.barrier(cmd_buf, ImageResourceAccess::TransferWrite);
+            auto resolve_region = vk::ImageResolve2{
+                .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
+                .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
+                .extent = {.width = mHdrColorAttachment.imageInfo().width, .height = mHdrColorAttachment.imageInfo().height, .depth = 1}
+            };
+            cmd_buf.resolveImage2({
+                .srcImage = mHdrColorAttachment,
+                .srcImageLayout = ImageResourceAccess::TransferRead.layout,
+                .dstImage = mHdrColorResolveImage,
+                .dstImageLayout = ImageResourceAccess::TransferWrite.layout,
+                .regionCount = 1,
+                .pRegions = &resolve_region,
+            });
+        }
+
+        auto &resolved_hdr_color_image = msaa ? mHdrColorResolveImage : mHdrColorAttachment;
+
         // Post-processing pass
         dbg_cmd_label_region.swap("Post-Process Pass");
         mFinalizeRenderer->execute(
-                mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer.colorAttachments[0],
-                swapchain_fb.colorAttachments[0], rd.settings.agx
+                mContext->device(), desc_alloc, cmd_buf, resolved_hdr_color_image, swapchain_fb.colorAttachments[0],
+                rd.settings.agx
         );
 
         // ImGui render pass
@@ -402,6 +439,9 @@ void RenderSystem::draw(const RenderData &rd) {
         {
             swapchain_fb.colorAttachments[0].image().barrier(
                     cmd_buf, ImageResourceAccess::ColorAttachmentLoad, ImageResourceAccess::ColorAttachmentWrite
+            );
+            swapchain_fb.depthAttachment.image().barrier(
+                    cmd_buf, ImageResourceAccess::DepthAttachmentEarlyOps, ImageResourceAccess::DepthAttachmentLateOps
             );
             // temporarily change view to linear format to fix an ImGui issue.
             Framebuffer imgui_fb = swapchain_fb;
@@ -501,7 +541,7 @@ void RenderSystem::submit(const Settings &settings) {
     util::static_vector<vk::PipelineStageFlags, 2> wait_masks = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
     if (settings.rendering.asyncCompute) {
         wait_semaphores.push_back(*frame_objects.asyncComputeFinishedSemaphore);
-        wait_masks.push_back(vk::PipelineStageFlagBits::eFragmentShader);
+        wait_masks.push_back(vk::PipelineStageFlagBits::eComputeShader); // I'm really not sure about this one
     }
     auto submit_info = vk::SubmitInfo()
                                .setCommandBuffers(frame_objects.mainGraphicsCommands)

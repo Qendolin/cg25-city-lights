@@ -25,6 +25,7 @@ struct ImageResourceAccess {
     static const ImageResourceAccess ColorAttachmentWrite;
     static const ImageResourceAccess DepthAttachmentLateOps;
     static const ImageResourceAccess DepthAttachmentEarlyOps;
+    static const ImageResourceAccess MultisampleResolve;
     static const ImageResourceAccess PresentSrc;
 };
 

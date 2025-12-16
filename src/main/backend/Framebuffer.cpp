@@ -32,10 +32,14 @@ vk::RenderingInfo Framebuffer::renderingInfo(const FramebufferRenderingConfig &c
             auto clearColor = i < config.clearColors.size() ? config.clearColors[i] : vk::ClearColorValue{};
             auto loadOp = i < config.colorLoadOps.size() ? config.colorLoadOps[i] : vk::AttachmentLoadOp::eLoad;
             auto storeOp = i < config.colorStoreOps.size() ? config.colorStoreOps[i] : vk::AttachmentStoreOp::eStore;
+            const auto& resolve = i < config.colorResolve.size() ? config.colorResolve[i] : AttachmentResolveInfo{};
             if (attachment) {
                 mColorAttachmentInfos[i] = {
                     .imageView = attachment.view(),
                     .imageLayout = vk::ImageLayout::eAttachmentOptimal,
+                    .resolveMode = resolve.mode,
+                    .resolveImageView = resolve.view,
+                    .resolveImageLayout = resolve.layout,
                     .loadOp = loadOp,
                     .storeOp = storeOp,
                     .clearValue = {.color = clearColor},
@@ -52,9 +56,9 @@ vk::RenderingInfo Framebuffer::renderingInfo(const FramebufferRenderingConfig &c
         mDepthAttachmentInfo = {
             .imageView = depthAttachment.view(),
             .imageLayout = vk::ImageLayout::eAttachmentOptimal,
-            .resolveMode = {},
-            .resolveImageView = {},
-            .resolveImageLayout = {},
+            .resolveMode = config.depthResolve.mode,
+            .resolveImageView = config.depthResolve.view,
+            .resolveImageLayout = config.depthResolve.layout,
             .loadOp = config.depthLoadOp,
             .storeOp = config.depthStoreOp,
             .clearValue = {.depthStencil = {config.clearDepth, config.clearStencil}},
@@ -66,9 +70,9 @@ vk::RenderingInfo Framebuffer::renderingInfo(const FramebufferRenderingConfig &c
         mStencilAttachmentInfo = {
             .imageView = stencilAttachment.view(),
             .imageLayout = vk::ImageLayout::eAttachmentOptimal,
-            .resolveMode = {},
-            .resolveImageView = {},
-            .resolveImageLayout = {},
+            .resolveMode = config.stencilResolve.mode,
+            .resolveImageView = config.stencilResolve.view,
+            .resolveImageLayout = config.stencilResolve.layout,
             .loadOp = config.stencilLoadOp,
             .storeOp = config.stencilStoreOp,
             .clearValue = {.depthStencil = {config.clearDepth, config.clearStencil}},

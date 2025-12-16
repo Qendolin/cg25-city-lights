@@ -49,6 +49,7 @@ struct Settings {
         bool lightDensity = false;
         float lightRangeFactor = 1.0f;
         bool asyncCompute = true;
+        int msaa = 4;
     } rendering;
     struct SSAO {
         bool update = true;

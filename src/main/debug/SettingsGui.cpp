@@ -2,6 +2,7 @@
 
 #include <format>
 #include <glm/gtc/type_ptr.hpp>
+#include <string>
 
 #include "../imgui/ImGui.h"
 
@@ -75,6 +76,15 @@ void SettingsGui::draw(Settings &settings) {
         Checkbox("White World", &settings.rendering.whiteWorld);
         Checkbox("Light Density", &settings.rendering.lightDensity);
         SliderFloat("Light Range Factor", &settings.rendering.lightRangeFactor, 0.0f, 1.0f);
+        Text("Settings below require a resource reload.");
+        if (BeginCombo("MSAA", std::format("x{}", settings.rendering.msaa).c_str())) {
+            for (int msaa : {1,2,4,8}) {
+                bool is_selected = settings.rendering.msaa == msaa; // You can store your selection however you want, outside or inside your objects
+                if (Selectable(std::format("x{}", msaa).c_str(), is_selected))
+                    settings.rendering.msaa = msaa;
+            }
+            EndCombo();
+        }
         PopID();
     }
 

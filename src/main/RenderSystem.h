@@ -83,6 +83,7 @@ class RenderSystem {
     ImageWithView mHdrDepthAttachment;
     ImageWithView mSsaoIntermediaryImage;
     ImageWithView mSsaoResultImage;
+    ImageWithView mHdrColorResolveImage;
     ImageWithView mComputeDepthCopyImage;
     util::PerFrame<Buffer> mTileLightIndicesBuffers;
 

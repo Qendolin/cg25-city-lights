@@ -57,15 +57,15 @@ void SkyboxRenderer::execute(
             *mPipeline.layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(ShaderParamsPushConstants), &push
     );
 
-    vk::DescriptorImageInfo descriptorImageInfo{};
-    descriptorImageInfo.sampler = *mSampler;
-    descriptorImageInfo.imageView = skybox.getImageView();
-    descriptorImageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    vk::DescriptorImageInfo descriptor_image_info{};
+    descriptor_image_info.sampler = *mSampler;
+    descriptor_image_info.imageView = skybox.getImageView();
+    descriptor_image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
     auto descriptor_set = allocator.allocate(mShaderParamsDescriptorLayout);
 
     device.updateDescriptorSets(
-            {descriptor_set.write(ShaderParamsDescriptorLayout::SamplerCubeMap, descriptorImageInfo)}, {}
+            {descriptor_set.write(ShaderParamsDescriptorLayout::SamplerCubeMap, descriptor_image_info)}, {}
     );
 
     cmd_buf.bindDescriptorSets(
@@ -76,21 +76,23 @@ void SkyboxRenderer::execute(
     cmd_buf.endRendering();
 }
 
-void SkyboxRenderer::createPipeline(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer) {
-    UniqueCompiledShaderStage vertShader = shaderLoader.loadFromSource(device, "resources/shaders/skybox.vert");
-    UniqueCompiledShaderStage fragShader = shaderLoader.loadFromSource(device, "resources/shaders/skybox.frag");
+void SkyboxRenderer::createPipeline(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &fb) {
+    UniqueCompiledShaderStage vert_shader = shaderLoader.loadFromSource(device, "resources/shaders/skybox.vert");
+    UniqueCompiledShaderStage frag_shader = shaderLoader.loadFromSource(device, "resources/shaders/skybox.frag");
 
-    vk::PushConstantRange pushConstantRange{vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(ShaderParamsPushConstants)};
+    vk::PushConstantRange push_constant_range{vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(ShaderParamsPushConstants)};
 
-    GraphicsPipelineConfig pipelineConfig{};
-    pipelineConfig.descriptorSetLayouts = {mShaderParamsDescriptorLayout};
-    pipelineConfig.pushConstants = {pushConstantRange};
-    pipelineConfig.attachments = {framebuffer.colorFormats(), framebuffer.depthFormat()};
-    pipelineConfig.cull.mode = vk::CullModeFlagBits::eNone;
+    GraphicsPipelineConfig pipeline_config{};
+    pipeline_config.descriptorSetLayouts = {mShaderParamsDescriptorLayout};
+    pipeline_config.pushConstants = {push_constant_range};
+    pipeline_config.attachments = {fb.colorFormats(), fb.depthFormat()};
+    pipeline_config.cull.mode = vk::CullModeFlagBits::eNone;
 
-    pipelineConfig.depth.testEnabled = true;
-    pipelineConfig.depth.writeEnabled = false;
-    pipelineConfig.depth.compareOp = vk::CompareOp::eGreaterOrEqual;
+    pipeline_config.depth.testEnabled = true;
+    pipeline_config.depth.writeEnabled = false;
+    pipeline_config.depth.compareOp = vk::CompareOp::eGreaterOrEqual;
 
-    mPipeline = createGraphicsPipeline(device, pipelineConfig, {*vertShader, *fragShader});
+    pipeline_config.rasterizer.samples = fb.depthAttachment.image().info.samples;
+
+    mPipeline = createGraphicsPipeline(device, pipeline_config, {*vert_shader, *frag_shader});
 }

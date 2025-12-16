@@ -75,6 +75,12 @@ constexpr ImageResourceAccess ImageResourceAccess::DepthAttachmentLateOps = {
     .layout = vk::ImageLayout::eAttachmentOptimal
 };
 
+constexpr ImageResourceAccess ImageResourceAccess::MultisampleResolve = {
+    .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput, // For both color and depth attachments
+    .access = vk::AccessFlagBits2::eColorAttachmentWrite,
+    .layout = vk::ImageLayout::eAttachmentOptimal
+};
+
 constexpr ImageResourceAccess ImageResourceAccess::PresentSrc = {
     .stage = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
     .access = {}, // apparently 0 is correct, not read

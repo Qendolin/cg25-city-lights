@@ -60,5 +60,5 @@ public:
     );
 
 private:
-    void createPipeline(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer);
+    void createPipeline(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &fb);
 };

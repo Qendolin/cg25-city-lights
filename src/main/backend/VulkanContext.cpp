@@ -172,12 +172,14 @@ void createQueues(const vkb::Device &device, DeviceQueue &out_graphics_queue, De
     auto cq_ret = device.get_queue(vkb::QueueType::compute);
     auto cq_family_ret = device.get_queue_index(vkb::QueueType::compute);
     if (!cq_ret.has_value() || !cq_family_ret.has_value()) {
-        Logger::fatal("failed to get compute queue: " + cq_ret.error().message());
+        Logger::warning("No dedicated compute queue available: " +  cq_ret.error().message());
+        out_compute_queue = {};
+    } else {
+        out_compute_queue = {
+            cq_ret.value(),
+            cq_family_ret.value()
+        };
     }
-    out_compute_queue = {
-        cq_ret.value(),
-        cq_family_ret.value()
-    };
 
     auto pq_ret = device.get_queue(vkb::QueueType::present);
     auto pq_family_ret = device.get_queue_index(vkb::QueueType::present);

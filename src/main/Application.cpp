@@ -31,6 +31,7 @@ Application::Application() {
         .resizable = true,
         .visible = false,
     })));
+    mSettings.rendering.asyncCompute = mCtx->computeQueue.queue != VK_NULL_HANDLE;
 
     Logger::info("Using present mode: " + vk::to_string(mCtx->swapchain().presentMode()));
 

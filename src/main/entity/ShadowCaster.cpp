@@ -144,7 +144,7 @@ void ShadowCascade::update(float frustum_fov, float frustum_aspect, glm::mat4 vi
         // swap near and far plane for reverse z
         glm::vec3 max_extents = glm::vec3(radius);
         glm::vec3 min_extents = -max_extents;
-        glm::mat4 light_ortho_mat = glm::ortho(min_extents.x, max_extents.x, min_extents.y, max_extents.y, 1000.0f, -1000.0f);
+        glm::mat4 light_ortho_mat = glm::ortho(min_extents.x, max_extents.x, min_extents.y, max_extents.y, 128.0f, -128.0f);
 
         mCascades[i].distance = split * clip_range * 2.0f;
         mCascades[i].viewMatrix = light_view_mat;

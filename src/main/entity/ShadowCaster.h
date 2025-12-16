@@ -14,7 +14,7 @@ namespace vma {
 
 class ShadowCaster {
 public:
-    static constexpr vk::Format DepthFormat = vk::Format::eD32Sfloat;
+    static constexpr vk::Format DepthFormat = vk::Format::eD16Unorm;
 
     glm::mat4 viewMatrix = glm::mat4(1.0f);
     glm::mat4 projectionMatrix = glm::mat4(1.0f);
@@ -45,7 +45,7 @@ public:
     [[nodiscard]] uint32_t resolution() const { return mResolution; }
 
 private:
-    uint32_t mResolution;
+    uint32_t mResolution = 0;
     Framebuffer mFramebuffer;
     Image mDepthImage;
     ImageView mDepthImageView;
@@ -82,9 +82,9 @@ public:
     void lookAt(const glm::vec3 &target, float azimuth, float elevation, float distance = 0, const glm::vec3 &up = {0, 1, 0});
 
 private:
-    float mRadius;
-    float mStart;
-    float mEnd;
+    float mRadius = 0;
+    float mStart = 0;
+    float mEnd = 0;
 
     void updateProjectionMatrix();
 };

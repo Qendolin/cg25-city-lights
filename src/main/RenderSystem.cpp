@@ -72,9 +72,12 @@ void RenderSystem::recreate(const Settings &settings) {
     vk::Extent2D screen_half_extent = {screen_extent.width / 2, screen_extent.height / 2};
 
     vk::SampleCountFlagBits msaa_samples = vk::SampleCountFlagBits::e1;
-    if (settings.rendering.msaa == 2) msaa_samples = vk::SampleCountFlagBits::e2;
-    else if (settings.rendering.msaa == 4) msaa_samples = vk::SampleCountFlagBits::e4;
-    else if (settings.rendering.msaa == 8) msaa_samples = vk::SampleCountFlagBits::e8;
+    if (settings.rendering.msaa == 2)
+        msaa_samples = vk::SampleCountFlagBits::e2;
+    else if (settings.rendering.msaa == 4)
+        msaa_samples = vk::SampleCountFlagBits::e4;
+    else if (settings.rendering.msaa == 8)
+        msaa_samples = vk::SampleCountFlagBits::e8;
 
     mHdrColorAttachment = ImageWithView::create(
             device, mContext->allocator(),
@@ -126,6 +129,20 @@ void RenderSystem::recreate(const Settings &settings) {
     mHdrFramebuffer = Framebuffer(mContext->swapchain().area());
     mHdrFramebuffer.depthAttachment = ImageViewPair(mHdrDepthAttachment);
     mHdrFramebuffer.colorAttachments = {ImageViewPair(mHdrColorAttachment)};
+
+    mStoredHdrColorImage = ImageWithView::create(
+            device, mContext->allocator(),
+            {
+                .format = vk::Format::eB10G11R11UfloatPack32,
+                .aspects = vk::ImageAspectFlagBits::eColor,
+                .width = util::nextLowestPowerOfTwo(screen_extent.width),
+                .height = util::nextLowestPowerOfTwo(screen_extent.height),
+                .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc,
+                .device = vma::MemoryUsage::eGpuOnly,
+            }
+    );
+    util::setDebugName(device, *mStoredHdrColorImage.image, "stored_hdr_color_image");
+    util::setDebugName(device, *mStoredHdrColorImage.view, "stored_hdr_color_image_view");
 
     auto ao_size = settings.ssao.halfResolution ? screen_half_extent : screen_extent;
     mSsaoIntermediaryImage = ImageWithView::create(
@@ -393,12 +410,6 @@ void RenderSystem::draw(const RenderData &rd) {
                 mTileLightIndicesBuffers.get(), rd.settings
         );
 
-        // Blob render pass
-        if (rd.settings.blob.render) {
-            dbg_cmd_label_region.swap("Blob Pass");
-            mBlobRenderer->execute(mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.blobModel);
-        }
-
         // Skybox render pass (render late to reduce overdraw)
         dbg_cmd_label_region.swap("Skybox Pass");
         mSkyboxRenderer->execute(
@@ -406,23 +417,18 @@ void RenderSystem::draw(const RenderData &rd) {
                 rd.settings.sky.exposure, rd.settings.sky.tint
         );
 
+        // Blob render pass
+        if (rd.settings.blob.render) {
+            dbg_cmd_label_region.swap("Blob Pass");
+            storeHdrColorImage(cmd_buf);
+            mBlobRenderer->execute(
+                    mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, mStoredHdrColorImage, rd.camera, rd.blobModel
+            );
+        }
+
         bool msaa = mHdrColorAttachment.imageInfo().samples != vk::SampleCountFlagBits::e1;
         if (msaa) {
-            mHdrColorAttachment.barrier(cmd_buf, ImageResourceAccess::TransferRead);
-            mHdrColorResolveImage.barrier(cmd_buf, ImageResourceAccess::TransferWrite);
-            auto resolve_region = vk::ImageResolve2{
-                .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
-                .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
-                .extent = {.width = mHdrColorAttachment.imageInfo().width, .height = mHdrColorAttachment.imageInfo().height, .depth = 1}
-            };
-            cmd_buf.resolveImage2({
-                .srcImage = mHdrColorAttachment,
-                .srcImageLayout = ImageResourceAccess::TransferRead.layout,
-                .dstImage = mHdrColorResolveImage,
-                .dstImageLayout = ImageResourceAccess::TransferWrite.layout,
-                .regionCount = 1,
-                .pRegions = &resolve_region,
-            });
+            resolveHdrColorImage(cmd_buf);
         }
 
         auto &resolved_hdr_color_image = msaa ? mHdrColorResolveImage : mHdrColorAttachment;
@@ -564,4 +570,65 @@ void RenderSystem::submit(const Settings &settings) {
     mTimings.present = std::chrono::duration<double, std::milli>(time_present_end - time_submit_end).count();
 
     mTimings.total = std::chrono::duration<double, std::milli>(time_present_end - mBeginTime).count();
+}
+
+void RenderSystem::resolveHdrColorImage(const vk::CommandBuffer &cmd_buf) const {
+    util::ScopedCommandLabel dbg_cmd_label_region = {cmd_buf, "Resolve HDR Color Image"};
+    mHdrColorAttachment.barrier(cmd_buf, ImageResourceAccess::TransferRead);
+    mHdrColorResolveImage.barrier(cmd_buf, ImageResourceAccess::TransferWrite);
+    auto resolve_region = vk::ImageResolve2{
+        .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
+        .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
+        .extent = mHdrColorAttachment.imageInfo().extents()
+    };
+    cmd_buf.resolveImage2({
+        .srcImage = mHdrColorAttachment,
+        .srcImageLayout = ImageResourceAccess::TransferRead.layout,
+        .dstImage = mHdrColorResolveImage,
+        .dstImageLayout = ImageResourceAccess::TransferWrite.layout,
+        .regionCount = 1,
+        .pRegions = &resolve_region,
+    });
+}
+
+void RenderSystem::storeHdrColorImage(const vk::CommandBuffer &cmd_buf) const {
+    bool msaa = mHdrColorAttachment.imageInfo().samples != vk::SampleCountFlagBits::e1;
+    if (msaa) {
+        resolveHdrColorImage(cmd_buf);
+    }
+
+    util::ScopedCommandLabel dbg_cmd_label_region = {cmd_buf, "Blit HDR Color Image"};
+
+    const ImageBase &hdr_color_image = msaa ? mHdrColorResolveImage : mHdrColorAttachment;
+    hdr_color_image.barrier(cmd_buf, ImageResourceAccess::TransferRead);
+
+    mStoredHdrColorImage.barrier(cmd_buf, ImageResourceAccess::TransferWrite);
+    auto region = vk::ImageBlit2{
+        .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
+        .srcOffsets =
+                std::array{
+                    vk::Offset3D{},
+                    vk::Offset3D{
+                        static_cast<int32_t>(hdr_color_image.info.width), static_cast<int32_t>(hdr_color_image.info.height), 1
+                    }
+                },
+        .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1},
+        .dstOffsets =
+                std::array{
+                    vk::Offset3D{},
+                    vk::Offset3D{
+                        static_cast<int32_t>(mStoredHdrColorImage.imageInfo().width),
+                        static_cast<int32_t>(mStoredHdrColorImage.imageInfo().height), 1
+                    }
+                },
+    };
+    cmd_buf.blitImage2(vk::BlitImageInfo2{
+        .srcImage = hdr_color_image,
+        .srcImageLayout = ImageResourceAccess::TransferRead.layout,
+        .dstImage = mStoredHdrColorImage,
+        .dstImageLayout = ImageResourceAccess::TransferWrite.layout,
+        .regionCount = 1,
+        .pRegions = &region,
+        .filter = vk::Filter::eLinear,
+    });
 }

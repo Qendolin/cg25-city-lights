@@ -1,15 +1,17 @@
 #include "BlobRenderer.h"
 
-#include <glm/ext/matrix_clip_space.hpp>
-#include <glm/ext/matrix_transform.hpp>
-
 #include "../blob/VertexData.h"
 #include "../debug/Annotation.h"
-#include "../util/globals.h"
 #include "../util/math.h"
 
-BlobRenderer::BlobRenderer(const vk::Device &device)
-    : mComputeDescriptorLayout{device} {
+BlobRenderer::BlobRenderer(const vk::Device &device) : mComputeDescriptorLayout{device}, mDrawDescriptorLayout(device) {
+
+    mSampler = device.createSamplerUnique({
+        .magFilter = vk::Filter::eLinear,
+        .minFilter = vk::Filter::eLinear,
+        .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+        .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+    });
 }
 
 void BlobRenderer::recreate(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer) {
@@ -22,11 +24,12 @@ void BlobRenderer::execute(
         const DescriptorAllocator &allocator,
         const vk::CommandBuffer &commandBuffer,
         const Framebuffer &framebuffer,
+        const ImageViewPairBase &storedColorImage,
         const Camera &camera,
         const blob::Model &blobModel
 ) {
     computeVertices(device, allocator, commandBuffer, blobModel);
-    renderVertices(commandBuffer, framebuffer, camera, blobModel);
+    renderVertices(device, allocator, commandBuffer, framebuffer, storedColorImage, camera, blobModel);
 }
 
 void BlobRenderer::createComputePipeline_(const vk::Device &device, const ShaderLoader &shaderLoader) {
@@ -53,15 +56,21 @@ void BlobRenderer::createGraphicsPipeline_(
 
     GraphicsPipelineConfig pipelineConfig{};
     pipelineConfig.vertexInput = {blob::VertexData::getBindingDescriptions(), blob::VertexData::getAttributeDescriptions()};
-    pipelineConfig.descriptorSetLayouts = {};
+    pipelineConfig.descriptorSetLayouts = {mDrawDescriptorLayout};
     pipelineConfig.pushConstants = {pushConstantRange};
     pipelineConfig.attachments = {framebuffer.colorFormats(), framebuffer.depthFormat()};
+    pipelineConfig.rasterizer.samples = framebuffer.depthAttachment.image().info.samples;
 
     mGraphicsPipeline = createGraphicsPipeline(device, pipelineConfig, {*vertShader, *fragShader});
 }
 
-void BlobRenderer::computeVertices(const vk::Device &device, const DescriptorAllocator &allocator, const vk::CommandBuffer &commandBuffer, const blob::Model &blobModel) {    
-    util::ScopedCommandLabel dbg_cmd_label_func(commandBuffer);
+void BlobRenderer::computeVertices(
+        const vk::Device &device,
+        const DescriptorAllocator &allocator,
+        const vk::CommandBuffer &commandBuffer,
+        const blob::Model &blobModel
+) {
+    util::ScopedCommandLabel dbg_cmd_label_func(commandBuffer, "Compute");
 
     vk::DrawIndirectCommand drawIndirectCommand{};
     drawIndirectCommand.vertexCount = 0;
@@ -150,9 +159,15 @@ void BlobRenderer::computeVertices(const vk::Device &device, const DescriptorAll
 }
 
 void BlobRenderer::renderVertices(
-        const vk::CommandBuffer &commandBuffer, const Framebuffer &framebuffer, const Camera &camera, const blob::Model &blobModel
+        const vk::Device &device,
+        const DescriptorAllocator &allocator,
+        const vk::CommandBuffer &commandBuffer,
+        const Framebuffer &framebuffer,
+        const ImageViewPairBase &storedColorImage,
+        const Camera &camera,
+        const blob::Model &blobModel
 ) {
-    util::ScopedCommandLabel dbg_cmd_label_func(commandBuffer);
+    util::ScopedCommandLabel dbg_cmd_label_func(commandBuffer, "Draw");
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *mGraphicsPipeline.pipeline);
 
@@ -160,10 +175,29 @@ void BlobRenderer::renderVertices(
     mGraphicsPipeline.config.scissors = {{framebuffer.area()}};
     mGraphicsPipeline.config.apply(commandBuffer);
 
+    DescriptorSet set = allocator.allocate(mDrawDescriptorLayout);
+
+    framebuffer.colorAttachments[0].image().barrier(commandBuffer, ImageResourceAccess::ColorAttachmentWrite);
+    storedColorImage.image().barrier(commandBuffer, ImageResourceAccess::FragmentShaderReadOptimal);
+
+    device.updateDescriptorSets(
+            {set.write(
+                    DrawDescriptorLayout::COLOR_IMAGE_BINDING,
+                    {
+                        .sampler = *mSampler,
+                        .imageView = storedColorImage,
+                        .imageLayout = ImageResourceAccess::FragmentShaderReadOptimal.layout,
+                    }
+            )},
+            {}
+    );
+
     VertexFragmentPushConstant push{};
-    glm::mat4 ModelMatrix = blobModel.getModelMatrix();
-    push.projectionViewModel = camera.projectionMatrix() * camera.viewMatrix() * ModelMatrix;
-    push.ModelMatrix = ModelMatrix;
+    push.projectionMatrix = camera.projectionMatrix();
+    push.viewMatrix = camera.viewMatrix();
+    push.modelMatrix = blobModel.getModelMatrix();
+    push.camera = glm::vec4(camera.position, 0.0);
+    push.invViewportSize = 1.0f / glm::vec2(framebuffer.area().extent.width, framebuffer.area().extent.height);
 
     commandBuffer.pushConstants(
             *mGraphicsPipeline.layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0,
@@ -179,6 +213,7 @@ void BlobRenderer::renderVertices(
         .depthLoadOp = vk::AttachmentLoadOp::eLoad,
     }));
 
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *mGraphicsPipeline.layout, 0, {set}, {});
     commandBuffer.bindVertexBuffers(0, {blobModel.getVertexBuffer()}, {0});
     commandBuffer.drawIndirect(blobModel.getIndirectDrawBuffer(), 0, 1, sizeof(vk::DrawIndirectCommand));
     commandBuffer.endRendering();

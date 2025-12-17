@@ -167,6 +167,7 @@ void main() {
         vec3 irradiance = uParams.ambient.rgb;
         vec3 diffuse = irradiance * bsdf_params.albedo.rgb * ao_multi_bounce;
 
+        // Where is ambient specular?
         vec3 ambient = diffuse * kD;
         Lo += ambient;
     }

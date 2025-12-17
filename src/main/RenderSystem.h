@@ -81,6 +81,7 @@ class RenderSystem {
     Framebuffer mHdrFramebuffer;
     ImageWithView mHdrColorAttachment;
     ImageWithView mHdrDepthAttachment;
+    ImageWithView mStoredHdrColorImage;
     ImageWithView mSsaoIntermediaryImage;
     ImageWithView mSsaoResultImage;
     ImageWithView mHdrColorResolveImage;
@@ -128,4 +129,9 @@ public:
     [[nodiscard]] ImGuiBackend &imGuiBackend() { return *mImguiBackend; }
 
     [[nodiscard]] const Timings &timings() const { return mTimings; }
+
+private:
+
+    void resolveHdrColorImage(const vk::CommandBuffer &cmd_buf) const;
+    void storeHdrColorImage(const vk::CommandBuffer& cmd_buf) const;
 };

@@ -1,6 +1,8 @@
 #ifndef FRESNEL_H
 #define FRESNEL_H
 
+#include "../common/math.glsl"
+
 vec3 fresnelSchlick(float cos_theta, vec3 F0)
 {
     return F0 + (1.0 - F0) * pow(saturate(1.0 - cos_theta), 5.0);

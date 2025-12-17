@@ -16,8 +16,8 @@ struct Settings {
         float extrusionBias = -0.5f;
         float normalBias = 7.0f;
         float sampleBias = 0.1f;
-        float sampleBiasClamp = 0.02f;
-        float depthBiasConstant = 0.0f;
+        float sampleBiasClamp = 0.3f;
+        float depthBiasConstant = -2.0f;
         float depthBiasSlope = -2.5f;
         float depthBiasClamp = 0.0f;
 
@@ -63,7 +63,7 @@ struct Settings {
         float filterSharpness = 20.0f;
     } ssao;
     struct Blob {
-        bool render = false;
+        bool render = true;
     } blob;
 
     Settings() {
@@ -72,7 +72,7 @@ struct Settings {
             .normalBias = 20.0f,
             .sampleBias = 0.01f,
             .sampleBiasClamp = 0.01f,
-            .depthBiasConstant = 0.0f,
+            .depthBiasConstant = -2.0f,
             .depthBiasSlope = -1.0f,
         };
     }

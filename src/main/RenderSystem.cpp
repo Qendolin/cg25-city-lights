@@ -50,9 +50,9 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
 
     mShaderLoader = ShaderLoader();
     mShaderLoader.optimize = true;
-#ifndef NDEBUG
-    mShaderLoader.debug = true;
-#endif
+    if (globals::Debug) {
+        mShaderLoader.debug = true;
+    }
     mPbrSceneRenderer = std::make_unique<PbrSceneRenderer>(context->device());
     mShadowRenderer = std::make_unique<ShadowRenderer>();
     mFinalizeRenderer = std::make_unique<FinalizeRenderer>(context->device());
@@ -187,7 +187,7 @@ void RenderSystem::recreate(const Settings &settings) {
 
     // These have to match the max frames in flight count
     if (!mPerFrameObjects.initialized()) {
-        mPerFrameObjects.create(util::MaxFramesInFlight, [&](int i) {
+        mPerFrameObjects.create(globals::MaxFramesInFlight, [&](int i) {
             auto graphics_cmd_bufs = device.allocateCommandBuffers(
                     {.commandPool = *mGraphicsCommandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 4}
             );
@@ -236,7 +236,7 @@ void RenderSystem::recreate(const Settings &settings) {
     size_t light_tile_stride = 256; // has to match shader
     size_t tile_light_indices_size = light_tile_stride * util::divCeil(screen_extent.width, 16u) *
                                      util::divCeil(screen_extent.height, 16u);
-    mTileLightIndicesBuffers.create(util::MaxFramesInFlight, [&] {
+    mTileLightIndicesBuffers.create(globals::MaxFramesInFlight, [&] {
         auto &&buf = Buffer::create(
                 mContext->allocator(),
                 {
@@ -248,7 +248,7 @@ void RenderSystem::recreate(const Settings &settings) {
         return buf;
     });
 
-    mInstanceTransformUpdates.create(util::MaxFramesInFlight, [&] {
+    mInstanceTransformUpdates.create(globals::MaxFramesInFlight, [&] {
         return Buffer{}; // initially empty; will be allocated on demand
     });
 }

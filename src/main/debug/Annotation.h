@@ -3,6 +3,8 @@
 #include <source_location>
 #include <vulkan/vulkan.hpp>
 
+#include "../util/globals.h"
+
 // namespace util?? idk...
 namespace util {
 
@@ -20,47 +22,46 @@ namespace util {
 
         ~ScopedCommandLabel();
 
-#ifdef NDEBUG
-        void start(const char *) const {}
-#else
         void start(const char *label) const {
-            mCount++;
-            vk::DebugUtilsLabelEXT info;
-            info.pLabelName = label;
-            mCmd.beginDebugUtilsLabelEXT(info);
+            if (globals::Debug) {
+                mCount++;
+                vk::DebugUtilsLabelEXT info;
+                info.pLabelName = label;
+                mCmd.beginDebugUtilsLabelEXT(info);
+            }
         }
-#endif
+
 
         void end() const {
-#ifndef NDEBUG
-            mCount--;
-            mCmd.endDebugUtilsLabelEXT();
-#endif
+            if (globals::Debug) {
+                mCount--;
+                mCmd.endDebugUtilsLabelEXT();
+            }
         }
 
         void swap(std::string_view new_label) const {
-            end();
-            start(new_label.data());
+            if (globals::Debug) {
+                end();
+                start(new_label.data());
+            }
         }
     };
 
-#ifdef NDEBUG
-    template <typename T>
-    void setDebugName(const vk::Device&, T, const std::string&) {}
-#else
-    template <typename T>
-    void setDebugName(const vk::Device& device, T object, const std::string& name) {
-        // Extract the C-API handle type (e.g., VkBuffer or VkCommandBuffer)
-        using CType = typename T::CType;
-        uint64_t handle = reinterpret_cast<uint64_t>(static_cast<CType>(object));
 
-        // vulkan.hpp classes have a static 'objectType' member
-        vk::DebugUtilsObjectNameInfoEXT nameInfo;
-        nameInfo.objectType   = T::objectType;
-        nameInfo.objectHandle = handle;
-        nameInfo.pObjectName  = name.c_str();
+    template<typename T>
+    void setDebugName(const vk::Device &device, T object, const std::string &name) {
+        if (globals::Debug) {
+            // Extract the C-API handle type (e.g., VkBuffer or VkCommandBuffer)
+            using CType = typename T::CType;
+            uint64_t handle = reinterpret_cast<uint64_t>(static_cast<CType>(object));
 
-        device.setDebugUtilsObjectNameEXT(nameInfo);
+            // vulkan.hpp classes have a static 'objectType' member
+            vk::DebugUtilsObjectNameInfoEXT nameInfo;
+            nameInfo.objectType = T::objectType;
+            nameInfo.objectHandle = handle;
+            nameInfo.pObjectName = name.c_str();
+
+            device.setDebugUtilsObjectNameEXT(nameInfo);
+        }
     }
-#endif
 } // namespace util

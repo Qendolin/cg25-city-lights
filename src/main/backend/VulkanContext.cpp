@@ -11,7 +11,7 @@
 #include "../glfw/Context.h"
 #include "../glfw/Window.h"
 #include "../util/Logger.h"
-#include "Pipeline.h"
+#include "../util/globals.h"
 #include "Swapchain.h"
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
@@ -38,13 +38,13 @@ static vkb::Instance createInstance() {
                                     .require_api_version(1, 3, 0)
                                     .enable_extension(vk::KHRGetSurfaceCapabilities2ExtensionName)
                                     .enable_extensions(required_glfw_extension_count, required_glfw_extensions);
-#ifndef NDEBUG
-    Logger::info("Using validation layers");
-    instance_builder.enable_validation_layers(true);
-    instance_builder.enable_layer("VK_LAYER_KHRONOS_synchronization2");
-    instance_builder.enable_extension(vk::EXTDebugUtilsExtensionName);
-    instance_builder.use_default_debug_messenger();
-#endif
+    if (globals::Debug) {
+        Logger::info("Using validation layers");
+        instance_builder.enable_validation_layers(true);
+        instance_builder.enable_layer("VK_LAYER_KHRONOS_synchronization2");
+        instance_builder.enable_extension(vk::EXTDebugUtilsExtensionName);
+        instance_builder.use_default_debug_messenger();
+    }
 
     auto instance_ret = instance_builder.build();
     if (!instance_ret) {

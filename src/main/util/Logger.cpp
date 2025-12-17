@@ -56,9 +56,7 @@ void Logger::check(bool be_true, std::string_view message, std::source_location 
         return;
     std::clog << "[CHK " << shortFileName(location.file_name()) << ':' << location.line() << ':'
               << shortFunctionName(location.function_name()) << "]: " << message << std::endl;
-#ifndef NDEBUG
     assert(false);
-#endif
 }
 
 [[noreturn]] void Logger::fatal(std::string_view message, const cpptrace::stacktrace &trace) {

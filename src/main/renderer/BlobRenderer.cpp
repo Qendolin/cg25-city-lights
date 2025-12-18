@@ -60,6 +60,7 @@ void BlobRenderer::createGraphicsPipeline_(
     pipelineConfig.pushConstants = {pushConstantRange};
     pipelineConfig.attachments = {framebuffer.colorFormats(), framebuffer.depthFormat()};
     pipelineConfig.rasterizer.samples = framebuffer.depthAttachment.image().info.samples;
+    pipelineConfig.cull.mode = vk::CullModeFlagBits::eNone;
 
     mGraphicsPipeline = createGraphicsPipeline(device, pipelineConfig, {*vertShader, *fragShader});
 }

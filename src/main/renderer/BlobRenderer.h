@@ -60,7 +60,7 @@ private:
     vk::UniqueSampler mSampler;
 
 public:
-    BlobRenderer(const vk::Device &device);
+    explicit BlobRenderer(const vk::Device &device);
     ~BlobRenderer() = default;
 
     void recreate(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer);

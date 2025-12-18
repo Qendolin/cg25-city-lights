@@ -1,9 +1,11 @@
 #version 460
 
 #include "pbr/fresnel.glsl"
+#include "blob_noise.glsl"
 
 layout (location = 0) in vec3 in_position_ws;
-layout (location = 1) in vec3 in_normal;
+layout (location = 1) in vec3 in_position_ls;
+layout (location = 2) in mat3 in_tbn;
 
 layout (location = 0) out vec4 out_color;
 
@@ -21,9 +23,18 @@ const vec3 DIR_TO_LIGHT = normalize(vec3(0.0, 1.0, 1.0));
 const vec3 ALBEDO = vec3(0., 0.8, 0.);
 
 void main() {
-	vec3 N = normalize(in_normal);
-	vec3 L = DIR_TO_LIGHT;
+
 	vec3 V = -normalize(in_position_ws - push.camera.xyz);
+
+	int noise_style = 0;
+	float noise_scale = 2.0;
+	float noise_time = 0.0;
+	float noise_strength = 0.1;
+	vec3 tN = perturbNormal(in_position_ls * noise_scale, noise_time, noise_style, noise_strength);
+	tN *= step(-dot(V, in_tbn[2].xyz), 0.0) * 2.0 - 1.0; // flip shading normal when inside
+
+	vec3 N = normalize(in_tbn * tN);
+	vec3 L = DIR_TO_LIGHT;
 	vec3 H = normalize(V + L);
 
 	// DISClAIMER

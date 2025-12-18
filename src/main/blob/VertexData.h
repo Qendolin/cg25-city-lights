@@ -10,6 +10,7 @@ namespace blob {
     struct VertexData {
         glm::vec4 position{};
         glm::vec4 normal{};
+        glm::vec4 tangent{};
 
         static util::static_vector<vk::VertexInputBindingDescription, 16> getBindingDescriptions() {
             util::static_vector<vk::VertexInputBindingDescription, 16> bindingDescriptions;
@@ -25,7 +26,7 @@ namespace blob {
 
         static util::static_vector<vk::VertexInputAttributeDescription, 16> getAttributeDescriptions() {
             util::static_vector<vk::VertexInputAttributeDescription, 16> attributeDescriptions;
-            attributeDescriptions.resize(2);
+            attributeDescriptions.resize(3);
 
             attributeDescriptions[0].binding = 0;
             attributeDescriptions[0].location = 0;
@@ -36,6 +37,11 @@ namespace blob {
             attributeDescriptions[1].location = 1;
             attributeDescriptions[1].format = vk::Format::eR32G32B32Sfloat;
             attributeDescriptions[1].offset = offsetof(VertexData, normal);
+
+            attributeDescriptions[2].binding = 0;
+            attributeDescriptions[2].location = 2;
+            attributeDescriptions[2].format = vk::Format::eR32G32B32A32Sfloat;
+            attributeDescriptions[2].offset = offsetof(VertexData, tangent);
 
             return attributeDescriptions;
         }

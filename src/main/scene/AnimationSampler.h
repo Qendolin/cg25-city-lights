@@ -7,34 +7,43 @@
 
 namespace scene {
 
+    /// <summary>
+    /// Caches the last used keyframe index for an instance's animation.
+    /// This avoids searching the keyframe array from the beginning at every frame.
+    /// </summary>
     struct InstanceAnimationCursor {
         std::size_t translation_idx{};
         std::size_t rotation_idx{};
     };
 
-    // TODO: Summary
+
+    /// <summary>
+    /// A utility class for sampling instance animations at a specific timestamp.
+    /// </summary>
     class AnimationSampler {
     public:
-        static std::vector<glm::mat4> sampleAnimatedInstanceTransforms(
+        bool loop = true;
+
+        [[nodiscard]] std::vector<glm::mat4> sampleAnimatedInstanceTransforms(
                 const CpuData &cpu_data, float timestamp, std::vector<InstanceAnimationCursor> &animation_cursor_cache
-        );
+        ) const;
 
     private:
-        static glm::vec3 sampleTranslation(
+        glm::vec3 sampleTranslation(
                 const InstanceAnimation &anim,
-                const std::size_t anim_idx,
-                const float timestamp,
+                std::size_t anim_idx,
+                float timestamp,
                 const glm::mat4 &prev_transform,
                 std::vector<InstanceAnimationCursor> &anim_cursor_cache
-        );
+        ) const;
 
-        static glm::quat sampleRotation(
+        glm::quat sampleRotation(
                 const InstanceAnimation &anim,
-                const std::size_t anim_idx,
-                const float timestamp,
+                std::size_t anim_idx,
+                float timestamp,
                 const glm::mat4 &prev_transform,
                 std::vector<InstanceAnimationCursor> &anim_cursor_cache
-        );
+        ) const;
     };
 
 } // namespace scene

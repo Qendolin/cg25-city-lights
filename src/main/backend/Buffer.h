@@ -13,6 +13,7 @@ struct BufferCreateInfo {
 
 struct BufferBase : protected BufferResource {
     size_t size = 0;
+    void *persistentMapping = nullptr;
 
     BufferBase() = default;
     explicit BufferBase(size_t size) : size(size) {}

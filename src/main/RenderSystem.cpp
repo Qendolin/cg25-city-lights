@@ -274,6 +274,9 @@ void RenderSystem::updateInstanceTransforms(const scene::GpuData &gpu_scene_data
     if (updated_transforms.empty())
         return;
 
+    vk::CommandBuffer &cmd = mPerFrameObjects.get().earlyGraphicsCommands;
+    util::ScopedCommandLabel dbg_cmd_label_region(cmd, "Instance Transform Update");
+
     Buffer &staging_buffer = mInstanceTransformUpdates.get();
     const size_t required_size = updated_transforms.size() * sizeof(InstanceBlock);
 
@@ -289,20 +292,12 @@ void RenderSystem::updateInstanceTransforms(const scene::GpuData &gpu_scene_data
                 }
         );
 
-    void *mapped = nullptr;
-    vk::Result result = mContext->allocator().mapMemory(staging_buffer.allocation.get(), &mapped);
-    Logger::check(result == vk::Result::eSuccess, "Failed to map staging buffer");
-    std::memcpy(mapped, updated_transforms.data(), required_size);
-    mContext->allocator().unmapMemory(staging_buffer.allocation.get());
+    std::memcpy(staging_buffer.persistentMapping, updated_transforms.data(), required_size);
 
-    vk::CommandBuffer &cmd = mPerFrameObjects.get().mainGraphicsCommands;
-
-    vk::DeviceSize dstOffset =
-            static_cast<vk::DeviceSize>(gpu_scene_data.instances.size - updated_transforms.size() * sizeof(glm::mat4));
-
+    vk::DeviceSize dstOffset = gpu_scene_data.instances.size - updated_transforms.size() * sizeof(glm::mat4);
     vk::BufferCopy copy_region{0, dstOffset, required_size};
-    cmd.copyBuffer(static_cast<vk::Buffer>(staging_buffer), static_cast<vk::Buffer>(gpu_scene_data.instances), 1, &copy_region);
     gpu_scene_data.instances.barrier(cmd, BufferResourceAccess::TransferWrite, BufferResourceAccess::GraphicsShaderStorageRead);
+    cmd.copyBuffer(staging_buffer, gpu_scene_data.instances, 1, &copy_region);
 }
 
 void RenderSystem::draw(const RenderData &rd) {
@@ -322,7 +317,6 @@ void RenderSystem::draw(const RenderData &rd) {
     // Early graphics
     {
         const auto &cmd_buf = frame_objects.earlyGraphicsCommands;
-        cmd_buf.begin(vk::CommandBufferBeginInfo{});
         util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Early Graphics");
 
         dbg_cmd_label_region.swap("Depth PrePass");
@@ -397,6 +391,7 @@ void RenderSystem::draw(const RenderData &rd) {
     // Main Graphics
     {
         const auto &cmd_buf = frame_objects.mainGraphicsCommands;
+        cmd_buf.begin(vk::CommandBufferBeginInfo{});
         // command buffer begin already called
         util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Main Graphics");
 
@@ -530,7 +525,7 @@ void RenderSystem::begin() {
     mPerFrameObjects.get().reset(mContext->device());
 
     // the main graphics commands are used elsewhere, so begin them early
-    mPerFrameObjects.get().mainGraphicsCommands.begin(vk::CommandBufferBeginInfo{});
+    mPerFrameObjects.get().earlyGraphicsCommands.begin(vk::CommandBufferBeginInfo{});
 }
 
 void RenderSystem::submit(const Settings &settings) {

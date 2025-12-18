@@ -203,31 +203,6 @@ namespace gltf {
 
             gltf_node_idx_to_anim_idx[node_index] = scene_data.animations.size();
             scene_data.animations.push_back(animation);
-
-            // DEBUG - TEMP
-            Logger::debug(std::format("Animation of node {}:", node_index));
-
-            if (translation_count)
-                Logger::debug("<Frame Time>: <Translation>:");
-
-            for (std::size_t i{0}; i < translation_count; ++i) {
-                const glm::vec3 &translation = animation.translations[i];
-                Logger::debug(std::format(
-                        "{}: ({: .4f}, {: .4f}, {: .4f})", animation.translation_timestamps[i], translation.x,
-                        translation.y, translation.z
-                ));
-            }
-
-            if (rotation_count)
-                Logger::debug("<Frame Time>: <Rotation>:");
-
-            for (std::size_t i{0}; i < rotation_count; ++i) {
-                const glm::vec4 &rotation = animation.rotations[i];
-                Logger::debug(std::format(
-                        "{}: ({: .4f}, {: .4f}, {: .4f}, {: .4f})", animation.rotation_timestamps[i], rotation.x,
-                        rotation.y, rotation.z, rotation.w
-                ));
-            }
         }
     }
 

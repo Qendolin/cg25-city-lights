@@ -9,7 +9,7 @@ namespace scene {
 
     std::vector<glm::mat4> AnimationSampler::sampleAnimatedInstanceTransforms(
             const CpuData &cpu_data, float timestamp, std::vector<InstanceAnimationCursor> &anim_cursor_cache
-    ) {
+    ) const {
         std::vector<glm::mat4> transforms;
         transforms.reserve(cpu_data.instance_animations.size());
 
@@ -50,19 +50,24 @@ namespace scene {
 
     glm::vec3 AnimationSampler::sampleTranslation(
             const InstanceAnimation &anim,
-            const std::size_t anim_idx,
-            const float timestamp,
+            std::size_t anim_idx,
+            float timestamp,
             const glm::mat4 &prev_transform,
             std::vector<InstanceAnimationCursor> &anim_cursor_cache
-    ) {
+    ) const {
         // Return the instance's unmodified translation if there is no translation animation or it
         // hasn't started yet
         if (anim.translations.empty() || timestamp < anim.translation_timestamps.front())
             return glm::vec3(prev_transform[3]);
 
-        // Return the last translation value if the animation has ended
-        if (timestamp >= anim.translation_timestamps.back())
+        bool end_reached = timestamp >= anim.translation_timestamps.back();
+        if (loop) {
+            timestamp = std::fmodf(timestamp, anim.translation_timestamps.back());
+            if (end_reached) anim_cursor_cache[anim_idx].translation_idx = 0;
+        } else if (end_reached) {
+            // Return the last translation value if the animation has ended
             return anim.translations.back();
+        }
 
         // Linearly interpolate if the animation is active
         std::size_t index = anim_cursor_cache[anim_idx].translation_idx;
@@ -81,19 +86,24 @@ namespace scene {
 
     glm::quat AnimationSampler::sampleRotation(
             const InstanceAnimation &anim,
-            const std::size_t anim_idx,
-            const float timestamp,
+            std::size_t anim_idx,
+            float timestamp,
             const glm::mat4 &prev_transform,
             std::vector<InstanceAnimationCursor> &anim_cursor_cache
-    ) {
+    ) const {
         // Return the instance's unmodified rotation if there is no rotation animation or it
         // hasn't started yet
         if (anim.rotations.empty() || timestamp < anim.rotation_timestamps.front())
             return glm::quat_cast(prev_transform);
 
-        // Return the last rotation value if the animation has ended
-        if (timestamp >= anim.rotation_timestamps.back())
-            return anim.rotations.back();
+        bool end_reached = timestamp >= anim.rotation_timestamps.back();
+        if (loop) {
+            timestamp = std::fmodf(timestamp, anim.rotation_timestamps.back());
+            if (end_reached) anim_cursor_cache[anim_idx].rotation_idx = 0;
+        } else if (end_reached) {
+            // Return the last translation value if the animation has ended
+            return anim.translations.back();
+        }
 
         // Linearly interpolate if the animation is active
         std::size_t index = anim_cursor_cache[anim_idx].rotation_idx;

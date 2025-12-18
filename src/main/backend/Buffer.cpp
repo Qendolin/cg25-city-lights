@@ -23,6 +23,7 @@ Buffer::Buffer(vma::UniqueBuffer &&buffer, vma::UniqueAllocation &&allocation, s
     : BufferBase(size), buffer(std::move(buffer)), allocation(std::move(allocation)) {}
 
 Buffer Buffer::create(const vma::Allocator &allocator, const BufferCreateInfo &create_info) {
+    vma::AllocationInfo alloc_info;
     auto [buffer, alloc] = allocator.createBufferUnique(
             {
                 .size = create_info.size,
@@ -33,9 +34,13 @@ Buffer Buffer::create(const vma::Allocator &allocator, const BufferCreateInfo &c
                 .usage = create_info.device,
                 .requiredFlags = create_info.requiredProperties,
                 .preferredFlags = create_info.preferredProperties,
-            }
+            },
+            alloc_info
     );
-    return Buffer(std::move(buffer), std::move(alloc), create_info.size);
+
+    auto &&ret = Buffer{std::move(buffer), std::move(alloc), create_info.size};
+    ret.persistentMapping = alloc_info.pMappedData;
+    return ret;
 }
 
 struct TransientBufferAllocatorImpl {

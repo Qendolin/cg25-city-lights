@@ -147,7 +147,8 @@ void Application::updateSunShadowCascades() {
 }
 
 void Application::updateAnimatedInstances() {
-    std::vector<glm::mat4> animated_instance_transforms = scene::AnimationSampler::sampleAnimatedInstanceTransforms(
+    scene::AnimationSampler sampler{}; // TODO: should be stored somewhere
+    std::vector<glm::mat4> animated_instance_transforms = sampler.sampleAnimatedInstanceTransforms(
             mScene->cpu(), static_cast<float>(mInput->time()), mAnimationCursorCache
     );
 

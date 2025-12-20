@@ -72,7 +72,7 @@ void SettingsGui::draw(Settings &settings) {
         ColorEdit3("Ambient", glm::value_ptr(settings.rendering.ambient), ImGuiColorEditFlags_Float);
         Checkbox("Frustum Culling", &settings.rendering.enableFrustumCulling);
         Checkbox("Async Compute", &settings.rendering.asyncCompute);
-        Checkbox("Pause", &settings.rendering.pauseFrustumCulling);
+        Checkbox("Pause Culling", &settings.rendering.pauseFrustumCulling);
         Checkbox("White World", &settings.rendering.whiteWorld);
         Checkbox("Light Density", &settings.rendering.lightDensity);
         SliderFloat("Light Range Factor", &settings.rendering.lightRangeFactor, 0.0f, 1.0f);
@@ -104,9 +104,13 @@ void SettingsGui::draw(Settings &settings) {
         PopID();
     }
 
-    if (CollapsingHeader("Blob")) {
-        PushID("blob");
-        Checkbox("Render", &settings.blob.render);
+    if (CollapsingHeader("Animation")) {
+        PushID("animation");
+        Checkbox("Render Blob", &settings.animation.renderBlob);
+        SliderFloat("Playback Speed", &settings.animation.playbackSpeed, 0.0f, 4.0f);
+        SliderFloat("Timeline", &settings.animation.time, 0.0f, 60.0f);
+        Checkbox("Pause Animation", &settings.animation.pause);
+
         PopID();
     }
 

@@ -62,9 +62,12 @@ struct Settings {
         float bias = 0.0f;
         float filterSharpness = 20.0f;
     } ssao;
-    struct Blob {
-        bool render = true;
-    } blob;
+    struct Animation {
+        bool renderBlob = true;
+        float playbackSpeed = 1.0f;
+        float time = 0.0f;
+        bool pause = false;
+    } animation;
 
     Settings() {
         shadowCascades[0] = {

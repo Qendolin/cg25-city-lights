@@ -72,7 +72,8 @@ public:
             const Framebuffer &framebuffer,
             const ImageViewPairBase &storedColorImage,
             const Camera &camera,
-            const blob::Model &blobModel
+            const blob::Model &blobModel,
+            float timestamp
     );
 
 private:
@@ -83,7 +84,8 @@ private:
             const vk::Device &device,
             const DescriptorAllocator &allocator,
             const vk::CommandBuffer &commandBuffer,
-            const blob::Model &blobModel
+            const blob::Model &blobModel,
+            float timestamp
     );
 
     void renderVertices(

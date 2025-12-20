@@ -7,7 +7,8 @@
 
 namespace blob {
 
-    Model::Model(const vma::Allocator &allocator, const vk::Device& device, int resolution) : allocator{allocator}, resolution{resolution} {
+    Model::Model(const vma::Allocator &allocator, const vk::Device &device, int resolution)
+        : allocator{allocator}, resolution{resolution} {
         createVertexBuffer();
         util::setDebugName(device, vertexBuffer, "blob_vertex_buffer");
         createIndirectDrawBuffer();
@@ -43,11 +44,4 @@ namespace blob {
 
         std::tie(indirectDrawBuffer, indirectDrawAlloc) = allocator.createBuffer(bufferCreateInfo, allocCreateInfo);
     }
-
-    void Model::advanceTime(float dt) {
-        time += dt;
-        if (time >= MAX_ANIMATION_TIME)
-            time -= MAX_ANIMATION_TIME;
-    }
-
 } // namespace blob

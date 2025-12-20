@@ -26,9 +26,10 @@ void BlobRenderer::execute(
         const Framebuffer &framebuffer,
         const ImageViewPairBase &storedColorImage,
         const Camera &camera,
-        const blob::Model &blobModel
+        const blob::Model &blobModel,
+        float timestamp
 ) {
-    computeVertices(device, allocator, commandBuffer, blobModel);
+    computeVertices(device, allocator, commandBuffer, blobModel, timestamp);
     renderVertices(device, allocator, commandBuffer, framebuffer, storedColorImage, camera, blobModel);
 }
 
@@ -69,7 +70,8 @@ void BlobRenderer::computeVertices(
         const vk::Device &device,
         const DescriptorAllocator &allocator,
         const vk::CommandBuffer &commandBuffer,
-        const blob::Model &blobModel
+        const blob::Model &blobModel,
+        float timestamp
 ) {
     util::ScopedCommandLabel dbg_cmd_label_func(commandBuffer, "Compute");
 
@@ -124,7 +126,7 @@ void BlobRenderer::computeVertices(
 
     ComputePushConstant pc{};
     pc.resolution = resolution;
-    pc.time = blobModel.getTime();
+    pc.time = timestamp;
 
     commandBuffer.pushConstants(
             *mComputePipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(ComputePushConstant), &pc

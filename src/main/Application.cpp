@@ -67,7 +67,7 @@ Application::Application() {
     mAmbientMusic->setLooping(true);
     mAmbientMusic->setVolume(0.05);
 
-    mAnimationCursorCache.resize(mScene->cpu().instance_animations.size());
+    mAnimationSampler = std::make_unique<scene::AnimationSampler>(mScene->cpu());
 
     mRenderSystem->recreate(mSettings);
 }
@@ -81,7 +81,7 @@ void Application::run() {
 
         mInput->update();
         processInput();
-        mBlobModel->advanceTime(mInput->timeDelta());
+        advanceAnimationTime();
         // if audio L/R is swapped then this should be (0,0,-1)
         mAudio->update(mCamera->position, mCamera->rotationMatrix() * glm::vec3(0, 0, 1));
 
@@ -102,6 +102,7 @@ void Application::run() {
             .settings = mSettings,
             .blobModel = *mBlobModel,
             .skybox = *mSkybox,
+            .timestamp = mSettings.animation.time,
         });
 
         mRenderSystem->submit(mSettings);
@@ -121,6 +122,13 @@ void Application::processInput() {
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
     } else
         ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+}
+
+void Application::advanceAnimationTime() {
+    if (!mSettings.animation.pause) {
+        float dt = mInput->timeDelta() * mSettings.animation.playbackSpeed;
+        mSettings.animation.time += dt;
+    }
 }
 
 void Application::drawGui() {
@@ -147,10 +155,8 @@ void Application::updateSunShadowCascades() {
 }
 
 void Application::updateAnimatedInstances() {
-    scene::AnimationSampler sampler{}; // TODO: should be stored somewhere
-    std::vector<glm::mat4> animated_instance_transforms = sampler.sampleAnimatedInstanceTransforms(
-            mScene->cpu(), static_cast<float>(mInput->time()), mAnimationCursorCache
-    );
+    std::vector<glm::mat4> animated_instance_transforms =
+            mAnimationSampler->sampleAnimatedInstanceTransforms(mSettings.animation.time);
 
     if (!animated_instance_transforms.empty())
         mRenderSystem->updateInstanceTransforms(mScene->gpu(), animated_instance_transforms);

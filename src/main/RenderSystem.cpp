@@ -413,11 +413,11 @@ void RenderSystem::draw(const RenderData &rd) {
         );
 
         // Blob render pass
-        if (rd.settings.blob.render) {
+        if (rd.settings.animation.renderBlob) {
             dbg_cmd_label_region.swap("Blob Pass");
             storeHdrColorImage(cmd_buf);
             mBlobRenderer->execute(
-                    mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, mStoredHdrColorImage, rd.camera, rd.blobModel
+                    mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, mStoredHdrColorImage, rd.camera, rd.blobModel, rd.timestamp
             );
         }
 

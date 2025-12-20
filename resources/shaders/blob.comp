@@ -60,7 +60,7 @@ float smoothMin(float a, float b, float k) {
 }
 
 float sdf(vec3 p) {
-    float t = mod(pc.time, TWO_PI);  // Loop time smoothly over 0 to 2π
+    float t = min(pc.time, TWO_PI - pc.time);  // Loop time smoothly over 0 to 2π
 
     vec3 core = vec3(0.0, 0.3, 0.0);
     float coreR = 0.2 + t / 24.0;

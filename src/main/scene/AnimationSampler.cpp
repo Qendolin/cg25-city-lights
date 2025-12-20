@@ -2,119 +2,102 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <iostream>
 
 #include "../util/Logger.h"
 
 namespace scene {
 
-    std::vector<glm::mat4> AnimationSampler::sampleAnimatedInstanceTransforms(
-            const CpuData &cpu_data, float timestamp, std::vector<InstanceAnimationCursor> &anim_cursor_cache
-    ) const {
+    AnimationSampler::AnimationSampler(const CpuData &cpu_data)
+        : mCpuData{cpu_data},
+          mAnimationCount{cpu_data.instance_animations.size()},
+          mFirstAnimInstanceIdx{cpu_data.instances.size() - cpu_data.instance_animations.size()} {
+        mPrevAnimationIndices.resize(mCpuData.instance_animations.size());
+    }
+
+    std::vector<glm::mat4> AnimationSampler::sampleAnimatedInstanceTransforms(float timestamp) {
         std::vector<glm::mat4> transforms;
-        transforms.reserve(cpu_data.instance_animations.size());
+        transforms.reserve(mAnimationCount);
 
-        const std::size_t anim_cursor_count = anim_cursor_cache.size();
-        const std::size_t anim_count = cpu_data.instance_animations.size();
-        const std::size_t first_anim_instance_idx = cpu_data.instances.size() - cpu_data.instance_animations.size();
-
-        if (anim_cursor_count != anim_count) {
-            Logger::warning(std::format(
-                    "Ignoring animations because the animation cursor cache is of size {} but there are {} animations",
-                    anim_cursor_count, anim_count
-            ));
-
-            for (std::size_t anim_idx{0}; anim_idx < anim_count; ++anim_idx) {
-                const std::size_t instance_idx = first_anim_instance_idx + anim_idx;
-                const Instance &instance = cpu_data.instances[instance_idx];
-                transforms.push_back(instance.transform);
-            }
-
-            return transforms;
-        }
-
-        for (std::size_t anim_idx{0}; anim_idx < anim_count; ++anim_idx) {
-            const InstanceAnimation &anim = cpu_data.instance_animations[anim_idx];
-            const std::size_t instance_idx = first_anim_instance_idx + anim_idx;
-            const Instance &instance = cpu_data.instances[instance_idx];
-            const glm::mat4 &prev_transform = instance.transform;
-
-            const glm::vec3 translation = sampleTranslation(anim, anim_idx, timestamp, prev_transform, anim_cursor_cache);
-            const glm::quat rotation = sampleRotation(anim, anim_idx, timestamp, prev_transform, anim_cursor_cache);
-            glm::mat4 transform(1.0f);
-            transform = glm::translate(transform, translation) * glm::mat4_cast(rotation);
+        for (std::size_t i{0}; i < mAnimationCount; ++i) {
+            const glm::mat4 transform = sampleAnimation(i, timestamp);
             transforms.push_back(transform);
         }
 
         return transforms;
     }
 
-    glm::vec3 AnimationSampler::sampleTranslation(
-            const InstanceAnimation &anim,
-            std::size_t anim_idx,
-            float timestamp,
-            const glm::mat4 &prev_transform,
-            std::vector<InstanceAnimationCursor> &anim_cursor_cache
-    ) const {
-        // Return the instance's unmodified translation if there is no translation animation or it
-        // hasn't started yet
-        if (anim.translations.empty() || timestamp < anim.translation_timestamps.front())
-            return glm::vec3(prev_transform[3]);
+    glm::mat4 AnimationSampler::sampleAnimation(std::size_t anim_idx, float timestamp) {
+        const std::size_t instance_idx = mFirstAnimInstanceIdx + anim_idx;
+        const glm::mat4 &default_transform = mCpuData.instances[instance_idx].transform;
 
-        bool end_reached = timestamp >= anim.translation_timestamps.back();
-        if (loop) {
-            timestamp = std::fmodf(timestamp, anim.translation_timestamps.back());
-            if (end_reached) anim_cursor_cache[anim_idx].translation_idx = 0;
-        } else if (end_reached) {
-            // Return the last translation value if the animation has ended
-            return anim.translations.back();
-        }
+        const glm::vec3 translation = sampleTranslation(anim_idx, timestamp, default_transform);
+        const glm::quat rotation = sampleRotation(anim_idx, timestamp, default_transform);
 
-        // Linearly interpolate if the animation is active
-        std::size_t index = anim_cursor_cache[anim_idx].translation_idx;
-
-        while (timestamp >= anim.translation_timestamps[index + 1] && index < (anim.translations.size() - 1))
-            ++index;
-
-        anim_cursor_cache[anim_idx].translation_idx = index;
-
-        float anim_ts_0 = anim.translation_timestamps[index];
-        float anim_ts_1 = anim.translation_timestamps[index + 1];
-        const float alpha = (timestamp - anim_ts_0) / (anim_ts_1 - anim_ts_0);
-
-        return glm::mix(anim.translations[index], anim.translations[index + 1], alpha);
+        return glm::translate(glm::mat4(1.0f), translation) * glm::mat4_cast(rotation);
     }
 
-    glm::quat AnimationSampler::sampleRotation(
-            const InstanceAnimation &anim,
-            std::size_t anim_idx,
-            float timestamp,
-            const glm::mat4 &prev_transform,
-            std::vector<InstanceAnimationCursor> &anim_cursor_cache
-    ) const {
-        // Return the instance's unmodified rotation if there is no rotation animation or it
-        // hasn't started yet
-        if (anim.rotations.empty() || timestamp < anim.rotation_timestamps.front())
-            return glm::quat_cast(prev_transform);
+    glm::vec3 AnimationSampler::sampleTranslation(std::size_t anim_idx, float timestamp, const glm::mat4 &default_transform) {
+        const std::vector<float> &timestamps = mCpuData.instance_animations[anim_idx].translation_timestamps;
+        const std::vector<glm::vec3> &translations = mCpuData.instance_animations[anim_idx].translations;
+        const glm::vec3 &default_translation = glm::vec3(default_transform[3]);
 
-        bool end_reached = timestamp >= anim.rotation_timestamps.back();
-        if (loop) {
-            timestamp = std::fmodf(timestamp, anim.rotation_timestamps.back());
-            if (end_reached) anim_cursor_cache[anim_idx].rotation_idx = 0;
-        } else if (end_reached) {
-            // Return the last translation value if the animation has ended
-            return anim.translations.back();
+        // Updated by sampleTrack!
+        std::size_t &value_index = mPrevAnimationIndices[anim_idx].translation_idx;
+
+        return sampleTrack<glm::vec3>(
+                timestamps, translations, timestamp, default_translation,
+                [](const glm::vec3 &a, const glm::vec3 &b, float alpha) { return glm::mix(a, b, alpha); }, value_index
+        );
+    }
+
+    glm::quat AnimationSampler::sampleRotation(std::size_t anim_idx, float timestamp, const glm::mat4 &default_transform) {
+        const std::vector<float> &timestamps = mCpuData.instance_animations[anim_idx].rotation_timestamps;
+        const std::vector<glm::quat> &rotations = mCpuData.instance_animations[anim_idx].rotations;
+        const glm::quat &default_rotation = glm::quat_cast(default_transform);
+
+        // Updated by sampleTrack!
+        std::size_t &value_index = mPrevAnimationIndices[anim_idx].rotation_idx;
+
+        return sampleTrack<glm::quat>(
+                timestamps, rotations, timestamp, default_rotation,
+                [](const glm::quat &a, const glm::quat &b, float alpha) { return glm::slerp(a, b, alpha); }, value_index
+        );
+    }
+
+    template<class T, class LerpFn>
+    T AnimationSampler::sampleTrack(
+            const std::vector<float> &timestamps,
+            const std::vector<T> &values,
+            float timestamp,
+            T default_value,
+            LerpFn &&lerp_function,
+            // Upon call, value_index should be the index that was the start of the interpolation
+            // interval in the last call. During the call it's updated to remain that index.
+            std::size_t &value_index
+    ) {
+        // Return the default value if there is no animation or it hasn't started yet
+        if (values.empty() || timestamp < timestamps.front()) {
+            value_index = 0;
+            return default_value;
         }
 
-        // Linearly interpolate if the animation is active
-        std::size_t index = anim_cursor_cache[anim_idx].rotation_idx;
+        // Return the last value if the animation has ended
+        if (timestamp >= timestamps.back())
+            return values.back();
 
-        while (timestamp >= anim.rotation_timestamps[index + 1] && index < (anim.rotations.size() - 1))
-            ++index;
+        // Search the next index either forward or backward, depending on the playback direction
+        if (timestamp >= timestamps[value_index + 1])
+            while (value_index < (timestamps.size() - 1) && timestamp >= timestamps[value_index + 1])
+                ++value_index;
+        else if (timestamp < timestamps[value_index])
+            while (timestamp < timestamps[value_index] && value_index > 0)
+                --value_index;
 
-        float anim_ts_0 = anim.rotation_timestamps[index];
-        float anim_ts_1 = anim.rotation_timestamps[index + 1];
+        const float anim_ts_0 = timestamps[value_index];
+        const float anim_ts_1 = timestamps[value_index + 1];
         const float alpha = (timestamp - anim_ts_0) / (anim_ts_1 - anim_ts_0);
 
-        return glm::normalize(glm::lerp(anim.rotations[index], anim.rotations[index + 1], alpha));
+        return lerp_function(values[value_index], values[value_index + 1], alpha);
     }
 } // namespace scene

@@ -26,7 +26,6 @@ namespace blob {
         vma::Allocation indirectDrawAlloc;
 
         glm::mat4 modelMatrix = 1.f;
-        float time = 0.f;
 
     public:
         Model(const vma::Allocator &allocator, const vk::Device& device, int resolution);
@@ -35,13 +34,10 @@ namespace blob {
         Model(const Model &) = delete;
         Model &operator=(const Model &) = delete;
 
-        void advanceTime(float dt);
-
         int getResolution() const { return resolution; }
         vk::Buffer getVertexBuffer() const { return vertexBuffer; }
         vk::Buffer getIndirectDrawBuffer() const { return indirectDrawBuffer; }
         glm::mat4 getModelMatrix() const { return modelMatrix; }
-        float getTime() const { return time; }
         
     private:
         void createVertexBuffer();

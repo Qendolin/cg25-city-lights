@@ -23,6 +23,7 @@ namespace glfw {
 class Camera;
 class VulkanContext;
 namespace scene {
+    class AnimationSampler;
     class Scene;
 }
 namespace blob {
@@ -68,7 +69,7 @@ private:
     std::unique_ptr<Audio> mAudio;
     std::unique_ptr<Music> mAmbientMusic;
 
-    std::vector<scene::InstanceAnimationCursor> mAnimationCursorCache;
+    std::unique_ptr<scene::AnimationSampler> mAnimationSampler;
 
 public:
     Application();
@@ -78,6 +79,7 @@ public:
 
 private:
     void processInput();
+    void advanceAnimationTime();
     void drawGui();
     void updateSunShadowCascades();
     void updateAnimatedInstances();

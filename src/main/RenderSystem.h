@@ -19,6 +19,7 @@
 
 
 class ShadowCascade;
+
 struct RenderData {
     const scene::GpuData &gltfScene;
     const Camera &camera;
@@ -27,6 +28,7 @@ struct RenderData {
     const Settings &settings;
     const blob::Model &blobModel;
     const Cubemap &skybox;
+    float timestamp;
 };
 
 class RenderSystem {

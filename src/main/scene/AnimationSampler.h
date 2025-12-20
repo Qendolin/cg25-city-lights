@@ -1,5 +1,6 @@
 #pragma once
 
+#include <float.h>
 #include <glm/glm.hpp>
 #include <vector>
 
@@ -8,42 +9,44 @@
 namespace scene {
 
     /// <summary>
-    /// Caches the last used keyframe index for an instance's animation.
+    /// Used to store the last used keyframe index for an instance's animation.
     /// This avoids searching the keyframe array from the beginning at every frame.
     /// </summary>
-    struct InstanceAnimationCursor {
+    struct InstanceAnimationIndex {
         std::size_t translation_idx{};
         std::size_t rotation_idx{};
     };
 
-
     /// <summary>
     /// A utility class for sampling instance animations at a specific timestamp.
+    /// Becomes invalid if the CPU data of the referenced scene is modified.
     /// </summary>
     class AnimationSampler {
-    public:
-        bool loop = true;
+    private:
+        const CpuData &mCpuData;
+        const std::size_t mAnimationCount;
+        const std::size_t mFirstAnimInstanceIdx;
+        std::vector<InstanceAnimationIndex> mPrevAnimationIndices;
 
-        [[nodiscard]] std::vector<glm::mat4> sampleAnimatedInstanceTransforms(
-                const CpuData &cpu_data, float timestamp, std::vector<InstanceAnimationCursor> &animation_cursor_cache
-        ) const;
+    public:
+        AnimationSampler(const CpuData &cpu_data);
+
+        [[nodiscard]] std::vector<glm::mat4> sampleAnimatedInstanceTransforms(float timestamp);
 
     private:
-        glm::vec3 sampleTranslation(
-                const InstanceAnimation &anim,
-                std::size_t anim_idx,
-                float timestamp,
-                const glm::mat4 &prev_transform,
-                std::vector<InstanceAnimationCursor> &anim_cursor_cache
-        ) const;
+        [[nodiscard]] glm::mat4 sampleAnimation(std::size_t anim_idx, float timestamp);
+        [[nodiscard]] glm::vec3 sampleTranslation(std::size_t anim_idx, float timestamp, const glm::mat4 &default_transform);
+        [[nodiscard]] glm::quat sampleRotation(std::size_t anim_idx, float timestamp, const glm::mat4 &default_transform);
 
-        glm::quat sampleRotation(
-                const InstanceAnimation &anim,
-                std::size_t anim_idx,
+        template<class T, class LerpFn>
+        [[nodiscard]] T sampleTrack(
+                const std::vector<float> &timestamps,
+                const std::vector<T> &values,
                 float timestamp,
-                const glm::mat4 &prev_transform,
-                std::vector<InstanceAnimationCursor> &anim_cursor_cache
-        ) const;
+                T default_value,
+                LerpFn &&lerp_function,
+                std::size_t &anim_index
+        );
     };
 
 } // namespace scene

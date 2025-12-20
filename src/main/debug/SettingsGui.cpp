@@ -107,6 +107,7 @@ void SettingsGui::draw(Settings &settings) {
     if (CollapsingHeader("Animation")) {
         PushID("animation");
         Checkbox("Render Blob", &settings.animation.renderBlob);
+        Checkbox("Move Blob With Last Instance", &settings.animation.moveBlobWithLastInstance);
         SliderFloat("Playback Speed", &settings.animation.playbackSpeed, 0.0f, 4.0f);
         SliderFloat("Timeline", &settings.animation.time, 0.0f, 60.0f);
         Checkbox("Pause Animation", &settings.animation.pause);

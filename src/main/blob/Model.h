@@ -38,6 +38,7 @@ namespace blob {
         vk::Buffer getVertexBuffer() const { return vertexBuffer; }
         vk::Buffer getIndirectDrawBuffer() const { return indirectDrawBuffer; }
         glm::mat4 getModelMatrix() const { return modelMatrix; }
+        void setModelMatrix(glm::mat4 model_matrix) { modelMatrix = model_matrix; }
         
     private:
         void createVertexBuffer();

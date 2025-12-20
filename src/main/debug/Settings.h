@@ -64,6 +64,7 @@ struct Settings {
     } ssao;
     struct Animation {
         bool renderBlob = true;
+        bool moveBlobWithLastInstance = false;
         float playbackSpeed = 1.0f;
         float time = 0.0f;
         bool pause = false;

@@ -158,8 +158,15 @@ void Application::updateAnimatedInstances() {
     std::vector<glm::mat4> animated_instance_transforms =
             mAnimationSampler->sampleAnimatedInstanceTransforms(mSettings.animation.time);
 
-    if (!animated_instance_transforms.empty())
+    if (!animated_instance_transforms.empty()) {
         mRenderSystem->updateInstanceTransforms(mScene->gpu(), animated_instance_transforms);
+        
+        if (mSettings.animation.moveBlobWithLastInstance) {
+            const glm::mat4 &last_anim_transform = animated_instance_transforms.back();
+            glm::mat4 blob_model_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(last_anim_transform[3]));
+            mBlobModel->setModelMatrix(blob_model_matrix);
+        }
+    }
 }
 
 void Application::reloadRenderSystem() {

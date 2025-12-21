@@ -47,6 +47,7 @@ namespace scene {
         cpu_data.instance_animations.reserve(animated_node_count);
         std::vector<Instance> anim_inst_to_insert_last;
         anim_inst_to_insert_last.reserve(animated_node_count);
+        bool camera_index_is_set{false};
 
         for (const gltf::Node &node: scene_data.nodes) {
             const bool hasMesh = (node.mesh != UINT32_MAX);
@@ -58,19 +59,38 @@ namespace scene {
 
             Instance instance{node.name, node.transform, bounds};
 
-            if (hasAnimation && !hasMesh) {
-                Logger::warning("Animated nodes without meshes are not supported because "
-                                "they aren't stored as instances on the GPU!");
-                cpu_data.instances.emplace_back(instance);
+            // Add camera to the instances array but store the animation separately. If there are 
+            // multiple cameras, all are added but only for the first one the animation is loaded
+            // and the camera reference is set.
+            if (node.isCamera) {
+                if (camera_index_is_set)
+                    Logger::warning("Only one camera is currently supported by the render engine");
+                else {
+                    cpu_data.camera_index = cpu_data.instances.size();
+                    const gltf::Animation &anim_data = scene_data.animations[node.animation];
+                    cpu_data.camera_animation = createInstanceAnimation(anim_data);
+                    camera_index_is_set = true; 
+                }
+
+                cpu_data.instances.push_back(instance);
                 continue;
             }
 
+            // Do not use animation for non-camera node without mesh
+            if (hasAnimation && !hasMesh) {
+                Logger::warning("Animated nodes without meshes except cameras are not supported because they aren't "
+                                "stored as instances on the GPU!");
+                cpu_data.instances.push_back(instance);
+                continue;
+            }
+
+            // Add nodes with meshes and animations lastly, to enable easier transform updates on the GPU
             if (hasAnimation) {
                 const gltf::Animation &anim_data = scene_data.animations[node.animation];
                 cpu_data.instance_animations.push_back(createInstanceAnimation(anim_data));
-                anim_inst_to_insert_last.emplace_back(std::move(instance));
+                anim_inst_to_insert_last.push_back(instance);
             } else
-                cpu_data.instances.emplace_back(std::move(instance));
+                cpu_data.instances.push_back(instance);
         }
 
         cpu_data.instances.insert(cpu_data.instances.end(), anim_inst_to_insert_last.begin(), anim_inst_to_insert_last.end());

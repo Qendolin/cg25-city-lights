@@ -206,6 +206,50 @@ namespace gltf {
         }
     }
 
+    void Loader::loadNode(
+            const fastgltf::Asset &asset,
+            const fastgltf::Node &node,
+            const std::vector<PrimitiveInfo> &primitive_infos,
+            const std::vector<size_t> &mesh_primitive_table,
+            const glm::mat4 transform,
+            const std::uint32_t animation_index,
+            Scene &scene_data
+    ) {
+        size_t node_index = scene_data.nodes.size();
+        gltf::Node &scene_node = scene_data.nodes.emplace_back() = {
+            .name = std::string(node.name),
+            .transform = transform,
+            .mesh = static_cast<uint32_t>(node.meshIndex.value_or(UINT32_MAX)),
+            .animation = animation_index,
+        };
+
+        if (scene_node.mesh == UINT32_MAX) {
+            // Non mesh node
+            if (node.lightIndex.has_value())
+                loadLight(asset, scene_data, node, transform, scene_node);
+
+            if (node.cameraIndex.has_value())
+                scene_node.isCamera = true;
+
+            return;
+        }
+
+        const fastgltf::Mesh &mesh = asset.meshes[scene_node.mesh];
+
+        for (std::size_t i{0}; i < mesh.primitives.size(); ++i) {
+            const PrimitiveInfo &primitive_info = primitive_infos[mesh_primitive_table[scene_node.mesh] + i];
+
+            scene_data.sections.emplace_back() = {
+                .indexOffset = primitive_info.indexOffset,
+                .indexCount = primitive_info.indexCount,
+                .vertexOffset = primitive_info.vertexOffset,
+                .node = static_cast<uint32_t>(node_index),
+                .bounds = primitive_info.bounds,
+                .material = primitive_info.material,
+            };
+        }
+    }
+
     void Loader::loadLight(
             const fastgltf::Asset &asset, Scene &scene_data, const fastgltf::Node &node, const glm::mat4 &transform, Node &scene_node
     ) {
@@ -247,46 +291,6 @@ namespace gltf {
                         glm::degrees(light.innerConeAngle.value_or(glm::radians(scene_light.innerConeAngle)));
                 break;
             }
-        }
-    }
-
-    void Loader::loadNode(
-            const fastgltf::Asset &asset,
-            const fastgltf::Node &node,
-            const std::vector<PrimitiveInfo> &primitive_infos,
-            const std::vector<size_t> &mesh_primitive_table,
-            const glm::mat4 transform,
-            const std::uint32_t animation_index,
-            Scene &scene_data
-    ) {
-        size_t node_index = scene_data.nodes.size();
-        gltf::Node &scene_node = scene_data.nodes.emplace_back() = {
-            .name = std::string(node.name),
-            .transform = transform,
-            .mesh = static_cast<uint32_t>(node.meshIndex.value_or(UINT32_MAX)),
-            .animation = animation_index,
-        };
-
-        if (scene_node.mesh == UINT32_MAX) {
-            // Non mesh node
-            if (node.lightIndex.has_value())
-                loadLight(asset, scene_data, node, transform, scene_node);
-            return;
-        }
-
-        const fastgltf::Mesh &mesh = asset.meshes[scene_node.mesh];
-
-        for (std::size_t i{0}; i < mesh.primitives.size(); ++i) {
-            const PrimitiveInfo &primitive_info = primitive_infos[mesh_primitive_table[scene_node.mesh] + i];
-
-            scene_data.sections.emplace_back() = {
-                .indexOffset = primitive_info.indexOffset,
-                .indexCount = primitive_info.indexCount,
-                .vertexOffset = primitive_info.vertexOffset,
-                .node = static_cast<uint32_t>(node_index),
-                .bounds = primitive_info.bounds,
-                .material = primitive_info.material,
-            };
         }
     }
 

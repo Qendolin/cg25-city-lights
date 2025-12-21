@@ -94,6 +94,18 @@ namespace scene {
         /// The data of n animations for the last n instances in the instances vector.
         /// </summary>
         std::vector<InstanceAnimation> instance_animations;
+
+        /// <summary>
+        /// Stores the index to a camera node in the list of instances or UINT32_MAX if there is
+        /// none. Could be expanded to support multiple cameras per scene.
+        /// </summary>
+        std::uint32_t camera_index = UINT32_MAX;
+        
+        /// <summary>
+        /// Stores the animation data for the camera. Needs to be extended to a vector if scenes
+        /// are expanded to support multiple cameras.
+        /// </summary>
+        InstanceAnimation camera_animation;
     };
 
     class Scene {

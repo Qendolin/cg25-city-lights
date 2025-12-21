@@ -54,9 +54,14 @@ namespace gltf {
         /// The index of the directional light for this node or UINT32_MAX if none.
         /// </summary>
         uint32_t directionalLight = UINT32_MAX;
-
-        // New, TODO: Summary
+        /// <summary>
+        /// The index of the imported animation associated with this node or UINT32_MAX if none.
+        /// </summary>
         uint32_t animation = UINT32_MAX;
+        /// <summary>
+        /// Flag that indicates if the node is a camera or not.
+        /// </summary>
+        bool isCamera = false;
     };
 
     /// <summary>
@@ -205,8 +210,10 @@ namespace gltf {
         /// A list of all directional lights in the scene.
         /// </summary>
         std::vector<DirectionalLight> directionalLights;
-
-        // New, TODO: summary
+        /// <summary>
+        /// A list of all node animations in the scene. Only translations and rotations components
+        /// are currently stored by the animation struct.
+        /// </summary>
         std::vector<Animation> animations;
     };
 } // namespace gltf

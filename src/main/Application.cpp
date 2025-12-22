@@ -48,6 +48,7 @@ void Application::run() {
         advanceAnimationTime();
         updateDebugCamera();
         updateAnimatedCamera();
+        updateBlob();
         updateAudio();
 
         mRenderSystem->begin();
@@ -108,10 +109,19 @@ void Application::initScene() {
     mSunShadowCascade = std::make_unique<ShadowCascade>(
             mCtx->device(), mCtx->allocator(), mSettings.shadowCascade.resolution, Settings::SHADOW_CASCADE_COUNT
     );
-    mBlobModel = std::make_unique<blob::Model>(mCtx->allocator(), mCtx->device(), BLOB_RESOLUTION);
     mSkybox = std::make_unique<Cubemap>(
             mCtx->allocator(), mCtx->device(), mCtx->transferQueue, mCtx->mainQueue, SKYBOX_FILENAMES
     );
+
+    glm::mat4 blob_instance_transform;
+
+    if (mScene->cpu().animated_blob_exists) {
+        const std::size_t blob_instance_idx = mScene->cpu().animated_blob_index;
+        blob_instance_transform = mScene->cpu().instances[blob_instance_idx].transform;
+    } else
+        blob_instance_transform = glm::translate(glm::mat4(1.0f), DEFAULT_BLOB_POSITION);
+
+    mBlobModel = std::make_unique<blob::Model>(mCtx->allocator(), mCtx->device(), BLOB_RESOLUTION, blob_instance_transform);
 }
 
 void Application::initCameras() {
@@ -160,9 +170,16 @@ void Application::updateAnimatedCamera() {
     mAnimatedCamera->updateBasedOnTransform(anim_cam_transform);
 }
 
+void Application::updateBlob() {
+    if (!mScene->cpu().animated_blob_exists || !mSettings.animation.animateBlobNode)
+        return;
+
+    const glm::mat4 anim_blob_transform = mAnimationSampler->sampleAnimatedBlobTransform(mSettings.animation.time);
+    mBlobModel->setTransform(anim_blob_transform);
+}
+
 void Application::updateAudio() {
     const Camera &camera = activeCamera();
-
     // if audio L/R is swapped then this should be (0,0,-1)
     mAudio->update(camera.position, camera.rotationMatrix() * glm::vec3(0, 0, 1));
 }
@@ -204,15 +221,8 @@ void Application::updateAnimatedInstances() {
     std::vector<glm::mat4> animated_instance_transforms =
             mAnimationSampler->sampleAnimatedInstanceTransforms(mSettings.animation.time);
 
-    if (!animated_instance_transforms.empty()) {
+    if (!animated_instance_transforms.empty())
         mRenderSystem->updateInstanceTransforms(mScene->gpu(), animated_instance_transforms);
-
-        if (mSettings.animation.moveBlobWithLastInstance) {
-            const glm::mat4 &last_anim_transform = animated_instance_transforms.back();
-            glm::mat4 blob_model_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(last_anim_transform[3]));
-            mBlobModel->setModelMatrix(blob_model_matrix);
-        }
-    }
 }
 
 void Application::reloadRenderSystem() {
@@ -263,4 +273,6 @@ void Application::updateDebugCamera() {
     mDebugCamera->updateViewMatrix();
 }
 
-const Camera &Application::activeCamera() const { return (mSettings.camera.debugCamera ? *mDebugCamera : *mAnimatedCamera); }
+const Camera &Application::activeCamera() const {
+    return (mSettings.camera.debugCamera ? *mDebugCamera : *mAnimatedCamera);
+}

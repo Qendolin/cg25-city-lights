@@ -28,12 +28,14 @@ namespace scene {
         const std::size_t mFirstAnimInstanceIdx;
         std::vector<InstanceAnimationIndex> mPrevAnimationIndices;
         InstanceAnimationIndex mPrevCamAnimIndex;
+        InstanceAnimationIndex mPrevBlobAnimIndex;
 
     public:
         AnimationSampler(const CpuData &cpu_data);
 
-        [[nodiscard]] std::vector<glm::mat4> sampleAnimatedInstanceTransforms(float timestamp);
         [[nodiscard]] glm::mat4 sampleAnimatedCameraTransform(float timestamp);
+        [[nodiscard]] glm::mat4 sampleAnimatedBlobTransform(float timestamp);
+        [[nodiscard]] std::vector<glm::mat4> sampleAnimatedInstanceTransforms(float timestamp);
 
     private:
         [[nodiscard]] glm::mat4 sampleInstanceAnimation(std::size_t anim_idx, float timestamp);

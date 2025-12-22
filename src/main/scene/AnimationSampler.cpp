@@ -41,6 +41,25 @@ namespace scene {
         return glm::translate(glm::mat4(1.0f), translation) * glm::mat4_cast(rotation);
     }
 
+    glm::mat4 AnimationSampler::sampleAnimatedBlobTransform(float timestamp) {
+        if (!mCpuData.animated_blob_exists)
+            Logger::fatal("Attempted to sample non-existent blob animation");
+
+        // Ignore rotation and only consider translation component of the animation for the blob
+        const InstanceAnimation &blob_animation = mCpuData.blob_animation;
+        const Instance &blob_instance = mCpuData.instances[mCpuData.animated_blob_index];
+        const glm::vec3 default_translation = glm::vec3(blob_instance.transform[3]);
+        std::size_t &translation_value_index = mPrevBlobAnimIndex.translation_idx;
+
+        const glm::vec3 translation = sampleTrack<glm::vec3>(
+                blob_animation.translation_timestamps, blob_animation.translations, timestamp, default_translation,
+                [](const glm::vec3 &a, const glm::vec3 &b, float alpha) { return glm::mix(a, b, alpha); },
+                translation_value_index
+        );
+
+        return glm::translate(glm::mat4(1.0f), translation);
+    }
+
     std::vector<glm::mat4> AnimationSampler::sampleAnimatedInstanceTransforms(float timestamp) {
         std::vector<glm::mat4> transforms;
         transforms.reserve(mAnimationCount);

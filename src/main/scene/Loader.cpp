@@ -75,6 +75,23 @@ namespace scene {
                 continue;
             }
 
+            // Add node named "Blob" or "blob" to the instances array but store the animation
+            // separately. If there are multiple such nodes, all are added but only for the first
+            // one the animation is loaded and the blob reference is set.
+            if (hasAnimation && (node.name == "Blob" || node.name == "blob")) {
+                if (cpu_data.animated_blob_exists)
+                    Logger::warning("Only one animated blob node is currently supported by the render engine");
+                else {
+                    cpu_data.animated_blob_index = cpu_data.instances.size();
+                    const gltf::Animation &anim_data = scene_data.animations[node.animation];
+                    cpu_data.blob_animation = createInstanceAnimation(anim_data);
+                    cpu_data.animated_blob_exists = true; 
+                }
+
+                cpu_data.instances.push_back(instance);
+                continue;
+            }
+
             // Do not use animation for non-camera node without mesh
             if (hasAnimation && !hasMesh) {
                 Logger::warning("Animated nodes without meshes except cameras are not supported because they aren't "

@@ -96,7 +96,7 @@ namespace scene {
         std::vector<InstanceAnimation> instance_animations;
 
         /// <summary>
-        /// Specifies whether an animated camera exists or not.
+        /// Specifies whether an animated camera exists in the scene or not.
         /// </summary>
         bool animated_camera_exists = false;
 
@@ -111,6 +111,22 @@ namespace scene {
         /// are expanded to support multiple cameras.
         /// </summary>
         InstanceAnimation camera_animation;
+
+        /// <summary>
+        /// Specifies whether an animated blob (an instance of name "Blob" or "blob" exists in
+        /// the scene or not.
+        /// </summary>
+        bool animated_blob_exists = false;
+
+        /// <summary>
+        /// Stores the index to the animated blob node in the list of instances.
+        /// </summary>
+        std::size_t animated_blob_index;
+
+        /// <summary>
+        /// Stores the animation data for the blob node.
+        /// </summary>
+        InstanceAnimation blob_animation;
     };
 
     class Scene {

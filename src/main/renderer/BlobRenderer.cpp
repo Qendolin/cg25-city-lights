@@ -198,7 +198,7 @@ void BlobRenderer::renderVertices(
     VertexFragmentPushConstant push{};
     push.projectionMatrix = camera.projectionMatrix();
     push.viewMatrix = camera.viewMatrix();
-    push.modelMatrix = blobModel.getModelMatrix();
+    push.modelMatrix = blobModel.getTransform();
     push.camera = glm::vec4(camera.position, 0.0);
     push.invViewportSize = 1.0f / glm::vec2(framebuffer.area().extent.width, framebuffer.area().extent.height);
 

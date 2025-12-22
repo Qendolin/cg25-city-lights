@@ -15,31 +15,31 @@ namespace blob {
         static constexpr float TWO_PI = 6.2831855f;
         static constexpr float MAX_ANIMATION_TIME = TWO_PI;
 
-        const int resolution;
+        const int mResolution;
 
-        const vma::Allocator &allocator;
+        const vma::Allocator &mAllocator;
 
-        vk::Buffer vertexBuffer;
-        vma::Allocation vertexAlloc;
+        vk::Buffer mVertexBuffer;
+        vma::Allocation mVertexAlloc;
 
-        vk::Buffer indirectDrawBuffer;
-        vma::Allocation indirectDrawAlloc;
+        vk::Buffer mIndirectDrawBuffer;
+        vma::Allocation mIndirectDrawAlloc;
 
-        glm::mat4 modelMatrix = 1.f;
+        glm::mat4 mTransform = 1.f;
 
     public:
-        Model(const vma::Allocator &allocator, const vk::Device& device, int resolution);
+        Model(const vma::Allocator &allocator, const vk::Device &device, int resolution, const glm::mat4 &transform);
         ~Model();
 
         Model(const Model &) = delete;
         Model &operator=(const Model &) = delete;
 
-        int getResolution() const { return resolution; }
-        vk::Buffer getVertexBuffer() const { return vertexBuffer; }
-        vk::Buffer getIndirectDrawBuffer() const { return indirectDrawBuffer; }
-        glm::mat4 getModelMatrix() const { return modelMatrix; }
-        void setModelMatrix(glm::mat4 model_matrix) { modelMatrix = model_matrix; }
-        
+        int getResolution() const { return mResolution; }
+        vk::Buffer getVertexBuffer() const { return mVertexBuffer; }
+        vk::Buffer getIndirectDrawBuffer() const { return mIndirectDrawBuffer; }
+        glm::mat4 getTransform() const { return mTransform; }
+        void setTransform(glm::mat4 transform) { mTransform = transform; }
+
     private:
         void createVertexBuffer();
         void createIndirectDrawBuffer();

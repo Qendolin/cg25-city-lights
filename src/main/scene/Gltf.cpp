@@ -223,13 +223,13 @@ namespace gltf {
             .animation = animation_index,
         };
 
+        // Non mesh node
         if (scene_node.mesh == UINT32_MAX) {
-            // Non mesh node
             if (node.lightIndex.has_value())
                 loadLight(asset, scene_data, node, transform, scene_node);
 
-            if (node.cameraIndex.has_value())
-                scene_node.isCamera = true;
+            if (node.cameraIndex.has_value() && animation_index != UINT32_MAX)
+                scene_node.isAnimatedCamera = true;
 
             return;
         }

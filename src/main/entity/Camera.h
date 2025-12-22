@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 /// <summary>
 /// Represents a camera in a 3D scene.
@@ -36,26 +37,30 @@ public:
     /// <summary>
     /// The position of the camera in world space.
     /// </summary>
-    glm::vec3 position = {};
+    glm::vec3 position{};
     /// <summary>
     /// The orientation of the camera as pitch, yaw, and roll, in radians.
     /// </summary>
-    glm::vec3 angles = {};
+    glm::vec3 angles{};
 
     /// <summary>
     /// Initializes a new instance of the Camera class.
-    /// </summary>
     /// <param name="fov">Vertical field of view, in radians.</param>
     /// <param name="near_plane">Distance of the near plane.</param>
     /// <param name="position">Position of the camera.</param>
     /// <param name="angles">Orientation of the camera (pitch, yaw, roll) in radians.</param>
+    /// </summary>
     Camera(float fov, float near_plane, glm::vec3 position, glm::vec3 angles);
-    ~Camera();
 
     /// <summary>
-    /// Recalculates the view matrix based on the camera's position and orientation.
+    /// Initializes a new instance of the Camera class.
+    /// <param name="fov">Vertical field of view, in radians.</param>
+    /// <param name="near_plane">Distance of the near plane.</param>
+    /// <param name="view_matrix">View matrix that encodes the position and orientation.</param>
     /// </summary>
-    void updateViewMatrix();
+    Camera(float fov, float near_plane, glm::mat4 view_matrix);
+
+    ~Camera();
 
     /// <summary>
     /// Sets the viewport size and updates the projection matrix.
@@ -81,12 +86,6 @@ public:
     }
 
     /// <summary>
-    /// Gets the distance of the near clipping plane.
-    /// </summary>
-    /// <returns>The distance of the near plane.</returns>
-    [[nodiscard]] float nearPlane() const { return mNearPlane; }
-
-    /// <summary>
     /// Sets the vertical field of view and updates the projection matrix.
     /// </summary>
     /// <param name="fov">Vertical field of view, in radians.</param>
@@ -96,6 +95,24 @@ public:
         mFov = fov;
         updateProjectionMatrix();
     }
+
+    /// <summary>
+    /// Recalculates the view matrix based on the camera's position and orientation.
+    /// </summary>
+    void updateViewMatrix();
+
+    /// <summary>
+    /// Updates the view matrix and position and angles according to the transform matrix.
+    /// </summary>
+    /// <param name="camera_instance_transform">The transform matrix of the camera in world space.
+    /// Expected to be free of scaling and shearing.</param>
+    void updateBasedOnTransform(const glm::mat4 &camera_instance_transform);
+
+    /// <summary>
+    /// Gets the distance of the near clipping plane.
+    /// </summary>
+    /// <returns>The distance of the near plane.</returns>
+    [[nodiscard]] float nearPlane() const { return mNearPlane; }
 
     /// <summary>
     /// Gets the vertical field of view.

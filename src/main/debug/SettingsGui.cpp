@@ -115,5 +115,11 @@ void SettingsGui::draw(Settings &settings) {
         PopID();
     }
 
+    if (CollapsingHeader("Camera")) {
+        PushID("camera");
+        Checkbox("Debug Camera", &settings.camera.debugCamera);
+        PopID();
+    }
+
     End();
 }

@@ -24,51 +24,16 @@
 #include "util/Logger.h"
 
 Application::Application() {
-    mCtx = std::make_unique<VulkanContext>(std::move(VulkanContext::create(glfw::WindowCreateInfo{
-        .width = WINDOW_WIDTH,
-        .height = WINDOW_HEIGHT,
-        .title = TITLE,
-        .resizable = true,
-        .visible = false,
-    })));
-    mSettings.rendering.asyncCompute = mCtx->computeQueue.queue != VK_NULL_HANDLE;
-
-    Logger::info("Using present mode: " + vk::to_string(mCtx->swapchain().presentMode()));
-
-    mCtx->window().centerOnScreen();
-    glfwShowWindow(mCtx->window());
-
+    initContext();
+    initInput();
     // imgui must be initialized after input
-    mInput = std::make_unique<glfw::Input>(mCtx->window());
-    if (glfwRawMouseMotionSupported())
-        glfwSetInputMode(mCtx->window(), GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
-
     mRenderSystem = std::make_unique<RenderSystem>(mCtx.get());
-
     mSettingsGui = std::make_unique<SettingsGui>();
-
-    scene::Loader scene_loader{
-        mCtx->allocator(), mCtx->device(), mCtx->physicalDevice(), mCtx->transferQueue, mCtx->mainQueue,
-    };
-
-    mScene = std::make_unique<scene::Scene>(std::move(scene_loader.load(SCENE_FILENAME)));
-    mSunShadowCascade = std::make_unique<ShadowCascade>(
-            mCtx->device(), mCtx->allocator(), mSettings.shadowCascade.resolution, Settings::SHADOW_CASCADE_COUNT
-    );
-    mBlobModel = std::make_unique<blob::Model>(mCtx->allocator(), mCtx->device(), BLOB_RESOLUTION);
-    mSkybox = std::make_unique<Cubemap>(
-            mCtx->allocator(), mCtx->device(), mCtx->transferQueue, mCtx->mainQueue, SKYBOX_FILENAMES
-    );
-    mCamera = std::make_unique<Camera>(FOV, NEAR_PLANE, CAMERA_POSITION, glm::vec3{});
+    initScene();
+    initCameras();
+    initAudio();
     mDebugFrameTimes = std::make_unique<FrameTimes>();
-
-    mAudio = std::make_unique<Audio>();
-    mAmbientMusic = mAudio->createMusic("resources/audio/ambiance.ogg");
-    mAmbientMusic->setLooping(true);
-    mAmbientMusic->setVolume(0.05);
-
     mAnimationSampler = std::make_unique<scene::AnimationSampler>(mScene->cpu());
-
     mRenderSystem->recreate(mSettings);
 }
 
@@ -78,25 +43,25 @@ void Application::run() {
     mAmbientMusic->play();
     while (!mCtx->window().shouldClose()) {
         mRenderSystem->advance(mSettings);
-
         mInput->update();
         processInput();
         advanceAnimationTime();
-        // if audio L/R is swapped then this should be (0,0,-1)
-        mAudio->update(mCamera->position, mCamera->rotationMatrix() * glm::vec3(0, 0, 1));
+        updateDebugCamera();
+        updateAnimatedCamera();
+        updateAudio();
 
         mRenderSystem->begin();
         mRenderSystem->imGuiBackend().beginFrame();
 
         drawGui();
 
-        mCamera->setViewport(mCtx->swapchain().width(), mCtx->swapchain().height());
+        updateViewport();
         updateSunShadowCascades();
         updateAnimatedInstances();
 
         mRenderSystem->draw({
             .gltfScene = mScene->gpu(),
-            .camera = *mCamera,
+            .camera = activeCamera(),
             .sunShadowCasterCascade = *mSunShadowCascade,
             .sunLight = mSettings.sun,
             .settings = mSettings,
@@ -111,6 +76,63 @@ void Application::run() {
     mCtx->device().waitIdle();
 }
 
+void Application::initContext() {
+    mCtx = std::make_unique<VulkanContext>(std::move(VulkanContext::create(glfw::WindowCreateInfo{
+        .width = WINDOW_WIDTH,
+        .height = WINDOW_HEIGHT,
+        .title = TITLE,
+        .resizable = true,
+        .visible = false,
+    })));
+    mSettings.rendering.asyncCompute = mCtx->computeQueue.queue != VK_NULL_HANDLE;
+
+    Logger::info("Using present mode: " + vk::to_string(mCtx->swapchain().presentMode()));
+
+    mCtx->window().centerOnScreen();
+    glfwShowWindow(mCtx->window());
+}
+
+void Application::initInput() {
+    mInput = std::make_unique<glfw::Input>(mCtx->window());
+
+    if (glfwRawMouseMotionSupported())
+        glfwSetInputMode(mCtx->window(), GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+}
+
+void Application::initScene() {
+    scene::Loader scene_loader{
+        mCtx->allocator(), mCtx->device(), mCtx->physicalDevice(), mCtx->transferQueue, mCtx->mainQueue,
+    };
+
+    mScene = std::make_unique<scene::Scene>(std::move(scene_loader.load(SCENE_FILENAME)));
+    mSunShadowCascade = std::make_unique<ShadowCascade>(
+            mCtx->device(), mCtx->allocator(), mSettings.shadowCascade.resolution, Settings::SHADOW_CASCADE_COUNT
+    );
+    mBlobModel = std::make_unique<blob::Model>(mCtx->allocator(), mCtx->device(), BLOB_RESOLUTION);
+    mSkybox = std::make_unique<Cubemap>(
+            mCtx->allocator(), mCtx->device(), mCtx->transferQueue, mCtx->mainQueue, SKYBOX_FILENAMES
+    );
+}
+
+void Application::initCameras() {
+    mDebugCamera = std::make_unique<Camera>(FOV, NEAR_PLANE, DEFAULT_CAMERA_POSITION, glm::vec3{});
+
+    if (mScene->cpu().animated_camera_exists) {
+        const std::size_t cam_instance_idx = mScene->cpu().animated_camera_index;
+        const glm::mat4 cam_instance_transform = mScene->cpu().instances[cam_instance_idx].transform;
+        mAnimatedCamera = std::make_unique<Camera>(FOV, NEAR_PLANE, cam_instance_transform);
+    } else {
+        mAnimatedCamera = std::make_unique<Camera>(FOV, NEAR_PLANE, DEFAULT_CAMERA_POSITION, glm::vec3{});
+    }
+}
+
+void Application::initAudio() {
+    mAudio = std::make_unique<Audio>();
+    mAmbientMusic = mAudio->createMusic(AMBIENT_SOUND_FILENAME);
+    mAmbientMusic->setLooping(true);
+    mAmbientMusic->setVolume(0.05);
+}
+
 void Application::processInput() {
     if (mInput->isKeyPress(GLFW_KEY_F5))
         reloadRenderSystem();
@@ -118,7 +140,6 @@ void Application::processInput() {
     updateMouseCapture();
 
     if (mInput->isMouseCaptured()) {
-        updateCamera();
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
     } else
         ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
@@ -129,6 +150,21 @@ void Application::advanceAnimationTime() {
         float dt = mInput->timeDelta() * mSettings.animation.playbackSpeed;
         mSettings.animation.time += dt;
     }
+}
+
+void Application::updateAnimatedCamera() {
+    if (!mScene->cpu().animated_camera_exists)
+        return;
+
+    const glm::mat4 anim_cam_transform = mAnimationSampler->sampleAnimatedCameraTransform(mSettings.animation.time);
+    mAnimatedCamera->updateBasedOnTransform(anim_cam_transform);
+}
+
+void Application::updateAudio() {
+    const Camera &camera = activeCamera();
+
+    // if audio L/R is swapped then this should be (0,0,-1)
+    mAudio->update(camera.position, camera.rotationMatrix() * glm::vec3(0, 0, 1));
 }
 
 void Application::drawGui() {
@@ -145,10 +181,20 @@ void Application::drawGui() {
     mSettingsGui->draw(mSettings);
 }
 
+void Application::updateViewport() {
+    const float width = mCtx->swapchain().width();
+    const float height = mCtx->swapchain().height();
+
+    mDebugCamera->setViewport(width, height);
+    mAnimatedCamera->setViewport(width, height);
+}
+
 void Application::updateSunShadowCascades() {
+    const Camera &camera = activeCamera();
+
     mSunShadowCascade->lambda = mSettings.shadowCascade.lambda;
     mSunShadowCascade->distance = mSettings.shadowCascade.distance;
-    mSunShadowCascade->update(mCamera->fov(), mCamera->aspect(), mCamera->viewMatrix(), -mSettings.sun.direction());
+    mSunShadowCascade->update(camera.fov(), camera.aspect(), camera.viewMatrix(), -mSettings.sun.direction());
 
     for (size_t i = 0; i < mSettings.shadowCascades.size(); i++)
         mSettings.shadowCascades[i].applyTo(mSunShadowCascade->cascades()[i]);
@@ -160,7 +206,7 @@ void Application::updateAnimatedInstances() {
 
     if (!animated_instance_transforms.empty()) {
         mRenderSystem->updateInstanceTransforms(mScene->gpu(), animated_instance_transforms);
-        
+
         if (mSettings.animation.moveBlobWithLastInstance) {
             const glm::mat4 &last_anim_transform = animated_instance_transforms.back();
             glm::mat4 blob_model_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(last_anim_transform[3]));
@@ -189,14 +235,17 @@ void Application::updateMouseCapture() {
         mInput->releaseMouse();
 }
 
-void Application::updateCamera() {
+void Application::updateDebugCamera() {
+    if (!(mSettings.camera.debugCamera && mInput->isMouseCaptured()))
+        return;
+
     // Yaw
-    mCamera->angles.y -= mInput->mouseDelta().x * MOUSE_SENSITIVITY;
-    mCamera->angles.y = glm::wrapAngle(mCamera->angles.y);
+    mDebugCamera->angles.y -= mInput->mouseDelta().x * MOUSE_SENSITIVITY;
+    mDebugCamera->angles.y = glm::wrapAngle(mDebugCamera->angles.y);
 
     // Pitch
-    mCamera->angles.x -= mInput->mouseDelta().y * MOUSE_SENSITIVITY;
-    mCamera->angles.x = glm::clamp(mCamera->angles.x, -glm::half_pi<float>(), glm::half_pi<float>());
+    mDebugCamera->angles.x -= mInput->mouseDelta().y * MOUSE_SENSITIVITY;
+    mDebugCamera->angles.x = glm::clamp(mDebugCamera->angles.x, -glm::half_pi<float>(), glm::half_pi<float>());
 
     glm::vec3 move_input = {
         mInput->isKeyDown(GLFW_KEY_D) - mInput->isKeyDown(GLFW_KEY_A),
@@ -205,11 +254,13 @@ void Application::updateCamera() {
     };
 
     glm::vec3 velocity = move_input * BASE_SPEED;
-    velocity = glm::mat3(glm::rotate(glm::mat4(1.0f), mCamera->angles.y, {0, 1, 0})) * velocity;
+    velocity = glm::mat3(glm::rotate(glm::mat4(1.0f), mDebugCamera->angles.y, {0, 1, 0})) * velocity;
 
     if (mInput->isKeyDown(GLFW_KEY_LEFT_SHIFT))
         velocity *= FAST_SPEED_MULTIPLIER;
 
-    mCamera->position += velocity * mInput->timeDelta();
-    mCamera->updateViewMatrix();
+    mDebugCamera->position += velocity * mInput->timeDelta();
+    mDebugCamera->updateViewMatrix();
 }
+
+const Camera &Application::activeCamera() const { return (mSettings.camera.debugCamera ? *mDebugCamera : *mAnimatedCamera); }

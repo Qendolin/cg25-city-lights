@@ -61,7 +61,7 @@ namespace gltf {
         /// <summary>
         /// Flag that indicates if the node is a camera or not.
         /// </summary>
-        bool isCamera = false;
+        bool isAnimatedCamera = false;
     };
 
     /// <summary>

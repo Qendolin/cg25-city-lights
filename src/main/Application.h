@@ -41,9 +41,10 @@ private:
     static constexpr int WINDOW_HEIGHT{900};
     static constexpr float FOV{glm::radians(90.0f)};
     static constexpr float NEAR_PLANE{0.001f};
-    static constexpr glm::vec3 CAMERA_POSITION{0.0f, 1.0f, 5.0f};
+    static constexpr glm::vec3 DEFAULT_CAMERA_POSITION{0.0f, 1.0f, 5.0f};
     static constexpr char TITLE[]{"City Lights"};
     static constexpr char SCENE_FILENAME[]{"resources/scenes/CityTest.glb"};
+    static constexpr char AMBIENT_SOUND_FILENAME[]{"resources/audio/ambiance.ogg"}; 
     static inline const std::array<std::string, 6> SKYBOX_FILENAMES{
         "resources/skybox/px.hdr", "resources/skybox/nx.hdr", "resources/skybox/py.hdr",
         "resources/skybox/ny.hdr", "resources/skybox/pz.hdr", "resources/skybox/nz.hdr",
@@ -57,7 +58,8 @@ private:
     std::unique_ptr<SettingsGui> mSettingsGui;
 
     std::unique_ptr<glfw::Input> mInput;
-    std::unique_ptr<Camera> mCamera;
+    std::unique_ptr<Camera> mDebugCamera;
+    std::unique_ptr<Camera> mAnimatedCamera;
     std::unique_ptr<scene::Scene> mScene;
     std::unique_ptr<ShadowCascade> mSunShadowCascade;
 
@@ -78,12 +80,23 @@ public:
     void run();
 
 private:
+    void initContext();
+    void initInput();
+    void initScene();
+    void initCameras();
+    void initAudio();
+
     void processInput();
     void advanceAnimationTime();
+    void updateAnimatedCamera();
+    void updateAudio();
     void drawGui();
+    void updateViewport();
     void updateSunShadowCascades();
     void updateAnimatedInstances();
     void reloadRenderSystem();
-    void updateCamera();
+    void updateDebugCamera();
     void updateMouseCapture();
+
+    const Camera &activeCamera() const;
 };

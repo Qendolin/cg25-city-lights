@@ -18,7 +18,7 @@ namespace scene {
     };
 
     /// <summary>
-    /// A utility class for sampling instance animations at a specific timestamp.
+    /// A class for sampling instance animations at a specific timestamp.
     /// Becomes invalid if the CPU data of the referenced scene is modified.
     /// </summary>
     class AnimationSampler {
@@ -27,16 +27,18 @@ namespace scene {
         const std::size_t mAnimationCount;
         const std::size_t mFirstAnimInstanceIdx;
         std::vector<InstanceAnimationIndex> mPrevAnimationIndices;
+        InstanceAnimationIndex mPrevCamAnimIndex;
 
     public:
         AnimationSampler(const CpuData &cpu_data);
 
         [[nodiscard]] std::vector<glm::mat4> sampleAnimatedInstanceTransforms(float timestamp);
+        [[nodiscard]] glm::mat4 sampleAnimatedCameraTransform(float timestamp);
 
     private:
-        [[nodiscard]] glm::mat4 sampleAnimation(std::size_t anim_idx, float timestamp);
-        [[nodiscard]] glm::vec3 sampleTranslation(std::size_t anim_idx, float timestamp, const glm::mat4 &default_transform);
-        [[nodiscard]] glm::quat sampleRotation(std::size_t anim_idx, float timestamp, const glm::mat4 &default_transform);
+        [[nodiscard]] glm::mat4 sampleInstanceAnimation(std::size_t anim_idx, float timestamp);
+        [[nodiscard]] glm::vec3 sampleInstanceTranslation(std::size_t anim_idx, float timestamp, const glm::mat4 &default_transform);
+        [[nodiscard]] glm::quat sampleInstanceRotation(std::size_t anim_idx, float timestamp, const glm::mat4 &default_transform);
 
         template<class T, class LerpFn>
         [[nodiscard]] T sampleTrack(

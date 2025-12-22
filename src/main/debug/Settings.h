@@ -7,11 +7,14 @@ class ShadowCaster;
 
 struct Settings {
     static constexpr int SHADOW_CASCADE_COUNT = 5;
+    
     DirectionalLight sun = {.elevation = 40.0f, .azimuth = 10.0f, .color = glm::vec3{1.0f, 1.0f, 1.0f}, .power = 15.0f};
+    
     struct Sky {
         float exposure = 1.49f;
         glm::vec3 tint = glm::vec3(1.0f);
     } sky;
+    
     struct Shadow {
         float extrusionBias = -0.5f;
         float normalBias = 7.0f;
@@ -23,7 +26,9 @@ struct Settings {
 
         void applyTo(ShadowCaster &caster) const;
     };
+    
     std::array<Shadow, SHADOW_CASCADE_COUNT> shadowCascades;
+    
     struct ShadowCascade {
         float lambda = 0.9f;
         float distance = 64.0f;
@@ -41,6 +46,7 @@ struct Settings {
         float power = 1.2f;
         float saturation = 1.0f;
     } agx;
+    
     struct Rendering {
         glm::vec3 ambient = glm::vec3(0.28f, 0.315, 0.385);
         bool enableFrustumCulling = true;
@@ -51,6 +57,7 @@ struct Settings {
         bool asyncCompute = true;
         int msaa = 4;
     } rendering;
+    
     struct SSAO {
         bool update = true;
         bool halfResolution = true;
@@ -62,6 +69,7 @@ struct Settings {
         float bias = 0.0f;
         float filterSharpness = 20.0f;
     } ssao;
+    
     struct Animation {
         bool renderBlob = true;
         bool moveBlobWithLastInstance = false;
@@ -69,6 +77,10 @@ struct Settings {
         float time = 0.0f;
         bool pause = false;
     } animation;
+
+    struct Camera {
+        bool debugCamera = true;
+    } camera;
 
     Settings() {
         shadowCascades[0] = {

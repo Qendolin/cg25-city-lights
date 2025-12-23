@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "debug/Settings.h"
-#include "scene/AnimationSampler.h"
+#include "animation/InstanceAnimationSampler.h"
 
 
 class Sound;
@@ -72,7 +72,7 @@ private:
     std::unique_ptr<Audio> mAudio;
     std::unique_ptr<Music> mAmbientMusic;
 
-    std::unique_ptr<scene::AnimationSampler> mAnimationSampler;
+    std::unique_ptr<InstanceAnimationSampler> mInstanceAnimationSampler;
 
 public:
     Application();
@@ -92,6 +92,7 @@ private:
     void updateAnimatedCamera();
     void updateBlob();
     void updateAudio();
+    void updateAnimatedVariables();
     void drawGui();
     void updateViewport();
     void updateSunShadowCascades();

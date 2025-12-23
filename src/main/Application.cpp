@@ -18,7 +18,6 @@
 #include "entity/ShadowCaster.h"
 #include "glfw/Input.h"
 #include "imgui/ImGui.h"
-#include "scene/AnimationSampler.h"
 #include "scene/Gltf.h"
 #include "scene/Loader.h"
 #include "scene/Scene.h"
@@ -34,7 +33,7 @@ Application::Application() {
     initCameras();
     initAudio();
     mDebugFrameTimes = std::make_unique<FrameTimes>();
-    mAnimationSampler = std::make_unique<scene::AnimationSampler>(mScene->cpu());
+    mInstanceAnimationSampler = std::make_unique<InstanceAnimationSampler>(mScene->cpu());
     mRenderSystem->recreate(mSettings);
 }
 
@@ -51,6 +50,7 @@ void Application::run() {
         updateAnimatedCamera();
         updateBlob();
         updateAudio();
+        updateAnimatedVariables();
 
         mRenderSystem->begin();
         mRenderSystem->imGuiBackend().beginFrame();
@@ -167,7 +167,7 @@ void Application::updateAnimatedCamera() {
     if (!mScene->cpu().animated_camera_exists)
         return;
 
-    const glm::mat4 anim_cam_transform = mAnimationSampler->sampleAnimatedCameraTransform(mSettings.animation.time);
+    const glm::mat4 anim_cam_transform = mInstanceAnimationSampler->sampleAnimatedCameraTransform(mSettings.animation.time);
     mAnimatedCamera->updateBasedOnTransform(anim_cam_transform);
 }
 
@@ -175,14 +175,14 @@ void Application::updateBlob() {
     if (!mScene->cpu().animated_blob_exists || !mSettings.animation.animateBlobNode)
         return;
 
-    const glm::mat4 anim_blob_transform = mAnimationSampler->sampleAnimatedBlobTransform(mSettings.animation.time);
+    const glm::mat4 anim_blob_transform = mInstanceAnimationSampler->sampleAnimatedBlobTransform(mSettings.animation.time);
     mBlobModel->setTransform(anim_blob_transform);
 
     const float translation_y = anim_blob_transform[3][1];
-    
+
     // Keep the ground level (for drop effects) at y = 0 in world space
     mBlobModel->groundLevel = -translation_y;
-    
+
     // Make the blob smaller when it's closer to the ground, so that it doesn't clip
     mBlobModel->size = std::min(std::max(0.f, translation_y), 1.f);
 }
@@ -191,6 +191,10 @@ void Application::updateAudio() {
     const Camera &camera = activeCamera();
     // if audio L/R is swapped then this should be (0,0,-1)
     mAudio->update(camera.position, camera.rotationMatrix() * glm::vec3(0, 0, 1));
+}
+
+void Application::updateAnimatedVariables() {
+
 }
 
 void Application::drawGui() {
@@ -228,7 +232,7 @@ void Application::updateSunShadowCascades() {
 
 void Application::updateAnimatedInstances() {
     std::vector<glm::mat4> animated_instance_transforms =
-            mAnimationSampler->sampleAnimatedInstanceTransforms(mSettings.animation.time);
+            mInstanceAnimationSampler->sampleAnimatedInstanceTransforms(mSettings.animation.time);
 
     if (!animated_instance_transforms.empty())
         mRenderSystem->updateInstanceTransforms(mScene->gpu(), animated_instance_transforms);

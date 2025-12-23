@@ -1,6 +1,7 @@
 #include "Application.h"
 
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.inl>
 #include <glm/gtx/fast_trigonometry.hpp>
@@ -176,6 +177,14 @@ void Application::updateBlob() {
 
     const glm::mat4 anim_blob_transform = mAnimationSampler->sampleAnimatedBlobTransform(mSettings.animation.time);
     mBlobModel->setTransform(anim_blob_transform);
+
+    const float translation_y = anim_blob_transform[3][1];
+    
+    // Keep the ground level (for drop effects) at y = 0 in world space
+    mBlobModel->groundLevel = -translation_y;
+    
+    // Make the blob smaller when it's closer to the ground, so that it doesn't clip
+    mBlobModel->size = std::min(std::max(0.f, translation_y), 1.f);
 }
 
 void Application::updateAudio() {

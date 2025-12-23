@@ -124,12 +124,14 @@ void BlobRenderer::computeVertices(
 
     const int resolution = blobModel.getResolution();
 
-    ComputePushConstant pc{};
-    pc.resolution = resolution;
-    pc.time = timestamp;
+    ComputePushConstant push{};
+    push.resolution = resolution;
+    push.time = timestamp;
+    push.groundLevel = blobModel.groundLevel;
+    push.size = blobModel.size;
 
     commandBuffer.pushConstants(
-            *mComputePipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(ComputePushConstant), &pc
+            *mComputePipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(ComputePushConstant), &push
     );
 
     uint32_t groups = (resolution + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE;

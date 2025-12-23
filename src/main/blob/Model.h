@@ -10,6 +10,10 @@
 namespace blob {
 
     class Model {
+    public:
+        float groundLevel{-1.f};
+        float size{1.f};
+    
     private:
         static constexpr int MAX_VERTICES_PER_CELL = 12;
         static constexpr float TWO_PI = 6.2831855f;

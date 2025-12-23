@@ -2,17 +2,19 @@
 
 #include "blob_lookup.glsl"
 
-layout(local_size_x = 8, local_size_y = 4, local_size_z = 4) in;
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(push_constant) uniform PushConsts {
     int resolution;
     float time;
+    float groundLevel;
+    float size;
 } pc;
 
 struct Vertex {
-    vec4 position;   // .w = 1.0
-    vec4 normal;     // .xyz = normal, .w = 0.0
-    vec4 tangent;    // .xyz = tangent, .w = handedness (+1 or -1)
+    vec4 position;
+    vec4 normal;
+    vec4 tangent; // .w = handedness (+1 or -1)
 };
 
 layout(set = 0, binding = 0, std430) buffer Vertices {
@@ -26,14 +28,14 @@ layout(set = 0, binding = 1, std430) buffer DrawArgs {
     uint firstInstance;
 } drawArgs;
 
-// Omit lookup tables: edgeVertexIndices, edgeTable, triangleTable
-
 const float INTERVAL_START = -1.0;
 const float INTERVAL_END   =  1.0;
 const float ISO_VALUE      =  0.0;
-const float EPS            =  1e-4;  // Slightly larger to avoid numerical issues
+const float EPS            =  1e-4;
 const float TWO_PI         =  6.28318530718;
 const float PI             =  3.14159265359;
+const float SDF_CENTER_Y   =  0.3;
+const float SDF_PULSE_AMP  =  0.2;
 
 float stepSize;
 
@@ -50,43 +52,53 @@ IntersectionPoint intersectionPoints[12];
 shared uint groupVertexCount;
 shared uint groupGlobalBaseIndex;
 
-float sphereSdf(vec3 p, vec3 c, float r) {
-    return length(p - c) - r;
+float sphereSdf(vec3 point, vec3 center, float size) {
+    return length(point - center) - size;
 }
 
-float smoothMin(float a, float b, float k) {
-    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
-    return mix(b, a, h) - k * h * (1.0 - h);
+float smoothMin(float a, float b, float smoothing) {
+    float h = clamp(0.5 + 0.5 * (b - a) / smoothing, 0.0, 1.0);
+    return mix(b, a, h) - smoothing * h * (1.0 - h);
 }
 
-float sdf(vec3 p) {
-    float t = min(pc.time, TWO_PI - pc.time);  // Loop time smoothly over 0 to 2π
+float sdf(vec3 point) {
+    float ground_cutoff = point.y - pc.groundLevel + 0.05; // Add a small delta to avoid clipping
+    point = point / pc.size;
+    float timeLooped = mod(pc.time, PI);
 
-    vec3 core = vec3(0.0, 0.3, 0.0);
-    float coreR = 0.2 + t / 24.0;
-    float s0 = sphereSdf(p, core, coreR);
+    vec3 centerCore = vec3(0 , SDF_CENTER_Y, 0);
+    float sizeCore = 0.2 + SDF_PULSE_AMP * sin(timeLooped * 2.0);
+    float core = sphereSdf(point, centerCore, sizeCore);
 
-    float t2 = pc.time * 2.0;
-    float t4 = pc.time * 4.0;
+    float time2 = timeLooped * 2.;
+    float time4 = timeLooped * 4.;
+    
+    // Spheres rotating around core sphere to simulate blobbiness
+    float radius1 = 0.25;
+    vec3 center1 = vec3(radius1 * cos(time2), SDF_CENTER_Y, radius1 * sin(time2));
+    float s1 = sphereSdf(point, center1, 0.2);
 
-    vec3 c1 = vec3(0.25 * cos(t2), 0.3, 0.25 * sin(t2));
-    float s1 = sphereSdf(p, c1, 0.2);
+    float radius2 = 0.25;
+    vec3 center2 = vec3(radius2 * cos(time2), radius2 * sin(time2) + SDF_CENTER_Y - 0.05, 0);
+    float s2 = sphereSdf(point, center2, 0.2);
+    
+    float radius3 = 0.30;
+    vec3 center3 = vec3(0., radius3 * cos(-time4) + SDF_CENTER_Y - 0.05, radius3 * sin(-time4));
+    float s3 = sphereSdf(point, center3, 0.2);
 
-    vec3 c2 = vec3(0.25 * cos(t2 + PI), 0.25 * sin(t2) + 0.3 - 0.05, 0.0);
-    float s2 = sphereSdf(p, c2, 0.2);
+    // TODO: Re-enable dripping effect propertly if there is sufficient time
+    // Simulates dripping effect
+    // vec3 centerDrop = vec3(0., SDF_CENTER_Y - timeLooped, 0.0);
+    // float drop = sphereSdf(point, centerDrop, 0.1);
 
-    vec3 c3 = vec3(0.0, 0.30 * cos(-t4) + 0.3 - 0.05, 0.30 * sin(-t4));
-    float s3 = sphereSdf(p, c3, 0.2);
-
-    vec3 drip = vec3(0.0, 0.3 - t, 0.0);
-    float s4 = sphereSdf(p, drip, 0.1);
-
-    float val = smoothMin(s0, s1, 0.4);
+    // Smooth Min
+    float val = smoothMin(core, s1, 0.4);
     val = smoothMin(val, s2, 0.4);
     val = smoothMin(val, s3, 0.4);
-    val = smoothMin(val, s4, 0.4);
+    // val = smoothMin(val, drop, 0.4);
 
-    return smoothMin(val, p.y + 1.05, 0.4);  // Ground plane
+    // Simulate ground - assuming the sdf sampling volume ends at y = 1
+    return smoothMin(val, ground_cutoff, 0.4);
 }
 
 void setCellVertices(int i, int j, int k) {
@@ -149,7 +161,7 @@ void calculateBoxUVsAndTangent(vec3 p, vec3 n, out vec2 uv, out vec4 tangent) {
         // X-Axis projection (Left/Right)
         // Tangent is along Z
         float signX = sign(n.x);
-        uv = vec2(-signX * p.z, p.y) * 0.5 + 0.5; // Scale UVs as needed
+        uv = vec2(-signX * p.z, p.y) * 0.5 + 0.5;
         tangent = vec4(0.0, 0.0, -signX, 1.0);    // Tangent points along Z
     }
     else if (absN.y > absN.x && absN.y > absN.z) {

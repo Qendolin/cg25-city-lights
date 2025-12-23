@@ -38,6 +38,8 @@ public:
     struct ComputePushConstant {
         int resolution;
         float time;
+        float groundLevel;
+        float size;
     };
 
     struct VertexFragmentPushConstant {

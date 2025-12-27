@@ -73,6 +73,7 @@ struct Settings {
     struct Animation {
         bool renderBlob = true;
         bool animateBlobNode = true;
+        bool animateVariables = true;
         float playbackSpeed = 1.0f;
         float time = 0.0f;
         bool pause = false;

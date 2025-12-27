@@ -108,6 +108,7 @@ void SettingsGui::draw(Settings &settings) {
         PushID("animation");
         Checkbox("Render Blob", &settings.animation.renderBlob);
         Checkbox("Animate Blob Node", &settings.animation.animateBlobNode);
+        Checkbox("Animate Variables", &settings.animation.animateVariables);
         SliderFloat("Playback Speed", &settings.animation.playbackSpeed, 0.0f, 4.0f);
         SliderFloat("Timeline", &settings.animation.time, 0.0f, 60.0f);
         Checkbox("Pause Animation", &settings.animation.pause);

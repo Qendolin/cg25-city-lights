@@ -32,6 +32,7 @@ Application::Application() {
     initScene();
     initCameras();
     initAudio();
+    initVariableAnimations();
     mDebugFrameTimes = std::make_unique<FrameTimes>();
     mInstanceAnimationSampler = std::make_unique<InstanceAnimationSampler>(mScene->cpu());
     mRenderSystem->recreate(mSettings);
@@ -144,6 +145,37 @@ void Application::initAudio() {
     mAmbientMusic->setVolume(0.05);
 }
 
+void Application::initVariableAnimations() {
+    mVariableAnimationController.createTrack(mSettings.sky.exposure);
+    mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(0.f, 1.49f);
+    mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(12.f, 1.49f);
+    mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(14.f, 0.f);
+    mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(15.5f, -4.5f);
+
+    mVariableAnimationController.createTrack(mSettings.sun.color);
+    mVariableAnimationController.track(mSettings.sun.color).addKeyframe(0.f, glm::vec3{1.f});
+    mVariableAnimationController.track(mSettings.sun.color).addKeyframe(12.f, glm::vec3{1.f});
+    mVariableAnimationController.track(mSettings.sun.color).addKeyframe(13.5f, glm::vec3{1.f});
+    mVariableAnimationController.track(mSettings.sun.color).addKeyframe(15.f, glm::vec3{1.f, 0.6f, 0.6f});
+
+    mVariableAnimationController.createTrack(mSettings.sun.power);
+    mVariableAnimationController.track(mSettings.sun.power).addKeyframe(0.f, 15.0f);
+    mVariableAnimationController.track(mSettings.sun.power).addKeyframe(12.f, 15.0f);
+    mVariableAnimationController.track(mSettings.sun.power).addKeyframe(15.f, 10.0f);
+    mVariableAnimationController.track(mSettings.sun.power).addKeyframe(16.f, 0.0f);
+
+    mVariableAnimationController.createTrack(mSettings.sun.elevation);
+    mVariableAnimationController.track(mSettings.sun.elevation).addKeyframe(0.f, 40.f);
+    mVariableAnimationController.track(mSettings.sun.elevation).addKeyframe(12.f, 40.f);
+    mVariableAnimationController.track(mSettings.sun.elevation).addKeyframe(18.f, 0.0f);
+
+    mVariableAnimationController.createTrack(mSettings.rendering.ambient);
+    mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(0.f, glm::vec3{0.28f, 0.315, 0.385});
+    mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(12.f, glm::vec3{0.28f, 0.315, 0.385});
+    mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(15.f, glm::vec3{0.056f, 0.063, 0.077});
+    mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(16.f, glm::vec3{0.028f, 0.032, 0.039});
+}
+
 void Application::processInput() {
     if (mInput->isKeyPress(GLFW_KEY_F5))
         reloadRenderSystem();
@@ -194,7 +226,8 @@ void Application::updateAudio() {
 }
 
 void Application::updateAnimatedVariables() {
-
+    if (mSettings.animation.animateVariables)
+        mVariableAnimationController.update(mSettings.animation.time);
 }
 
 void Application::drawGui() {

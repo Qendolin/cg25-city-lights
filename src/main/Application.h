@@ -6,9 +6,9 @@
 #include <string>
 #include <vector>
 
-#include "debug/Settings.h"
 #include "animation/InstanceAnimationSampler.h"
-
+#include "animation/VariableAnimationController.h"
+#include "debug/Settings.h"
 
 class Sound;
 class Audio;
@@ -45,7 +45,7 @@ private:
     static constexpr glm::vec3 DEFAULT_BLOB_POSITION{0.0f, 1.0f, 0.0f};
     static constexpr char TITLE[]{"City Lights"};
     static constexpr char SCENE_FILENAME[]{"resources/scenes/demo_city_scene.glb"};
-    static constexpr char AMBIENT_SOUND_FILENAME[]{"resources/audio/ambiance.ogg"}; 
+    static constexpr char AMBIENT_SOUND_FILENAME[]{"resources/audio/ambiance.ogg"};
     static inline const std::array<std::string, 6> SKYBOX_FILENAMES{
         "resources/skybox/px.hdr", "resources/skybox/nx.hdr", "resources/skybox/py.hdr",
         "resources/skybox/ny.hdr", "resources/skybox/pz.hdr", "resources/skybox/nz.hdr",
@@ -73,6 +73,7 @@ private:
     std::unique_ptr<Music> mAmbientMusic;
 
     std::unique_ptr<InstanceAnimationSampler> mInstanceAnimationSampler;
+    VariableAnimationController mVariableAnimationController{};
 
 public:
     Application();
@@ -86,6 +87,7 @@ private:
     void initScene();
     void initCameras();
     void initAudio();
+    void initVariableAnimations();
 
     void processInput();
     void advanceAnimationTime();

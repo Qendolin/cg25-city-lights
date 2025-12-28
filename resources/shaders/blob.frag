@@ -9,22 +9,23 @@ layout (location = 2) in mat3 in_tbn;
 
 layout (location = 0) out vec4 out_color;
 
-layout(push_constant) uniform Push {
+layout (set = 0, binding = 0) uniform sampler2D uStoredHdrColorImage;
+
+layout(std140, set = 0, binding = 1) uniform ShaderParams {
 	mat4 projectionMatrix;
 	mat4 viewMatrix;
 	mat4 modelMatrix;
 	vec4 camera;
 	vec2 invViewportSize;
-} push;
+} uParams;
 
-layout (set = 0, binding = 0) uniform sampler2D uStoredHdrColorImage;
 
 const vec3 DIR_TO_LIGHT = normalize(vec3(0.0, 1.0, 1.0));
 const vec3 ALBEDO = vec3(0., 0.8, 0.);
 
 void main() {
 
-	vec3 V = -normalize(in_position_ws - push.camera.xyz);
+	vec3 V = -normalize(in_position_ws - uParams.camera.xyz);
 
 	int noise_style = 0;
 	float noise_scale = 2.0;
@@ -43,14 +44,14 @@ void main() {
 	float n_dot_h = max(dot(N, H), 0.0);
 	float specular = pow(n_dot_h, 100.0);
 
-	vec2 sample_uv = gl_FragCoord.xy * push.invViewportSize;
+	vec2 sample_uv = gl_FragCoord.xy * uParams.invViewportSize;
 
 	// Refraction (approximate, ad hoc)
 	{
 		sample_uv = sample_uv * 2.0 - 1.0;
 
 		vec3 refracted_ws = refract(V, N, 1.0/1.5);
-		vec3 refracted = transpose(mat3(push.modelMatrix)) * refracted_ws;
+		vec3 refracted = transpose(mat3(uParams.modelMatrix)) * refracted_ws;
 		sample_uv += refracted_ws.xy * 0.2;
 
 		sample_uv = sample_uv * 0.5 + 0.5;

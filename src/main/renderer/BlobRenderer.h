@@ -24,13 +24,23 @@ public:
         }
     };
 
+
+    struct DrawInlineUniformBlock {
+        glm::mat4 projectionMatrix;
+        glm::mat4 viewMatrix;
+        glm::mat4 modelMatrix;
+        glm::vec4 camera;
+        glm::vec2 invViewportSize;
+    };
+
     struct DrawDescriptorLayout : DescriptorSetLayout {
         static constexpr CombinedImageSamplerBinding COLOR_IMAGE_BINDING{0, vk::ShaderStageFlagBits::eFragment};
+        static constexpr InlineUniformBlockBinding SHADER_PARAMS_BINDING{1, vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eVertex, sizeof(DrawInlineUniformBlock)};
 
         DrawDescriptorLayout() = default;
 
         explicit DrawDescriptorLayout(const vk::Device &device) {
-            create(device, {}, COLOR_IMAGE_BINDING);
+            create(device, {}, COLOR_IMAGE_BINDING, SHADER_PARAMS_BINDING);
             util::setDebugName(device, vk::DescriptorSetLayout(*this), "blob_renderer_draw_descriptor_layout");
         }
     };
@@ -40,14 +50,6 @@ public:
         float time;
         float groundLevel;
         float size;
-    };
-
-    struct VertexFragmentPushConstant {
-        glm::mat4 projectionMatrix;
-        glm::mat4 viewMatrix;
-        glm::mat4 modelMatrix;
-        glm::vec4 camera;
-        glm::vec2 invViewportSize;
     };
 
 private:

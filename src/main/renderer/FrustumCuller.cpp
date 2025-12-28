@@ -19,7 +19,7 @@ UnmanagedBuffer FrustumCuller::execute(
         const vk::CommandBuffer &cmd_buf,
         const scene::GpuData &gpu_data,
         const glm::mat4 &view_projection_matrix,
-        const glm::mat4* exclude_frustum,
+        const glm::mat4 *exclude_frustum,
         float min_world_radius
 ) const {
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eCompute, *mPipeline.pipeline);
@@ -31,14 +31,19 @@ UnmanagedBuffer FrustumCuller::execute(
                                                     vk::BufferUsageFlagBits::eIndirectBuffer
     );
     util::setDebugName(device, output_draw_command_buffer.buffer, "culled_draw_commands");
-    output_draw_command_buffer.barrier(
-            cmd_buf,
-            BufferResourceAccess::IndirectCommandRead,
-            BufferResourceAccess::TransferWrite
-    );
+    output_draw_command_buffer.barrier(cmd_buf, BufferResourceAccess::IndirectCommandRead, BufferResourceAccess::TransferWrite);
     // Count is placed at the end of the buffer
     cmd_buf.fillBuffer(output_draw_command_buffer, draw_command_buffer_final_size - 32, sizeof(uint32_t), 0);
     output_draw_command_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderStorageReadWrite);
+
+    // World space frustum planes
+    std::array<glm::vec4, 6> frustum_planes = util::extractFrustumPlanes(view_projection_matrix);
+    ShaderParamsInlineUniformBlock shader_params = {.planes = frustum_planes, .minWorldRadius = min_world_radius};
+
+    if (exclude_frustum) {
+        shader_params.excludePlanes = util::extractFrustumPlanes(*exclude_frustum);
+        shader_params.enableExcludePlanes = true;
+    }
 
     DescriptorSet descriptor_set = desc_alloc.allocate(mShaderParamsDescriptorLayout);
     device.updateDescriptorSets(
@@ -55,24 +60,19 @@ UnmanagedBuffer FrustumCuller::execute(
                      vk::DescriptorBufferInfo{
                          .buffer = output_draw_command_buffer, .offset = draw_command_buffer_final_size - 32, .range = sizeof(uint32_t)
                      }
+             ),
+             descriptor_set.write(
+                     ShaderParamsDescriptorLayout::ShaderParams,
+                     vk::WriteDescriptorSetInlineUniformBlock{
+                         .dataSize = sizeof(shader_params),
+                         .pData = &shader_params,
+                     }
              )},
             {}
     );
     cmd_buf.bindDescriptorSets(
             vk::PipelineBindPoint::eCompute, *mPipeline.layout, 0, {gpu_data.sceneDescriptor, descriptor_set}, {}
     );
-
-
-    // World space frustum planes
-    std::array<glm::vec4, 6> frustum_planes = util::extractFrustumPlanes(view_projection_matrix);
-    ShaderParamsPushConstants push_constants = {.planes = frustum_planes, .minWorldRadius = min_world_radius};
-
-    if (exclude_frustum) {
-        push_constants.excludePlanes = util::extractFrustumPlanes(*exclude_frustum);
-        push_constants.enableExcludePlanes = true;
-    }
-
-    cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(push_constants), &push_constants);
 
     cmd_buf.dispatch(util::divCeil(gpu_data.drawCommandCount, 64u), 1u, 1u);
 
@@ -85,9 +85,7 @@ void FrustumCuller::createPipeline(const vk::Device &device, const ShaderLoader 
     auto scene_descriptor_layout = scene::SceneDescriptorLayout(device);
     ComputePipelineConfig pipeline_config = {
         .descriptorSetLayouts = {scene_descriptor_layout, mShaderParamsDescriptorLayout},
-        .pushConstants = {vk::PushConstantRange{
-            .stageFlags = vk::ShaderStageFlagBits::eCompute, .offset = 0, .size = sizeof(ShaderParamsPushConstants)
-        }}
+        .pushConstants = {}
     };
 
     mPipeline = createComputePipeline(device, pipeline_config, *comp_sh);

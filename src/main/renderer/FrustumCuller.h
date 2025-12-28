@@ -18,26 +18,28 @@ class ShaderLoader;
 class FrustumCuller {
 
 public:
-    struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
-        static constexpr StorageBufferBinding InputDrawCommandBuffer{0, vk::ShaderStageFlagBits::eCompute};
-        static constexpr StorageBufferBinding OutputDrawCommandBuffer{1, vk::ShaderStageFlagBits::eCompute};
-        static constexpr StorageBufferBinding DrawCommandCountBuffer{2, vk::ShaderStageFlagBits::eCompute};
 
-        ShaderParamsDescriptorLayout() = default;
-
-        explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
-            create(device, {}, InputDrawCommandBuffer, OutputDrawCommandBuffer, DrawCommandCountBuffer);
-            util::setDebugName(device, vk::DescriptorSetLayout(*this), "frustum_culler_descriptor_layout");
-        }
-    };
-
-    struct alignas(16) ShaderParamsPushConstants {
+    struct alignas(16) ShaderParamsInlineUniformBlock {
         std::array<glm::vec4, 6> planes = {};
         std::array<glm::vec4, 6> excludePlanes = {};
         float minWorldRadius = 0.0f;
         glm::uint enableExcludePlanes = 0;
-        float pad0;
-        float pad1;
+        float pad0 = 0;
+        float pad1 = 0;
+    };
+
+    struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
+        static constexpr StorageBufferBinding InputDrawCommandBuffer{0, vk::ShaderStageFlagBits::eCompute};
+        static constexpr StorageBufferBinding OutputDrawCommandBuffer{1, vk::ShaderStageFlagBits::eCompute};
+        static constexpr StorageBufferBinding DrawCommandCountBuffer{2, vk::ShaderStageFlagBits::eCompute};
+        static constexpr InlineUniformBlockBinding ShaderParams{3, vk::ShaderStageFlagBits::eCompute, sizeof(ShaderParamsInlineUniformBlock)};
+
+        ShaderParamsDescriptorLayout() = default;
+
+        explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
+            create(device, {}, InputDrawCommandBuffer, OutputDrawCommandBuffer, DrawCommandCountBuffer, ShaderParams);
+            util::setDebugName(device, vk::DescriptorSetLayout(*this), "frustum_culler_descriptor_layout");
+        }
     };
 
     ~FrustumCuller();

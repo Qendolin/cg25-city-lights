@@ -51,14 +51,11 @@ void BlobRenderer::createGraphicsPipeline_(
     UniqueCompiledShaderStage vertShader = shaderLoader.loadFromSource(device, "resources/shaders/blob.vert");
     UniqueCompiledShaderStage fragShader = shaderLoader.loadFromSource(device, "resources/shaders/blob.frag");
 
-    vk::PushConstantRange pushConstantRange{
-        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(VertexFragmentPushConstant)
-    };
 
     GraphicsPipelineConfig pipelineConfig{};
     pipelineConfig.vertexInput = {blob::VertexData::getBindingDescriptions(), blob::VertexData::getAttributeDescriptions()};
     pipelineConfig.descriptorSetLayouts = {mDrawDescriptorLayout};
-    pipelineConfig.pushConstants = {pushConstantRange};
+    pipelineConfig.pushConstants = {};
     pipelineConfig.attachments = {framebuffer.colorFormats(), framebuffer.depthFormat()};
     pipelineConfig.rasterizer.samples = framebuffer.depthAttachment.image().info.samples;
     pipelineConfig.cull.mode = vk::CullModeFlagBits::eNone;
@@ -185,29 +182,32 @@ void BlobRenderer::renderVertices(
     framebuffer.colorAttachments[0].image().barrier(commandBuffer, ImageResourceAccess::ColorAttachmentWrite);
     storedColorImage.image().barrier(commandBuffer, ImageResourceAccess::FragmentShaderReadOptimal);
 
+    DrawInlineUniformBlock params{};
+    params.projectionMatrix = camera.projectionMatrix();
+    params.viewMatrix = camera.viewMatrix();
+    params.modelMatrix = blobModel.getTransform();
+    params.camera = glm::vec4(camera.position, 0.0);
+    params.invViewportSize = 1.0f / glm::vec2(framebuffer.area().extent.width, framebuffer.area().extent.height);
+
     device.updateDescriptorSets(
             {set.write(
-                    DrawDescriptorLayout::COLOR_IMAGE_BINDING,
-                    {
-                        .sampler = *mSampler,
-                        .imageView = storedColorImage,
-                        .imageLayout = ImageResourceAccess::FragmentShaderReadOptimal.layout,
-                    }
-            )},
+                     DrawDescriptorLayout::COLOR_IMAGE_BINDING,
+                     {
+                         .sampler = *mSampler,
+                         .imageView = storedColorImage,
+                         .imageLayout = ImageResourceAccess::FragmentShaderReadOptimal.layout,
+                     }
+             ),
+             set.write(
+                     DrawDescriptorLayout::SHADER_PARAMS_BINDING,
+                     {
+                         .dataSize = sizeof(params),
+                         .pData = &params,
+                     }
+             )},
             {}
     );
 
-    VertexFragmentPushConstant push{};
-    push.projectionMatrix = camera.projectionMatrix();
-    push.viewMatrix = camera.viewMatrix();
-    push.modelMatrix = blobModel.getTransform();
-    push.camera = glm::vec4(camera.position, 0.0);
-    push.invViewportSize = 1.0f / glm::vec2(framebuffer.area().extent.width, framebuffer.area().extent.height);
-
-    commandBuffer.pushConstants(
-            *mGraphicsPipeline.layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0,
-            sizeof(VertexFragmentPushConstant), &push
-    );
 
     commandBuffer.beginRendering(framebuffer.renderingInfo({
         .enableColorAttachments = true,

@@ -13,12 +13,6 @@ layout(local_size_x = LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
 // ------------------------------------------------------------------
 // STRUCTS & INPUTS
 // ------------------------------------------------------------------
-layout (push_constant) uniform ShaderParamConstants {
-    vec4 planes[6];
-    vec4 excludePlanes[6];
-    float minWorldRadius;
-    uint enableExcludePlanes;
-} cParams;
 
 struct BoundingBox {
     vec4 min;
@@ -54,6 +48,13 @@ layout(std430, set = 1, binding = 2) volatile buffer CountBuffer {
     uint count;
 } uDrawCount;
 
+layout (std140, set = 1, binding = 3) uniform ShaderParams {
+    vec4 planes[6];
+    vec4 excludePlanes[6];
+    float minWorldRadius;
+    uint enableExcludePlanes;
+} uParams;
+
 // ------------------------------------------------------------------
 // SHARED MEMORY
 // ------------------------------------------------------------------
@@ -79,7 +80,7 @@ float computeWorldRadius(vec3 extent_local, mat4 model)
 // This test only makes sense for orthographic projections
 bool isTooSmallWorldSpace(vec3 extent_local, mat4 model) {
     float radius = computeWorldRadius(extent_local, model);
-    return radius < cParams.minWorldRadius;
+    return radius < uParams.minWorldRadius;
 }
 
 bool isObbFullyInsideFrustum(vec3 center, vec3 extent, mat4 model, vec4 planes[6]) {
@@ -144,7 +145,7 @@ bool checkVisibility(uint id) {
     vec3 extent_local = (box.max.xyz - box.min.xyz) * 0.5;
 
     // Fast test to reject objects that are too small. Used for shadow map culling
-    if (cParams.minWorldRadius >= 0 && isTooSmallWorldSpace(extent_local, model)){
+    if (uParams.minWorldRadius >= 0 && isTooSmallWorldSpace(extent_local, model)){
         return false;
     }
 
@@ -153,13 +154,13 @@ bool checkVisibility(uint id) {
 
     // Exclude objects fully inside exclude frustum
     // Used for CSM to exclude all objects fully contained in the previous cascade
-    if (cParams.enableExcludePlanes != 0 && isObbFullyInsideFrustum(center_world, extent_local, model, cParams.excludePlanes)) {
+    if (uParams.enableExcludePlanes != 0 && isObbFullyInsideFrustum(center_world, extent_local, model, uParams.excludePlanes)) {
         return false;
     }
 
     // Test against all 6 planes
     for (int i = 0; i < 6; i++) {
-        vec4 plane = cParams.planes[i];
+        vec4 plane = uParams.planes[i];
         if (isObbOutsidePlane(center_world, extent_local, plane.xyz, plane.w, model)) {
             return false;// Culled (Invisible)
         }

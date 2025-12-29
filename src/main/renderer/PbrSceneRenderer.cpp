@@ -125,7 +125,7 @@ void PbrSceneRenderer::execute(
         .ambient = glm::vec4(settings.rendering.ambient, 1.0),
     };
 
-    tile_light_indices_buffer.barrier(cmd_buf, BufferResourceAccess::GraphicsShaderUniformRead);
+    tile_light_indices_buffer.barrier(cmd_buf, BufferResourceAccess::GraphicsShaderStorageRead);
 
     auto descriptor_set = desc_alloc.allocate(mShaderParamsDescriptorLayout);
     ao_result.image().barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
@@ -259,4 +259,5 @@ void PbrSceneRenderer::createPipeline(const vk::Device &device, const ShaderLoad
     pipeline_config.rasterizer.samples = fb.depthAttachment.image().info.samples;
 
     mPipeline = createGraphicsPipeline(device, pipeline_config, {*vert_sh, *frag_sh});
+    util::setDebugName(device, *mPipeline.pipeline, "pbr_scene");
 }

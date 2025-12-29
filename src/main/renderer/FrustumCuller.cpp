@@ -36,6 +36,8 @@ UnmanagedBuffer FrustumCuller::execute(
     cmd_buf.fillBuffer(output_draw_command_buffer, draw_command_buffer_final_size - 32, sizeof(uint32_t), 0);
     output_draw_command_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderStorageReadWrite);
 
+    gpu_data.instances.barrier(cmd_buf, BufferResourceAccess::ComputeShaderStorageRead);
+
     // World space frustum planes
     std::array<glm::vec4, 6> frustum_planes = util::extractFrustumPlanes(view_projection_matrix);
     ShaderParamsInlineUniformBlock shader_params = {.planes = frustum_planes, .minWorldRadius = min_world_radius};
@@ -89,4 +91,5 @@ void FrustumCuller::createPipeline(const vk::Device &device, const ShaderLoader 
     };
 
     mPipeline = createComputePipeline(device, pipeline_config, *comp_sh);
+    util::setDebugName(device, *mPipeline.pipeline, "frustum_cull");
 }

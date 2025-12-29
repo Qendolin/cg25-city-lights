@@ -184,6 +184,7 @@ void SSAORenderer::createPipeline(const vk::Device &device, const ShaderLoader &
     };
     auto specialization_constants = SpecializationConstantsBuilder().add(0, slices).add(1, samples).add(2, static_cast<uint32_t>(bentNormals)).build();
     mSamplerPipeline = createComputePipeline(device, pipeline_config_sampler, *comp_sh_sampler, specialization_constants);
+    util::setDebugName(device, *mSamplerPipeline.pipeline, "ssao_sampler");
 
     auto comp_sh_filter = shader_loader.loadFromSource(device, "resources/shaders/ssao_filter.comp");
     ComputePipelineConfig pipeline_config_filter = {
@@ -194,6 +195,7 @@ void SSAORenderer::createPipeline(const vk::Device &device, const ShaderLoader &
     };
     specialization_constants = SpecializationConstantsBuilder().add(0, static_cast<uint32_t>(bentNormals)).build();
     mFilterPipeline = createComputePipeline(device, pipeline_config_filter, *comp_sh_filter, specialization_constants);
+    util::setDebugName(device, *mFilterPipeline.pipeline, "ssao_filter");
 }
 
 void SSAORenderer::calculateInverseProjectionConstants(

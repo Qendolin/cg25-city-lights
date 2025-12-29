@@ -113,4 +113,5 @@ void ShadowRenderer::createPipeline(const vk::Device &device, const ShaderLoader
     };
 
     mPipeline = createGraphicsPipeline(device, pipeline_config, {*vert_sh});
+    util::setDebugName(device, *mPipeline.pipeline, "shadow");
 }

@@ -43,6 +43,7 @@ void BlobRenderer::createComputePipeline_(const vk::Device &device, const Shader
     pipelineConfig.pushConstants = {pushConstantRange};
 
     mComputePipeline = createComputePipeline(device, pipelineConfig, *compShader);
+    util::setDebugName(device, *mComputePipeline.pipeline, "blob_compute");
 }
 
 void BlobRenderer::createGraphicsPipeline_(
@@ -61,6 +62,7 @@ void BlobRenderer::createGraphicsPipeline_(
     pipelineConfig.cull.mode = vk::CullModeFlagBits::eNone;
 
     mGraphicsPipeline = createGraphicsPipeline(device, pipelineConfig, {*vertShader, *fragShader});
+    util::setDebugName(device, *mGraphicsPipeline.pipeline, "blob_draw");
 }
 
 void BlobRenderer::computeVertices(

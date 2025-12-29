@@ -25,6 +25,7 @@ void FinalizeRenderer::createPipeline(const vk::Device &device, const ShaderLoad
     };
 
     mPipeline = createComputePipeline(device, pipeline_config, *comp_sh);
+    util::setDebugName(device, *mPipeline.pipeline, "finalize");
 }
 
 void FinalizeRenderer::execute(

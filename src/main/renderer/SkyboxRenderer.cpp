@@ -95,4 +95,5 @@ void SkyboxRenderer::createPipeline(const vk::Device &device, const ShaderLoader
     pipeline_config.rasterizer.samples = fb.depthAttachment.image().info.samples;
 
     mPipeline = createGraphicsPipeline(device, pipeline_config, {*vert_shader, *frag_shader});
+    util::setDebugName(device, *mPipeline.pipeline, "skybox");
 }

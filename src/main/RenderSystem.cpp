@@ -296,7 +296,7 @@ void RenderSystem::updateInstanceTransforms(const scene::GpuData &gpu_scene_data
 
     vk::DeviceSize dstOffset = gpu_scene_data.instances.size - updated_transforms.size() * sizeof(glm::mat4);
     vk::BufferCopy copy_region{0, dstOffset, required_size};
-    gpu_scene_data.instances.barrier(cmd, BufferResourceAccess::TransferWrite, BufferResourceAccess::GraphicsShaderStorageRead);
+    gpu_scene_data.instances.barrier(cmd, BufferResourceAccess::TransferWrite);
     cmd.copyBuffer(staging_buffer, gpu_scene_data.instances, 1, &copy_region);
 }
 

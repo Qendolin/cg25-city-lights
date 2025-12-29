@@ -75,7 +75,7 @@ namespace scene {
         };
         static constexpr StorageBufferBinding MaterialBuffer{2, vk::ShaderStageFlagBits::eAllGraphics};
         static constexpr CombinedImageSamplerBinding ImageSamplers{
-            3, vk::ShaderStageFlagBits::eAllGraphics, 65536, vk::DescriptorBindingFlagBits::ePartiallyBound
+            3, vk::ShaderStageFlagBits::eAllGraphics, 4096, vk::DescriptorBindingFlagBits::ePartiallyBound
         };
         static constexpr StorageBufferBinding UberLightBuffer{4, vk::ShaderStageFlagBits::eAllGraphics | vk::ShaderStageFlagBits::eCompute};
         static constexpr StorageBufferBinding BoundingBoxBuffer{

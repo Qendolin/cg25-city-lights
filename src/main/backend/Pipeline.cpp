@@ -1,5 +1,6 @@
 #include "Pipeline.h"
 
+#include "../debug/Annotation.h"
 #include "../glfw/Context.h"
 #include "../util/Logger.h"
 #include "../util/math.h"

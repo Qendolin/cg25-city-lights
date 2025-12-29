@@ -98,6 +98,7 @@ vkb::PhysicalDevice createPhysicalDevice(const vkb::Instance &instance, const vk
             vkb::PhysicalDeviceSelector(instance)
                     .set_surface(surface)
                     .set_required_features({
+                        .robustBufferAccess = true,
                         .multiDrawIndirect = true,
                         .depthClamp = true,
                         .depthBiasClamp = true,

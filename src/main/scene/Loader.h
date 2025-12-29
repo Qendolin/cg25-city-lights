@@ -19,7 +19,7 @@ namespace scene {
     class Loader {
     private:
         static constexpr int UNIFORM_BUFFER_POOL_SIZE{1024};
-        static constexpr int COMBINED_IMAGE_SAMPLER_POOL_SIZE{65536};
+        static constexpr int COMBINED_IMAGE_SAMPLER_POOL_SIZE{4096};
         static constexpr int STORAGE_BUFFER_POOL_SIZE{1024};
         inline static const std::string DEBUG_NAME_PREFIX{"scene_"};
 

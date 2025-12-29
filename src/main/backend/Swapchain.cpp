@@ -65,7 +65,8 @@ void Swapchain::create() {
         swapchain_image_count = std::min(swapchain_image_count, surface_capabilities.maxImageCount);
     swapchain_image_count = std::max(swapchain_image_count, surface_capabilities.minImageCount);
     mImageCount = static_cast<int>(swapchain_image_count);
-    mMinImageCount = static_cast<int>(surface_capabilities.minImageCount);
+    assert(surface_capabilities.maxImageCount >= 2 && "Surface needs to support at least two swapchain images");
+    mMinImageCount = static_cast<int>(std::max(surface_capabilities.minImageCount, 2u));
     mMaxImageCount = static_cast<int>(std::max(surface_capabilities.maxImageCount, swapchain_image_count));
 
     mSurfaceExtents = mWindow.getFramebufferSize();

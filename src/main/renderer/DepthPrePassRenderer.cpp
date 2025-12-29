@@ -136,4 +136,5 @@ void DepthPrePassRenderer::createPipeline(const vk::Device &device, const Shader
     pipeline_config.rasterizer.samples = fb.depthAttachment.image().info.samples;
 
     mPipeline = createGraphicsPipeline(device, pipeline_config, {*vert_sh});
+    util::setDebugName(device, *mPipeline.pipeline, "depth_prepass");
 }

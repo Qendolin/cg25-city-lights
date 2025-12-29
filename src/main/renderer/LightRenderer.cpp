@@ -35,6 +35,7 @@ void LightRenderer::createPipeline(const vk::Device &device, const ShaderLoader 
     };
 
     mPipeline = createComputePipeline(device, pipeline_config, *comp_sh);
+    util::setDebugName(device, *mPipeline.pipeline, "light_tile_assign");
 }
 
 void LightRenderer::execute(

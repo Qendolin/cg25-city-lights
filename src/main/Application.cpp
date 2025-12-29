@@ -106,8 +106,8 @@ void Application::initScene() {
         mCtx->allocator(), mCtx->device(), mCtx->physicalDevice(), mCtx->transferQueue, mCtx->mainQueue,
     };
 
-    std::string scene_filename = std::getenv("SCENE");
     // ReSharper disable once CppDeprecatedEntity
+    std::string scene_filename = std::getenv("SCENE");
     if (scene_filename.empty()) {
         scene_filename = DEFAULT_SCENE_FILENAME;
     }

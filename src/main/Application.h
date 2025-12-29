@@ -44,7 +44,7 @@ private:
     static constexpr glm::vec3 DEFAULT_CAMERA_POSITION{0.0f, 1.0f, 5.0f};
     static constexpr glm::vec3 DEFAULT_BLOB_POSITION{0.0f, 1.0f, 0.0f};
     static constexpr char TITLE[]{"City Lights"};
-    static constexpr char SCENE_FILENAME[]{"resources/scenes/demo_city_scene.glb"};
+    static constexpr char DEFAULT_SCENE_FILENAME[]{"resources/scenes/demo_city_scene.glb"};
     static constexpr char AMBIENT_SOUND_FILENAME[]{"resources/audio/ambiance.ogg"};
     static inline const std::array<std::string, 6> SKYBOX_FILENAMES{
         "resources/skybox/px.hdr", "resources/skybox/nx.hdr", "resources/skybox/py.hdr",

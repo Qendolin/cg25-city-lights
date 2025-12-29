@@ -2,7 +2,6 @@
 
 #include <GLFW/glfw3.h>
 #include <algorithm>
-#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.inl>
 #include <glm/gtx/fast_trigonometry.hpp>
 #include <vulkan/vulkan.hpp>
@@ -107,7 +106,14 @@ void Application::initScene() {
         mCtx->allocator(), mCtx->device(), mCtx->physicalDevice(), mCtx->transferQueue, mCtx->mainQueue,
     };
 
-    mScene = std::make_unique<scene::Scene>(std::move(scene_loader.load(SCENE_FILENAME)));
+    std::string scene_filename = std::getenv("SCENE");
+    // ReSharper disable once CppDeprecatedEntity
+    if (scene_filename.empty()) {
+        scene_filename = DEFAULT_SCENE_FILENAME;
+    }
+
+    Logger::info("Loading scene from file: " + scene_filename);
+    mScene = std::make_unique<scene::Scene>(std::move(scene_loader.load(scene_filename)));
     mSunShadowCascade = std::make_unique<ShadowCascade>(
             mCtx->device(), mCtx->allocator(), mSettings.shadowCascade.resolution, Settings::SHADOW_CASCADE_COUNT
     );

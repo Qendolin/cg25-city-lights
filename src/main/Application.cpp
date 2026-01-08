@@ -107,10 +107,11 @@ void Application::initScene() {
     };
 
     // ReSharper disable once CppDeprecatedEntity
-    std::string scene_filename = std::getenv("SCENE");
-    if (scene_filename.empty()) {
+    const char *env_scene = std::getenv("SCENE");
+    std::string scene_filename = env_scene ? env_scene : "";
+
+    if (scene_filename.empty())
         scene_filename = DEFAULT_SCENE_FILENAME;
-    }
 
     Logger::info("Loading scene from file: " + scene_filename);
     mScene = std::make_unique<scene::Scene>(std::move(scene_loader.load(scene_filename)));

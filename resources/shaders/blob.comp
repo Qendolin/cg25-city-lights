@@ -14,7 +14,7 @@ layout(push_constant) uniform PushConsts {
 struct Vertex {
     vec4 position;
     vec4 normal;
-    vec4 tangent; // .w = handedness (+1 or -1)
+    vec4 tangent;
 };
 
 layout(set = 0, binding = 0, std430) buffer Vertices {
@@ -28,30 +28,33 @@ layout(set = 0, binding = 1, std430) buffer DrawArgs {
     uint firstInstance;
 } drawArgs;
 
+// Constants
 const float INTERVAL_START = -1.0;
-const float INTERVAL_END   =  1.0;
-const float ISO_VALUE      =  0.0;
-const float EPS            =  1e-4;
-const float TWO_PI         =  6.28318530718;
-const float PI             =  3.14159265359;
-const float SDF_CENTER_Y   =  0.3;
-const float SDF_PULSE_AMP  =  0.2;
+const float INTERVAL_END = 1.0;
+const float ISO_VALUE = 0.0;
+const float EPS = 1e-4;
+const float TWO_PI = 6.28318530718;
+const float PI = 3.14159265359;
+const float SDF_CENTER_Y = 0.3;
+const float SDF_PULSE_AMP = 0.2;
 
-float stepSize;
+// Shared memory for workgroup coordination
+shared uint groupVertexCount;
+shared uint groupGlobalBaseIndex;
+
+// Cell data structure
+struct MarchingCell {
+    vec3 vertices[8];
+    float samples[8];
+    int lookupIndex;
+};
 
 struct IntersectionPoint {
     vec3 position;
     vec3 normal;
 };
 
-vec3 cellVertices[8];
-float cellSamples[8];
-int cubeLookupIndex;
-IntersectionPoint intersectionPoints[12];
-
-shared uint groupVertexCount;
-shared uint groupGlobalBaseIndex;
-
+// SDF evaluation
 float sphereSdf(vec3 point, vec3 center, float size) {
     return length(point - center) - size;
 }
@@ -62,79 +65,75 @@ float smoothMin(float a, float b, float smoothing) {
 }
 
 float sdf(vec3 point) {
-    float ground_cutoff = point.y - pc.groundLevel + 0.05; // Add a small delta to avoid clipping
+    float groundCutoff = point.y - pc.groundLevel + 0.05;
     point = point / pc.size;
     float timeLooped = mod(pc.time, PI);
 
-    vec3 centerCore = vec3(0 , SDF_CENTER_Y, 0);
+    // Core sphere
+    vec3 centerCore = vec3(0.0, SDF_CENTER_Y, 0.0);
     float sizeCore = 0.2 + SDF_PULSE_AMP * sin(timeLooped * 2.0);
     float core = sphereSdf(point, centerCore, sizeCore);
 
-    float time2 = timeLooped * 2.;
-    float time4 = timeLooped * 4.;
-    
-    // Spheres rotating around core sphere to simulate blobbiness
+    float time2 = timeLooped * 2.0;
+    float time4 = timeLooped * 4.0;
+
+    // Orbiting spheres
     float radius1 = 0.25;
     vec3 center1 = vec3(radius1 * cos(time2), SDF_CENTER_Y, radius1 * sin(time2));
     float s1 = sphereSdf(point, center1, 0.2);
 
     float radius2 = 0.25;
-    vec3 center2 = vec3(radius2 * cos(time2), radius2 * sin(time2) + SDF_CENTER_Y - 0.05, 0);
+    vec3 center2 = vec3(radius2 * cos(time2), radius2 * sin(time2) + SDF_CENTER_Y - 0.05, 0.0);
     float s2 = sphereSdf(point, center2, 0.2);
-    
+
     float radius3 = 0.30;
-    vec3 center3 = vec3(0., radius3 * cos(-time4) + SDF_CENTER_Y - 0.05, radius3 * sin(-time4));
+    vec3 center3 = vec3(0.0, radius3 * cos(-time4) + SDF_CENTER_Y - 0.05, radius3 * sin(-time4));
     float s3 = sphereSdf(point, center3, 0.2);
 
-    // TODO: Re-enable dripping effect propertly if there is sufficient time
-    // Simulates dripping effect
-    // vec3 centerDrop = vec3(0., SDF_CENTER_Y - timeLooped, 0.0);
-    // float drop = sphereSdf(point, centerDrop, 0.1);
-
-    // Smooth Min
+    // Combine with smooth min
     float val = smoothMin(core, s1, 0.4);
     val = smoothMin(val, s2, 0.4);
     val = smoothMin(val, s3, 0.4);
-    // val = smoothMin(val, drop, 0.4);
 
-    // Simulate ground - assuming the sdf sampling volume ends at y = 1
-    return smoothMin(val, ground_cutoff, 0.4);
+    return smoothMin(val, groundCutoff, 0.4);
 }
 
-void setCellVertices(int i, int j, int k) {
-    float s = stepSize;
-    float x0 = INTERVAL_START + float(i) * s;
-    float y0 = INTERVAL_START + float(j) * s;
-    float z0 = INTERVAL_START + float(k) * s;
+// Cell initialization
+MarchingCell initCell(ivec3 cellCoord, float stepSize) {
+    MarchingCell cell;
 
-    cellVertices[0] = vec3(x0, y0, z0);
-    cellVertices[1] = vec3(x0 + s, y0, z0);
-    cellVertices[2] = vec3(x0, y0 + s, z0);
-    cellVertices[3] = vec3(x0 + s, y0 + s, z0);
-    cellVertices[4] = vec3(x0, y0, z0 + s);
-    cellVertices[5] = vec3(x0 + s, y0, z0 + s);
-    cellVertices[6] = vec3(x0, y0 + s, z0 + s);
-    cellVertices[7] = vec3(x0 + s, y0 + s, z0 + s);
-}
+    vec3 origin = vec3(INTERVAL_START) + vec3(cellCoord) * stepSize;
 
-void setCellSamples() {
-    for (int v = 0; v < 8; ++v) {
-        cellSamples[v] = sdf(cellVertices[v]);
+    // Initialize vertices (cube corners)
+    cell.vertices[0] = origin;
+    cell.vertices[1] = origin + vec3(stepSize, 0.0, 0.0);
+    cell.vertices[2] = origin + vec3(0.0, stepSize, 0.0);
+    cell.vertices[3] = origin + vec3(stepSize, stepSize, 0.0);
+    cell.vertices[4] = origin + vec3(0.0, 0.0, stepSize);
+    cell.vertices[5] = origin + vec3(stepSize, 0.0, stepSize);
+    cell.vertices[6] = origin + vec3(0.0, stepSize, stepSize);
+    cell.vertices[7] = origin + vec3(stepSize, stepSize, stepSize);
+
+    // Sample SDF at vertices
+    for (int i = 0; i < 8; ++i) {
+        cell.samples[i] = sdf(cell.vertices[i]);
     }
-}
 
-void setCubeLookupIndex() {
-    cubeLookupIndex = 0;
-    for (int v = 0; v < 8; ++v) {
-        if (cellSamples[v] < ISO_VALUE) {
-            cubeLookupIndex |= (1 << v);
+    // Calculate lookup index
+    cell.lookupIndex = 0;
+    for (int i = 0; i < 8; ++i) {
+        if (cell.samples[i] < ISO_VALUE) {
+            cell.lookupIndex |= (1 << i);
         }
     }
+
+    return cell;
 }
 
-vec3 interpolate(vec3 a, vec3 b, float va, float vb) {
-    float t = (ISO_VALUE - va) / (vb - va + 1e-8);  // Avoid div by zero
-    return mix(a, b, t);
+// Intersection calculation
+vec3 interpolateEdge(vec3 v0, vec3 v1, float s0, float s1) {
+    float t = (ISO_VALUE - s0) / (s1 - s0 + 1e-8);
+    return mix(v0, v1, t);
 }
 
 vec3 calculateNormal(vec3 p) {
@@ -147,97 +146,80 @@ vec3 calculateNormal(vec3 p) {
     return normalize(grad);
 }
 
+IntersectionPoint calculateIntersection(MarchingCell cell, int edgeIdx) {
+    int v0 = edgeVertexIndices[edgeIdx][0];
+    int v1 = edgeVertexIndices[edgeIdx][1];
+
+    vec3 pos = interpolateEdge(
+    cell.vertices[v0],
+    cell.vertices[v1],
+    cell.samples[v0],
+    cell.samples[v1]
+    );
+
+    IntersectionPoint ip;
+    ip.position = pos;
+    ip.normal = calculateNormal(pos);
+    return ip;
+}
+
+// Tangent calculation
 vec4 calculateTangent(vec3 normal) {
     vec3 helper = abs(normal.y) > 0.99 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
     vec3 tangent = normalize(cross(normal, helper));
+
+    // Orthogonalize
+    tangent = normalize(tangent - normal * dot(normal, tangent));
+
     return vec4(tangent, 1.0);
 }
 
-void calculateBoxUVsAndTangent(vec3 p, vec3 n, out vec2 uv, out vec4 tangent) {
-    vec3 absN = abs(n);
+// Triangle emission
+uint emitTriangles(MarchingCell cell, uint baseVertexIndex) {
+    IntersectionPoint intersections[12];
 
-    // Determine the dominant axis to project from (Box Mapping)
-    if (absN.x > absN.y && absN.x > absN.z) {
-        // X-Axis projection (Left/Right)
-        // Tangent is along Z
-        float signX = sign(n.x);
-        uv = vec2(-signX * p.z, p.y) * 0.5 + 0.5;
-        tangent = vec4(0.0, 0.0, -signX, 1.0);    // Tangent points along Z
-    }
-    else if (absN.y > absN.x && absN.y > absN.z) {
-        // Y-Axis projection (Top/Bottom) - The "Pole" area
-        // Tangent is along X
-        float signY = sign(n.y);
-        uv = vec2(p.x, signY * p.z) * 0.5 + 0.5;
-        tangent = vec4(1.0, 0.0, 0.0, 1.0);       // Tangent points along X
-    }
-    else {
-        // Z-Axis projection (Front/Back)
-        // Tangent is along X
-        float signZ = sign(n.z);
-        uv = vec2(signZ * p.x, p.y) * 0.5 + 0.5;
-        tangent = vec4(signZ, 0.0, 0.0, 1.0);     // Tangent points along X
-    }
-
-    // Orthogonalize tangent against the smooth normal
-    // to ensure the normal map sits flat on the curved surface
-    vec3 tXYZ = tangent.xyz;
-    tXYZ = normalize(tXYZ - n * dot(n, tXYZ));
-    tangent.xyz = tXYZ;
-}
-
-void setIntersectionPoints() {
-    int edgeKey = edgeTable[cubeLookupIndex];
-
-    int idx = 0;
-    int bit = 1;
-    while (edgeKey != 0 && idx < 12) {
-        if ((edgeKey & bit) != 0) {
-            int v0 = edgeVertexIndices[idx][0];
-            int v1 = edgeVertexIndices[idx][1];
-
-            vec3 pos = interpolate(cellVertices[v0], cellVertices[v1],
-            cellSamples[v0], cellSamples[v1]);
-
-            intersectionPoints[idx].position = pos;
-            intersectionPoints[idx].normal = calculateNormal(pos);
+    // Pre-calculate intersections for active edges
+    int edgeKey = edgeTable[cell.lookupIndex];
+    for (int i = 0; i < 12; ++i) {
+        if ((edgeKey & (1 << i)) != 0) {
+            intersections[i] = calculateIntersection(cell, i);
         }
-        idx++;
-        bit <<= 1;
     }
-}
 
-vec2 uvFromPos(vec3 pos) {
-    vec3 n = normalize(pos);
-    float u = atan(n.z, n.x) / TWO_PI + 0.5;
-    float v = n.y * 0.5 + 0.5;
-    return vec2(u, v);
+    // Emit triangles
+    uint vertIdx = baseVertexIndex;
+    for (int t = 0; t < 12 && triangleTable[cell.lookupIndex][t] != -1; t += 3) {
+        for (int v = 0; v < 3; ++v) {
+            int edgeIdx = triangleTable[cell.lookupIndex][t + v];
+            IntersectionPoint ip = intersections[edgeIdx];
+
+            vertices[vertIdx++] = Vertex(
+            vec4(ip.position, 1.0),
+            vec4(ip.normal, 0.0),
+            calculateTangent(ip.normal)
+            );
+        }
+    }
+
+    return vertIdx - baseVertexIndex;
 }
 
 void main() {
-    uvec3 gid = gl_GlobalInvocationID;
-    int i = int(gid.x);
-    int j = int(gid.y);
-    int k = int(gid.z);
+    ivec3 cellCoord = ivec3(gl_GlobalInvocationID);
 
-    // Note: No early returns because barrier is used
+    // Calculate step size
+    float stepSize = (INTERVAL_END - INTERVAL_START) / float(pc.resolution);
 
-    stepSize = (INTERVAL_END - INTERVAL_START) / float(pc.resolution);
+    // Initialize cell data
+    MarchingCell cell = initCell(cellCoord, stepSize);
 
-    setCellVertices(i, j, k);
-    setCellSamples();
-    setCubeLookupIndex();
-
-    setIntersectionPoints();
-
-    // Count triangles for this cell
-    uint numTris = 0;
-    for (int t = 0; t < 12 && triangleTable[cubeLookupIndex][t] != -1; t += 3) {
-        ++numTris;
+    // Count vertices needed
+    uint numVerts = 0;
+    for (int t = 0; t < 12 && triangleTable[cell.lookupIndex][t] != -1; t += 3) {
+        numVerts += 3;
     }
-    uint numVerts = numTris * 3;
 
-    // Shared memory atomic for group
+    // Workgroup allocation - MUST participate in all barriers
     if (gl_LocalInvocationIndex == 0) {
         groupVertexCount = 0;
     }
@@ -252,29 +234,8 @@ void main() {
     }
     barrier();
 
-    uint baseIndex = groupGlobalBaseIndex + localOffset;
-    uint vertIdx = baseIndex;
-
-    // Emit triangles
-    for (int t = 0; t < 12 && triangleTable[cubeLookupIndex][t] != -1; t += 3) {
-        int e0 = triangleTable[cubeLookupIndex][t + 0];
-        int e1 = triangleTable[cubeLookupIndex][t + 1];
-        int e2 = triangleTable[cubeLookupIndex][t + 2];
-
-        vec3 pos0 = intersectionPoints[e0].position;
-        vec3 pos1 = intersectionPoints[e1].position;
-        vec3 pos2 = intersectionPoints[e2].position;
-
-        vec3 n0 = intersectionPoints[e0].normal;
-        vec3 n1 = intersectionPoints[e1].normal;
-        vec3 n2 = intersectionPoints[e2].normal;
-
-        vec4 t0 = calculateTangent(n0);
-        vec4 t1 = calculateTangent(n1);
-        vec4 t2 = calculateTangent(n2);
-
-        vertices[vertIdx++] = Vertex(vec4(pos0, 1.0), vec4(n0, 0.0), t0);
-        vertices[vertIdx++] = Vertex(vec4(pos1, 1.0), vec4(n1, 0.0), t1);
-        vertices[vertIdx++] = Vertex(vec4(pos2, 1.0), vec4(n2, 0.0), t2);
+    if (numVerts > 0) {
+        uint baseIndex = groupGlobalBaseIndex + localOffset;
+        emitTriangles(cell, baseIndex);
     }
 }

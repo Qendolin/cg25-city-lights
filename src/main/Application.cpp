@@ -10,6 +10,7 @@
 #include "audio/Audio.h"
 #include "backend/Swapchain.h"
 #include "backend/VulkanContext.h"
+#include "blob/System.h"
 #include "debug/Performance.h"
 #include "debug/SettingsGui.h"
 #include "entity/Camera.h"
@@ -67,7 +68,7 @@ void Application::run() {
             .sunShadowCasterCascade = *mSunShadowCascade,
             .sunLight = mSettings.sun,
             .settings = mSettings,
-            .blobModel = *mBlobModel,
+            .blobSystem = *mBlobSystem,
             .skybox = *mSkybox,
             .timestamp = mSettings.animation.time,
         });
@@ -130,7 +131,8 @@ void Application::initScene() {
     } else
         blob_instance_transform = glm::translate(glm::mat4(1.0f), DEFAULT_BLOB_POSITION);
 
-    mBlobModel = std::make_unique<blob::Model>(mCtx->allocator(), mCtx->device(), BLOB_RESOLUTION, blob_instance_transform);
+    // TODO: blob transform
+    mBlobSystem = std::make_unique<blob::System>(mCtx->allocator(), mCtx->device(), 6, BLOB_RESOLUTION);
 }
 
 void Application::initCameras() {
@@ -214,16 +216,35 @@ void Application::updateBlob() {
     if (!mScene->cpu().animated_blob_exists || !mSettings.animation.animateBlobNode)
         return;
 
-    const glm::mat4 anim_blob_transform = mInstanceAnimationSampler->sampleAnimatedBlobTransform(mSettings.animation.time);
-    mBlobModel->setTransform(anim_blob_transform);
+    // const glm::mat4 anim_blob_transform = mInstanceAnimationSampler->sampleAnimatedBlobTransform(mSettings.animation.time);
+    // mBlobModel->setTransform(anim_blob_transform);
+    //
+    // const float translation_y = anim_blob_transform[3][1];
+    //
+    // // Keep the ground level (for drop effects) at y = 0 in world space
+    // mBlobModel->groundLevel = -translation_y;
+    //
+    // // Make the blob smaller when it's closer to the ground, so that it doesn't clip
+    // mBlobModel->size = std::min(std::max(0.f, translation_y), 1.f);
 
-    const float translation_y = anim_blob_transform[3][1];
 
-    // Keep the ground level (for drop effects) at y = 0 in world space
-    mBlobModel->groundLevel = -translation_y;
+    // NOTE: Ground is currently disabled in the shader
+    mBlobSystem->groundLevel = 0.1f;
+    auto balls = mBlobSystem->balls();
 
-    // Make the blob smaller when it's closer to the ground, so that it doesn't clip
-    mBlobModel->size = std::min(std::max(0.f, translation_y), 1.f);
+    for (size_t i = 0; i < balls.size(); i++) {
+        auto& ball = balls[i];
+        ball.baseRadius = std::sin((mSettings.animation.time + i) * 4.0f) * 0.25f + 0.5f;
+    }
+
+    glm::vec3 center = {0.0, 2.0, 0.0};
+
+    balls[0].center = center + glm::vec3{std::sin(mSettings.animation.time), 0, 0} * 1.5f;
+    balls[1].center = center + glm::vec3{0, std::sin(mSettings.animation.time), 0} * 1.5f;
+    balls[2].center = center + glm::vec3{0, 0, std::sin(mSettings.animation.time)} * 1.5f;
+    balls[3].center = center + glm::vec3{std::sin(mSettings.animation.time), std::cos(mSettings.animation.time), 0} * 1.5f;
+    balls[4].center = center + glm::vec3{0, std::sin(mSettings.animation.time), std::cos(mSettings.animation.time)} * 1.5f;
+    balls[5].center = center + glm::vec3{std::sin(mSettings.animation.time), 0, std::cos(mSettings.animation.time)} * 1.5f;
 }
 
 void Application::updateAudio() {

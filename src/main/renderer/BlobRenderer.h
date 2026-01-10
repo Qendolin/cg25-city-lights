@@ -6,20 +6,24 @@
 #include "../backend/Framebuffer.h"
 #include "../backend/Pipeline.h"
 #include "../backend/ShaderCompiler.h"
-#include "../blob/Model.h"
 #include "../debug/Annotation.h"
 #include "../entity/Camera.h"
 
+namespace blob {
+    class System;
+}
 class BlobRenderer {
 public:
     struct ComputeDescriptorLayout : DescriptorSetLayout {
-        static constexpr StorageBufferBinding VERTICES_BINDING{0, vk::ShaderStageFlagBits::eCompute};
-        static constexpr StorageBufferBinding INDIRECT_DRAW_BINDING{1, vk::ShaderStageFlagBits::eCompute};
+        static constexpr StorageBufferBinding MetaballBuffer{0, vk::ShaderStageFlagBits::eCompute};
+        static constexpr StorageBufferBinding VertexBuffer{1, vk::ShaderStageFlagBits::eCompute};
+        static constexpr StorageBufferBinding IndirectBuffer{2, vk::ShaderStageFlagBits::eCompute};
+        static constexpr StorageBufferBinding DomainMemberBuffer{3, vk::ShaderStageFlagBits::eCompute};
 
         ComputeDescriptorLayout() = default;
 
         explicit ComputeDescriptorLayout(const vk::Device &device) {
-            create(device, {}, VERTICES_BINDING, INDIRECT_DRAW_BINDING);
+            create(device, {}, MetaballBuffer, VertexBuffer, IndirectBuffer, DomainMemberBuffer);
             util::setDebugName(device, vk::DescriptorSetLayout(*this), "blob_renderer_compute_descriptor_layout");
         }
     };
@@ -34,22 +38,30 @@ public:
     };
 
     struct DrawDescriptorLayout : DescriptorSetLayout {
-        static constexpr CombinedImageSamplerBinding COLOR_IMAGE_BINDING{0, vk::ShaderStageFlagBits::eFragment};
-        static constexpr InlineUniformBlockBinding SHADER_PARAMS_BINDING{1, vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eVertex, sizeof(DrawInlineUniformBlock)};
+        static constexpr CombinedImageSamplerBinding StoredColorImage{0, vk::ShaderStageFlagBits::eFragment};
+        static constexpr InlineUniformBlockBinding ShaderParams{
+            1, vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eVertex, sizeof(DrawInlineUniformBlock)
+        };
 
         DrawDescriptorLayout() = default;
 
         explicit DrawDescriptorLayout(const vk::Device &device) {
-            create(device, {}, COLOR_IMAGE_BINDING, SHADER_PARAMS_BINDING);
+            create(device, {}, StoredColorImage, ShaderParams);
             util::setDebugName(device, vk::DescriptorSetLayout(*this), "blob_renderer_draw_descriptor_layout");
         }
     };
 
-    struct ComputePushConstant {
-        int resolution;
+    struct alignas(16) ComputePushConstant {
+        glm::vec3 aabbMin;
+        float cellSize;
+        glm::vec3 aabbMax;
         float time;
+        glm::vec3 globalGridOrigin;
+        glm::uint metaballIndexOffset;
+        glm::uint metaballCount;
         float groundLevel;
-        float size;
+        glm::uint drawIndex;
+        glm::uint firstVertex;
     };
 
 private:
@@ -76,7 +88,7 @@ public:
             const Framebuffer &framebuffer,
             const ImageViewPairBase &storedColorImage,
             const Camera &camera,
-            const blob::Model &blobModel,
+            const blob::System &blobSystem,
             float timestamp
     );
 
@@ -87,18 +99,18 @@ private:
     void computeVertices(
             const vk::Device &device,
             const DescriptorAllocator &allocator,
-            const vk::CommandBuffer &commandBuffer,
-            const blob::Model &blobModel,
+            const vk::CommandBuffer &cmd_buf,
+            const blob::System &blobSystem,
             float timestamp
     );
 
     void renderVertices(
             const vk::Device &device,
             const DescriptorAllocator &allocator,
-            const vk::CommandBuffer &commandBuffer,
+            const vk::CommandBuffer &cmd_buf,
             const Framebuffer &framebuffer,
             const ImageViewPairBase &storedColorImage,
             const Camera &camera,
-            const blob::Model &blobModel
+            const blob::System &blobSystem
     );
 };

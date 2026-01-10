@@ -1,5 +1,6 @@
 #include "BlobRenderer.h"
 
+#include "../blob/System.h"
 #include "../blob/VertexData.h"
 #include "../debug/Annotation.h"
 #include "../util/math.h"
@@ -26,11 +27,11 @@ void BlobRenderer::execute(
         const Framebuffer &framebuffer,
         const ImageViewPairBase &storedColorImage,
         const Camera &camera,
-        const blob::Model &blobModel,
+        const blob::System &blobSystem,
         float timestamp
 ) {
-    computeVertices(device, allocator, commandBuffer, blobModel, timestamp);
-    renderVertices(device, allocator, commandBuffer, framebuffer, storedColorImage, camera, blobModel);
+    computeVertices(device, allocator, commandBuffer, blobSystem, timestamp);
+    renderVertices(device, allocator, commandBuffer, framebuffer, storedColorImage, camera, blobSystem);
 }
 
 void BlobRenderer::createComputePipeline_(const vk::Device &device, const ShaderLoader &shaderLoader) {
@@ -68,132 +69,119 @@ void BlobRenderer::createGraphicsPipeline_(
 void BlobRenderer::computeVertices(
         const vk::Device &device,
         const DescriptorAllocator &allocator,
-        const vk::CommandBuffer &commandBuffer,
-        const blob::Model &blobModel,
+        const vk::CommandBuffer &cmd_buf,
+        const blob::System &blobSystem,
         float timestamp
 ) {
-    util::ScopedCommandLabel dbg_cmd_label_func(commandBuffer, "Compute");
+    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf, "Compute");
 
-    vk::DrawIndirectCommand drawIndirectCommand{};
-    drawIndirectCommand.vertexCount = 0;
-    drawIndirectCommand.instanceCount = 1;
-    drawIndirectCommand.firstVertex = 0;
-    drawIndirectCommand.firstInstance = 0;
+    const BufferBase &indirect_buffer = blobSystem.drawIndirectBuffer();
+    const BufferBase &vertex_buffer = blobSystem.vertexBuffer();
+    const BufferBase &metaball_buffer = blobSystem.metaballBuffer();
+    const BufferBase &domain_member_buffer = blobSystem.domainMemberBuffer();
 
-    vk::Buffer indirectDrawBuffer = blobModel.getIndirectDrawBuffer();
+    auto domains = blobSystem.domains();
 
-    commandBuffer.updateBuffer(indirectDrawBuffer, 0, sizeof(vk::DrawIndirectCommand), &drawIndirectCommand);
+    // We must zero the vertexCount and set instanceCount/firstVertex before dispatch.
+    std::vector<vk::DrawIndirectCommand> drawCommands(domains.size());
+    size_t cumulative_vertex_offset = 0;
 
-    vk::BufferMemoryBarrier barrier{};
-    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-    barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
-    barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
-    barrier.buffer = indirectDrawBuffer;
-    barrier.offset = 0;
-    barrier.size = vk::WholeSize;
+    for (size_t i = 0; i < domains.size(); ++i) {
+        drawCommands[i].vertexCount = 0;
+        drawCommands[i].instanceCount = 1;
+        drawCommands[i].firstVertex = cumulative_vertex_offset;
+        drawCommands[i].firstInstance = 0;
 
-    commandBuffer.pipelineBarrier(
-            vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eComputeShader, {}, 0, nullptr, 1,
-            &barrier, 0, nullptr
-    );
+        cumulative_vertex_offset += blobSystem.estimateVertexCount(domains[i]);
+    }
+
+    indirect_buffer.barrier(cmd_buf, BufferResourceAccess::TransferWrite);
+    cmd_buf.updateBuffer(indirect_buffer, 0, drawCommands.size() * sizeof(vk::DrawIndirectCommand), drawCommands.data());
+
+    indirect_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderStorageReadWrite);
+    vertex_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderStorageWrite);
+    metaball_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderStorageRead);
+    domain_member_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderStorageRead);
+
+    cmd_buf.bindPipeline(vk::PipelineBindPoint::eCompute, *mComputePipeline.pipeline);
 
     DescriptorSet set = allocator.allocate(mComputeDescriptorLayout);
-
-    vk::DescriptorBufferInfo vertexBufferInfo{
-        .buffer = blobModel.getVertexBuffer(),
-        .offset = 0,
-        .range = vk::WholeSize,
-    };
-
-    vk::DescriptorBufferInfo indirectDrawBufferInfo{
-        .buffer = blobModel.getIndirectDrawBuffer(),
-        .offset = 0,
-        .range = vk::WholeSize,
-    };
-
-    std::array<vk::WriteDescriptorSet, 2> writes{
-        set.write(ComputeDescriptorLayout::VERTICES_BINDING, vertexBufferInfo),
-        set.write(ComputeDescriptorLayout::INDIRECT_DRAW_BINDING, indirectDrawBufferInfo),
-    };
-
-    device.updateDescriptorSets(writes, {});
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *mComputePipeline.pipeline);
-    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *mComputePipeline.layout, 0, {set}, {});
-
-    const int resolution = blobModel.getResolution();
-
-    ComputePushConstant push{};
-    push.resolution = resolution;
-    push.time = timestamp;
-    push.groundLevel = blobModel.groundLevel;
-    push.size = blobModel.size;
-
-    commandBuffer.pushConstants(
-            *mComputePipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(ComputePushConstant), &push
+    cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *mComputePipeline.layout, 0, {set}, {});
+    device.updateDescriptorSets(
+            {
+                set.write(ComputeDescriptorLayout::MetaballBuffer, {.buffer = metaball_buffer, .range = vk::WholeSize}),
+                set.write(ComputeDescriptorLayout::VertexBuffer, {.buffer = vertex_buffer, .range = vk::WholeSize}),
+                set.write(ComputeDescriptorLayout::IndirectBuffer, {.buffer = indirect_buffer, .range = vk::WholeSize}),
+                set.write(ComputeDescriptorLayout::DomainMemberBuffer, {.buffer = domain_member_buffer, .range = vk::WholeSize}),
+            },
+            {}
     );
 
-    uint32_t groups = (resolution + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE;
+    size_t metaball_index_offset = 0;
 
-    commandBuffer.dispatch(groups, groups, groups);
+    for (size_t i = 0; i < domains.size(); i++) {
+        const blob::Domain &domain = domains[i];
+        ComputePushConstant push = {
+            .aabbMin = domain.bounds.min,
+            .cellSize = blobSystem.cellSize,
+            .aabbMax = domain.bounds.max,
+            .time = timestamp,
+            .globalGridOrigin = blobSystem.origin,
+            .metaballIndexOffset = static_cast<glm::uint>(metaball_index_offset),
+            .metaballCount = static_cast<glm::uint>(domain.members.size()),
+            .groundLevel = blobSystem.groundLevel,
+            .drawIndex = static_cast<glm::uint>(i),
+            .firstVertex = drawCommands[i].firstVertex,
+        };
 
-    vk::BufferMemoryBarrier barriers[2]{};
+        cmd_buf.pushConstants(
+                *mComputePipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(ComputePushConstant), &push
+        );
 
-    barriers[0].srcAccessMask = vk::AccessFlagBits::eShaderWrite;
-    barriers[0].dstAccessMask = vk::AccessFlagBits::eVertexAttributeRead;
-    barriers[0].srcQueueFamilyIndex = vk::QueueFamilyIgnored;
-    barriers[0].dstQueueFamilyIndex = vk::QueueFamilyIgnored;
-    barriers[0].buffer = blobModel.getVertexBuffer();
-    barriers[0].offset = 0;
-    barriers[0].size = vk::WholeSize;
+        glm::vec3 domain_size = domain.bounds.max - domain.bounds.min;
+        glm::ivec3 cell_count;
+        cell_count.x = std::ceil(domain_size.x / blobSystem.cellSize);
+        cell_count.y = std::ceil(domain_size.y / blobSystem.cellSize);
+        cell_count.z = std::ceil(domain_size.z / blobSystem.cellSize);
 
-    barriers[1].srcAccessMask = vk::AccessFlagBits::eShaderWrite;
-    barriers[1].dstAccessMask = vk::AccessFlagBits::eIndirectCommandRead;
-    barriers[1].srcQueueFamilyIndex = vk::QueueFamilyIgnored;
-    barriers[1].dstQueueFamilyIndex = vk::QueueFamilyIgnored;
-    barriers[1].buffer = blobModel.getIndirectDrawBuffer();
-    barriers[1].offset = 0;
-    barriers[1].size = vk::WholeSize;
+        cmd_buf.dispatch(util::divCeil(cell_count.x, 4), util::divCeil(cell_count.y, 4), util::divCeil(cell_count.z, 4));
 
-    commandBuffer.pipelineBarrier(
-            vk::PipelineStageFlagBits::eComputeShader,
-            vk::PipelineStageFlagBits::eVertexInput | vk::PipelineStageFlagBits::eDrawIndirect, {}, 0, nullptr, 2,
-            barriers, 0, nullptr
-    );
+        metaball_index_offset += domain.members.size();
+    }
 }
 
 void BlobRenderer::renderVertices(
         const vk::Device &device,
         const DescriptorAllocator &allocator,
-        const vk::CommandBuffer &commandBuffer,
+        const vk::CommandBuffer &cmd_buf,
         const Framebuffer &framebuffer,
         const ImageViewPairBase &storedColorImage,
         const Camera &camera,
-        const blob::Model &blobModel
+        const blob::System &blobSystem
 ) {
-    util::ScopedCommandLabel dbg_cmd_label_func(commandBuffer, "Draw");
+    util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf, "Draw");
 
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *mGraphicsPipeline.pipeline);
+    cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics, *mGraphicsPipeline.pipeline);
 
     mGraphicsPipeline.config.viewports = {{framebuffer.viewport(true)}};
     mGraphicsPipeline.config.scissors = {{framebuffer.area()}};
-    mGraphicsPipeline.config.apply(commandBuffer);
+    mGraphicsPipeline.config.apply(cmd_buf);
 
     DescriptorSet set = allocator.allocate(mDrawDescriptorLayout);
 
-    framebuffer.colorAttachments[0].image().barrier(commandBuffer, ImageResourceAccess::ColorAttachmentWrite);
-    storedColorImage.image().barrier(commandBuffer, ImageResourceAccess::FragmentShaderReadOptimal);
+    framebuffer.colorAttachments[0].image().barrier(cmd_buf, ImageResourceAccess::ColorAttachmentWrite);
+    storedColorImage.image().barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
 
     DrawInlineUniformBlock params{};
     params.projectionMatrix = camera.projectionMatrix();
     params.viewMatrix = camera.viewMatrix();
-    params.modelMatrix = blobModel.getTransform();
+    params.modelMatrix = glm::translate(glm::mat4(1.0f), blobSystem.origin);
     params.camera = glm::vec4(camera.position, 0.0);
     params.invViewportSize = 1.0f / glm::vec2(framebuffer.area().extent.width, framebuffer.area().extent.height);
 
     device.updateDescriptorSets(
             {set.write(
-                     DrawDescriptorLayout::COLOR_IMAGE_BINDING,
+                     DrawDescriptorLayout::StoredColorImage,
                      {
                          .sampler = *mSampler,
                          .imageView = storedColorImage,
@@ -201,7 +189,7 @@ void BlobRenderer::renderVertices(
                      }
              ),
              set.write(
-                     DrawDescriptorLayout::SHADER_PARAMS_BINDING,
+                     DrawDescriptorLayout::ShaderParams,
                      {
                          .dataSize = sizeof(params),
                          .pData = &params,
@@ -210,8 +198,13 @@ void BlobRenderer::renderVertices(
             {}
     );
 
+    const BufferBase &indirect_buffer = blobSystem.drawIndirectBuffer();
+    const BufferBase &vertex_buffer = blobSystem.vertexBuffer();
 
-    commandBuffer.beginRendering(framebuffer.renderingInfo({
+    indirect_buffer.barrier(cmd_buf, BufferResourceAccess::IndirectCommandRead);
+    vertex_buffer.barrier(cmd_buf, BufferResourceAccess::VertexShaderAttributeRead);
+
+    cmd_buf.beginRendering(framebuffer.renderingInfo({
         .enableColorAttachments = true,
         .enableDepthAttachment = true,
         .enableStencilAttachment = false,
@@ -220,8 +213,8 @@ void BlobRenderer::renderVertices(
         .depthLoadOp = vk::AttachmentLoadOp::eLoad,
     }));
 
-    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *mGraphicsPipeline.layout, 0, {set}, {});
-    commandBuffer.bindVertexBuffers(0, {blobModel.getVertexBuffer()}, {0});
-    commandBuffer.drawIndirect(blobModel.getIndirectDrawBuffer(), 0, 1, sizeof(vk::DrawIndirectCommand));
-    commandBuffer.endRendering();
+    cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *mGraphicsPipeline.layout, 0, {set}, {});
+    cmd_buf.bindVertexBuffers(0, {vertex_buffer}, {0});
+    cmd_buf.drawIndirect(indirect_buffer, 0, blobSystem.domains().size(), sizeof(vk::DrawIndirectCommand));
+    cmd_buf.endRendering();
 }

@@ -4,7 +4,6 @@
 #include "backend/Framebuffer.h"
 #include "backend/ShaderCompiler.h"
 #include "backend/VulkanContext.h"
-#include "blob/Model.h"
 #include "entity/Cubemap.h"
 #include "imgui/ImGui.h"
 #include "renderer/BlobRenderer.h"
@@ -26,7 +25,7 @@ struct RenderData {
     const ShadowCascade &sunShadowCasterCascade;
     const DirectionalLight &sunLight;
     const Settings &settings;
-    const blob::Model &blobModel;
+    blob::System &blobSystem;
     const Cubemap &skybox;
     float timestamp;
 };

@@ -5,11 +5,26 @@
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 layout(push_constant) uniform PushConsts {
-    int resolution;
+    vec3 aabbMin;
+    float cellSize;
+    vec3 aabbMax;
     float time;
+    vec3 globalGridOrigin;
+    uint metaballIndexOffset;
+    uint metaballCount;
     float groundLevel;
-    float size;
-} pc;
+    uint drawIndex;
+    uint firstVertex;
+} cParams;
+
+struct Metaball {
+    vec4 position;
+    vec4 scale;
+    float radius;
+    float maxRadius;
+    float _pad0;
+    float _pad1;
+};
 
 struct Vertex {
     vec4 position;
@@ -17,32 +32,38 @@ struct Vertex {
     vec4 tangent;
 };
 
-layout(set = 0, binding = 0, std430) buffer Vertices {
-    Vertex vertices[];
-};
-
-layout(set = 0, binding = 1, std430) buffer DrawArgs {
+struct DrawCommand {
     uint vertexCount;
     uint instanceCount;
     uint firstVertex;
     uint firstInstance;
-} drawArgs;
+};
+
+layout(set = 0, binding = 0, std430) readonly buffer MetaballBuffer {
+    Metaball metaballs[];
+};
+
+layout(set = 0, binding = 1, std430) writeonly restrict buffer VertexBuffer {
+    Vertex vertices[];
+};
+
+// Atomic add makes this r+w
+layout(set = 0, binding = 2, std430) buffer DrawCommandBuffer {
+    DrawCommand drawCommands[];
+};
+
+layout(set = 0, binding = 3, std430) readonly buffer MetaballIndexBuffer {
+    uint metaballIndices[];
+};
 
 // Constants
-const float INTERVAL_START = -1.0;
-const float INTERVAL_END = 1.0;
 const float ISO_VALUE = 0.0;
 const float EPS = 1e-4;
-const float TWO_PI = 6.28318530718;
-const float PI = 3.14159265359;
-const float SDF_CENTER_Y = 0.3;
-const float SDF_PULSE_AMP = 0.2;
 
-// Shared memory for workgroup coordination
+// Shared memory
 shared uint groupVertexCount;
 shared uint groupGlobalBaseIndex;
 
-// Cell data structure
 struct MarchingCell {
     vec3 vertices[8];
     float samples[8];
@@ -54,74 +75,90 @@ struct IntersectionPoint {
     vec3 normal;
 };
 
-// SDF evaluation
-float sphereSdf(vec3 point, vec3 center, float size) {
-    return length(point - center) - size;
+// SDF Functions
+
+float ellipsoidSdf(vec3 p, Metaball b) {
+    vec3 localP = (p - b.position.xyz) / b.scale.xyz;
+    float dLocal = length(localP);
+    float minScale = min(b.scale.x, min(b.scale.y, b.scale.z));
+
+    // (Local Distance - Local Radius) * World Scale Factor
+    return (dLocal - b.radius) * minScale;
 }
 
-float smoothMin(float a, float b, float smoothing) {
-    float h = clamp(0.5 + 0.5 * (b - a) / smoothing, 0.0, 1.0);
-    return mix(b, a, h) - smoothing * h * (1.0 - h);
+float smoothMin(float a, float b, float k) {
+    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
 }
 
-float sdf(vec3 point) {
-    float groundCutoff = point.y - pc.groundLevel + 0.05;
-    point = point / pc.size;
-    float timeLooped = mod(pc.time, PI);
+float evaluateField(vec3 p) {
+    // 1. Initialize result with the first ball
+    // We start with a large "outside" distance if no balls are present
+    float result = 1000.0;
 
-    // Core sphere
-    vec3 centerCore = vec3(0.0, SDF_CENTER_Y, 0.0);
-    float sizeCore = 0.2 + SDF_PULSE_AMP * sin(timeLooped * 2.0);
-    float core = sphereSdf(point, centerCore, sizeCore);
+    // Iterate over all assigned metaballs
+    for (uint i = 0; i < cParams.metaballCount; ++i) {
+        uint idx = metaballIndices[cParams.metaballIndexOffset + i];
+        Metaball b = metaballs[idx];
 
-    float time2 = timeLooped * 2.0;
-    float time4 = timeLooped * 4.0;
+        // 1. Calculate Bounding Box of influence
+        // We add a small margin to maxRadius to prevent clipping artifacts at the edge
+        float maxS = max(b.scale.x, max(b.scale.y, b.scale.z));
+        float influenceRadius = b.maxRadius * maxS;
 
-    // Orbiting spheres
-    float radius1 = 0.25;
-    vec3 center1 = vec3(radius1 * cos(time2), SDF_CENTER_Y, radius1 * sin(time2));
-    float s1 = sphereSdf(point, center1, 0.2);
+        vec3 diff = abs(p - b.position.xyz);
 
-    float radius2 = 0.25;
-    vec3 center2 = vec3(radius2 * cos(time2), radius2 * sin(time2) + SDF_CENTER_Y - 0.05, 0.0);
-    float s2 = sphereSdf(point, center2, 0.2);
+        // Optimization: Only compute precise SDF if roughly within range.
+        // We use a box check which is faster than distance check.
+        if (all(lessThan(diff, vec3(influenceRadius)))) {
+            float dist = ellipsoidSdf(p, b);
 
-    float radius3 = 0.30;
-    vec3 center3 = vec3(0.0, radius3 * cos(-time4) + SDF_CENTER_Y - 0.05, radius3 * sin(-time4));
-    float s3 = sphereSdf(point, center3, 0.2);
+            // 2. Smoothing Factor
+            // The blend zone is the difference between the hard core (radius)
+            // and the max influence (maxRadius).
+            float minS = min(b.scale.x, min(b.scale.y, b.scale.z));
+            float k = (b.maxRadius - b.radius) * minS;
 
-    // Combine with smooth min
-    float val = smoothMin(core, s1, 0.4);
-    val = smoothMin(val, s2, 0.4);
-    val = smoothMin(val, s3, 0.4);
-
-    return smoothMin(val, groundCutoff, 0.4);
-}
-
-// Cell initialization
-MarchingCell initCell(ivec3 cellCoord, float stepSize) {
-    MarchingCell cell;
-
-    vec3 origin = vec3(INTERVAL_START) + vec3(cellCoord) * stepSize;
-
-    // Initialize vertices (cube corners)
-    cell.vertices[0] = origin;
-    cell.vertices[1] = origin + vec3(stepSize, 0.0, 0.0);
-    cell.vertices[2] = origin + vec3(0.0, stepSize, 0.0);
-    cell.vertices[3] = origin + vec3(stepSize, stepSize, 0.0);
-    cell.vertices[4] = origin + vec3(0.0, 0.0, stepSize);
-    cell.vertices[5] = origin + vec3(stepSize, 0.0, stepSize);
-    cell.vertices[6] = origin + vec3(0.0, stepSize, stepSize);
-    cell.vertices[7] = origin + vec3(stepSize, stepSize, stepSize);
-
-    // Sample SDF at vertices
-    for (int i = 0; i < 8; ++i) {
-        cell.samples[i] = sdf(cell.vertices[i]);
+            // 3. Accumulate
+            // If this is the first iteration, smoothMin basically just takes 'dist'.
+            if (result > 500.0) {
+                result = dist;
+            } else {
+                result = smoothMin(result, dist, k);
+            }
+        }
     }
 
-    // Calculate lookup index
+    // 3. Ground Logic
+//    float h = p.y - cParams.groundLevel;
+//    float suction = 0.5 * exp(-h * 3.0);
+//    result -= suction;
+//    result = max(result, -h);
+
+    return result;
+}
+
+// Snap point to global grid
+vec3 snapToGlobalGrid(vec3 point) {
+    vec3 offset = point - cParams.globalGridOrigin;
+    vec3 snapped = round(offset / cParams.cellSize) * cParams.cellSize;
+    return cParams.globalGridOrigin + snapped;
+}
+
+// Get global grid-aligned cell vertices
+MarchingCell initCell(vec3 cellOrigin) {
+    MarchingCell cell;
+
+    float s = cParams.cellSize;
+    const vec3 offsets[8] = {
+    vec3(0, 0, 0), vec3(s, 0, 0), vec3(0, s, 0), vec3(s, s, 0),
+    vec3(0, 0, s), vec3(s, 0, s), vec3(0, s, s), vec3(s, s, s)
+    };
+
     cell.lookupIndex = 0;
     for (int i = 0; i < 8; ++i) {
+        cell.vertices[i] = cellOrigin + offsets[i];
+        cell.samples[i] = evaluateField(cell.vertices[i]);
         if (cell.samples[i] < ISO_VALUE) {
             cell.lookupIndex |= (1 << i);
         }
@@ -130,22 +167,24 @@ MarchingCell initCell(ivec3 cellCoord, float stepSize) {
     return cell;
 }
 
-// Intersection calculation
+// Edge interpolation
 vec3 interpolateEdge(vec3 v0, vec3 v1, float s0, float s1) {
     float t = (ISO_VALUE - s0) / (s1 - s0 + 1e-8);
     return mix(v0, v1, t);
 }
 
+// Normal calculation via gradient
 vec3 calculateNormal(vec3 p) {
-    float d = sdf(p);
+    float d = evaluateField(p);
     vec3 grad = vec3(
-    sdf(p + vec3(EPS, 0.0, 0.0)) - d,
-    sdf(p + vec3(0.0, EPS, 0.0)) - d,
-    sdf(p + vec3(0.0, 0.0, EPS)) - d
+    evaluateField(p + vec3(EPS, 0.0, 0.0)) - d,
+    evaluateField(p + vec3(0.0, EPS, 0.0)) - d,
+    evaluateField(p + vec3(0.0, 0.0, EPS)) - d
     );
     return normalize(grad);
 }
 
+// Calculate intersection point on edge
 IntersectionPoint calculateIntersection(MarchingCell cell, int edgeIdx) {
     int v0 = edgeVertexIndices[edgeIdx][0];
     int v1 = edgeVertexIndices[edgeIdx][1];
@@ -163,22 +202,19 @@ IntersectionPoint calculateIntersection(MarchingCell cell, int edgeIdx) {
     return ip;
 }
 
-// Tangent calculation
+// Tangent from normal
 vec4 calculateTangent(vec3 normal) {
     vec3 helper = abs(normal.y) > 0.99 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
     vec3 tangent = normalize(cross(normal, helper));
-
-    // Orthogonalize
     tangent = normalize(tangent - normal * dot(normal, tangent));
-
     return vec4(tangent, 1.0);
 }
 
-// Triangle emission
+// Emit all triangles for this cell
 uint emitTriangles(MarchingCell cell, uint baseVertexIndex) {
     IntersectionPoint intersections[12];
 
-    // Pre-calculate intersections for active edges
+    // Pre-calculate active edge intersections
     int edgeKey = edgeTable[cell.lookupIndex];
     for (int i = 0; i < 12; ++i) {
         if ((edgeKey & (1 << i)) != 0) {
@@ -205,37 +241,78 @@ uint emitTriangles(MarchingCell cell, uint baseVertexIndex) {
 }
 
 void main() {
-    ivec3 cellCoord = ivec3(gl_GlobalInvocationID);
+    // 1. Setup Coordinates
+    ivec3 localCellCoord = ivec3(gl_GlobalInvocationID);
+    vec3 aabbSize = cParams.aabbMax - cParams.aabbMin;
+    ivec3 cellCount = ivec3(ceil(aabbSize / cParams.cellSize));
 
-    // Calculate step size
-    float stepSize = (INTERVAL_END - INTERVAL_START) / float(pc.resolution);
+    // 2. Logic Flag - instead of returning, we set this to false.
+    bool isActive = true;
 
-    // Initialize cell data
-    MarchingCell cell = initCell(cellCoord, stepSize);
-
-    // Count vertices needed
-    uint numVerts = 0;
-    for (int t = 0; t < 12 && triangleTable[cell.lookupIndex][t] != -1; t += 3) {
-        numVerts += 3;
+    // Bounds Check
+    if (any(greaterThanEqual(localCellCoord, cellCount))) {
+        isActive = false;
     }
 
-    // Workgroup allocation - MUST participate in all barriers
+    // 3. Grid Position Calculation
+    vec3 cellOrigin = cParams.aabbMin + vec3(localCellCoord) * cParams.cellSize;
+    vec3 offset = cellOrigin - cParams.globalGridOrigin;
+    cellOrigin = cParams.globalGridOrigin + round(offset / cParams.cellSize) * cParams.cellSize;
+    vec3 cellCenter = cellOrigin + vec3(cParams.cellSize * 0.5);
+
+    // 4. Ownership & SDF Check (Only run heavy math if still active)
+    // We use a safe default value so inactive threads don't produce garbage
+    float centerVal = 1e10;
+
+    if (isActive) {
+        vec3 center = cellOrigin + vec3(cParams.cellSize * 0.5);
+        // If center is far from surface (approx sqrt(3)/2 * size), corners won't cross iso-surface
+        if (evaluateField(center) > cParams.cellSize * 0.87) {
+            isActive = false;
+        }
+    }
+
+    // 5. Marching Cubes (Only if active)
+    MarchingCell cell;
+    uint numVerts = 0;
+
+    if (isActive) {
+        cell = initCell(cellOrigin);
+        for (int t = 0; t < 12 && triangleTable[cell.lookupIndex][t] != -1; t += 3) {
+            numVerts += 3;
+        }
+    }
+
+    // 6. Synchronization
+
+    // Barrier 1: Reset local group count
     if (gl_LocalInvocationIndex == 0) {
         groupVertexCount = 0;
     }
     barrier();
 
-    uint localOffset = atomicAdd(groupVertexCount, numVerts);
-
-    barrier();
-
-    if (gl_LocalInvocationIndex == 0) {
-        groupGlobalBaseIndex = atomicAdd(drawArgs.vertexCount, groupVertexCount);
+    // Barrier 2: Local Atomic Add
+    // Only active threads with geometry contribute, but ALL threads hit the barrier.
+    uint localOffset = 0;
+    if (isActive && numVerts > 0) {
+        localOffset = atomicAdd(groupVertexCount, numVerts);
     }
     barrier();
 
-    if (numVerts > 0) {
-        uint baseIndex = groupGlobalBaseIndex + localOffset;
+    // Barrier 3: Global Atomic Add
+    // Only one thread per group does the global write, but ALL threads wait.
+    if (gl_LocalInvocationIndex == 0) {
+        if (groupVertexCount > 0) {
+            groupGlobalBaseIndex = atomicAdd(drawCommands[cParams.drawIndex].vertexCount, groupVertexCount);
+        } else {
+            groupGlobalBaseIndex = 0;// dummy write for defined behavior
+        }
+    }
+    barrier();
+
+    // 7. Output Geometry
+    if (isActive && numVerts > 0) {
+        uint baseIndex = groupGlobalBaseIndex + localOffset + cParams.firstVertex;
         emitTriangles(cell, baseIndex);
     }
 }

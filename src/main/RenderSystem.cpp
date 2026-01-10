@@ -1,10 +1,10 @@
 #include "RenderSystem.h"
 
 #include "backend/Swapchain.h"
+#include "blob/System.h"
 #include "debug/Annotation.h"
 #include "entity/ShadowCaster.h"
 #include "scene/Scene.h"
-#include "util/Logger.h"
 #include "util/globals.h"
 #include "util/math.h"
 
@@ -328,6 +328,9 @@ void RenderSystem::draw(const RenderData &rd) {
                 mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, mComputeDepthCopyImage, rd.camera,
                 rd.gltfScene, *mFrustumCuller
         );
+
+        dbg_cmd_label_region.swap("Blob System Update");
+        rd.blobSystem.update(mContext->allocator(), mContext->device(), cmd_buf);
     }
 
     // Async compute
@@ -415,9 +418,11 @@ void RenderSystem::draw(const RenderData &rd) {
         // Blob render pass
         if (rd.settings.animation.renderBlob) {
             dbg_cmd_label_region.swap("Blob Pass");
+
             storeHdrColorImage(cmd_buf);
             mBlobRenderer->execute(
-                    mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, mStoredHdrColorImage, rd.camera, rd.blobModel, rd.timestamp
+                    mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, mStoredHdrColorImage, rd.camera,
+                    rd.blobSystem, rd.timestamp
             );
         }
 

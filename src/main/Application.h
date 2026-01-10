@@ -10,6 +10,9 @@
 #include "animation/VariableAnimationController.h"
 #include "debug/Settings.h"
 
+namespace blob {
+    class System;
+}
 class Sound;
 class Audio;
 class Music;
@@ -33,7 +36,7 @@ class Cubemap;
 
 class Application {
 private:
-    static constexpr int BLOB_RESOLUTION{50};
+    static constexpr float BLOB_RESOLUTION{1.0/4.0};
     static constexpr float MOUSE_SENSITIVITY{0.0026f};
     static constexpr float BASE_SPEED{5.0f};
     static constexpr float FAST_SPEED_MULTIPLIER{10.0f};
@@ -66,7 +69,7 @@ private:
 
     std::unique_ptr<FrameTimes> mDebugFrameTimes;
 
-    std::unique_ptr<blob::Model> mBlobModel;
+    std::unique_ptr<blob::System> mBlobSystem;
     std::unique_ptr<Cubemap> mSkybox;
 
     std::unique_ptr<Audio> mAudio;

@@ -92,17 +92,18 @@ DescriptorSet DescriptorAllocator::allocate(const vk::DescriptorSetLayout& layou
 
 void DescriptorAllocator::reset() const {
     assert(mImpl);
+    // Move current pool to used pools before resetting
+    if (mImpl->mCurrentPool) {
+        mImpl->mUsedPools.push_back(mImpl->mCurrentPool);
+        mImpl->mCurrentPool = vk::DescriptorPool{}; // Clear it
+    }
+
     // Reset all used pools and move them to the free list
     for (auto pool : mImpl->mUsedPools) {
         mImpl->mDevice.resetDescriptorPool(pool);
         mImpl->mFreePools.push_back(pool);
     }
     mImpl->mUsedPools.clear();
-
-    // Reset the current pool
-    if (mImpl->mCurrentPool) {
-        mImpl->mDevice.resetDescriptorPool(mImpl->mCurrentPool);
-    }
 }
 
 UniqueDescriptorAllocator::UniqueDescriptorAllocator(vk::Device device) {

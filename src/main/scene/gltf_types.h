@@ -132,8 +132,10 @@ namespace gltf {
     struct Animation {
         std::vector<float> translation_timestamps;
         std::vector<float> rotation_timestamps;
+        std::vector<float> scale_timestamps;
         std::vector<glm::vec3> translations;
         std::vector<glm::vec4> rotations;
+        std::vector<glm::vec3> scales;
     };
 
     /// <summary>

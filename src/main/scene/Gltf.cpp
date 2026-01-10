@@ -173,8 +173,10 @@ namespace gltf {
                     loadAnimationChannel(asset, gltf_anim, channel, animation.translation_timestamps, animation.translations);
                 else if (animPath == fastgltf::AnimationPath::Rotation)
                     loadAnimationChannel(asset, gltf_anim, channel, animation.rotation_timestamps, animation.rotations);
+                else if (animPath == fastgltf::AnimationPath::Scale)
+                    loadAnimationChannel(asset, gltf_anim, channel, animation.scale_timestamps, animation.scales);
                 else
-                    Logger::debug(std::format("Ignoring unsupported weight/scale animation channel of node {}", node_index));
+                    Logger::debug(std::format("Ignoring unsupported weight animation channel of node {}", node_index));
             }
 
             const std::size_t translation_count = animation.translations.size();

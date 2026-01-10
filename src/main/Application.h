@@ -36,7 +36,7 @@ class Cubemap;
 
 class Application {
 private:
-    static constexpr float BLOB_RESOLUTION{1.0/4.0};
+    static constexpr float BLOB_RESOLUTION{1.0/16.0};
     static constexpr float MOUSE_SENSITIVITY{0.0026f};
     static constexpr float BASE_SPEED{5.0f};
     static constexpr float FAST_SPEED_MULTIPLIER{10.0f};

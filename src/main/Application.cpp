@@ -123,23 +123,14 @@ void Application::initScene() {
             mCtx->allocator(), mCtx->device(), mCtx->transferQueue, mCtx->mainQueue, SKYBOX_FILENAMES
     );
 
-    glm::mat4 blob_instance_transform;
-
-    if (mScene->cpu().animated_blob_exists) {
-        const std::size_t blob_instance_idx = mScene->cpu().animated_blob_index;
-        blob_instance_transform = mScene->cpu().instances[blob_instance_idx].transform;
-    } else
-        blob_instance_transform = glm::translate(glm::mat4(1.0f), DEFAULT_BLOB_POSITION);
-
-    // TODO: blob transform
     mBlobSystem = std::make_unique<blob::System>(mCtx->allocator(), mCtx->device(), 6, BLOB_RESOLUTION);
 }
 
 void Application::initCameras() {
     mDebugCamera = std::make_unique<Camera>(FOV, NEAR_PLANE, DEFAULT_CAMERA_POSITION, glm::vec3{});
 
-    if (mScene->cpu().animated_camera_exists) {
-        const std::size_t cam_instance_idx = mScene->cpu().animated_camera_index;
+    if (mScene->cpu().non_mesh_instance_animation_map.contains("Camera")) {
+        auto [cam_instance_idx, cam_anim_idx] = mScene->cpu().non_mesh_instance_animation_map.at("Camera");
         const glm::mat4 cam_instance_transform = mScene->cpu().instances[cam_instance_idx].transform;
         mAnimatedCamera = std::make_unique<Camera>(FOV, NEAR_PLANE, cam_instance_transform);
     } else {
@@ -205,28 +196,13 @@ void Application::advanceAnimationTime() {
 }
 
 void Application::updateAnimatedCamera() {
-    if (!mScene->cpu().animated_camera_exists)
-        return;
-
-    const glm::mat4 anim_cam_transform = mInstanceAnimationSampler->sampleAnimatedCameraTransform(mSettings.animation.time);
+    const glm::mat4 anim_cam_transform = mInstanceAnimationSampler->sampleNamedTransform("Camera", mSettings.animation.time);
     mAnimatedCamera->updateBasedOnTransform(anim_cam_transform);
 }
 
 void Application::updateBlob() {
-    if (!mScene->cpu().animated_blob_exists || !mSettings.animation.animateBlobNode)
+    if (!mSettings.animation.animateBlobNode)
         return;
-
-    // const glm::mat4 anim_blob_transform = mInstanceAnimationSampler->sampleAnimatedBlobTransform(mSettings.animation.time);
-    // mBlobModel->setTransform(anim_blob_transform);
-    //
-    // const float translation_y = anim_blob_transform[3][1];
-    //
-    // // Keep the ground level (for drop effects) at y = 0 in world space
-    // mBlobModel->groundLevel = -translation_y;
-    //
-    // // Make the blob smaller when it's closer to the ground, so that it doesn't clip
-    // mBlobModel->size = std::min(std::max(0.f, translation_y), 1.f);
-
 
     // NOTE: Ground is currently disabled in the shader
     mBlobSystem->groundLevel = 0.1f;
@@ -234,17 +210,25 @@ void Application::updateBlob() {
 
     for (size_t i = 0; i < balls.size(); i++) {
         auto& ball = balls[i];
-        ball.baseRadius = std::sin((mSettings.animation.time + i) * 4.0f) * 0.25f + 0.5f;
+        ball.baseRadius = 0.2f; // std::sin((mSettings.animation.time + i) * 4.0f) * 0.25f + 0.5f;
+        ball.maxRadius = 0.5f;
+
+        float delay = 0.5f;
+
+        ball.center = mInstanceAnimationSampler->sampleNamedTranslation("Blob", mSettings.animation.time - i * delay);
+        ball.scale = mInstanceAnimationSampler->sampleNamedScale("Blob", mSettings.animation.time - i * delay);
     }
 
-    glm::vec3 center = {0.0, 2.0, 0.0};
-
-    balls[0].center = center + glm::vec3{std::sin(mSettings.animation.time), 0, 0} * 1.5f;
-    balls[1].center = center + glm::vec3{0, std::sin(mSettings.animation.time), 0} * 1.5f;
-    balls[2].center = center + glm::vec3{0, 0, std::sin(mSettings.animation.time)} * 1.5f;
-    balls[3].center = center + glm::vec3{std::sin(mSettings.animation.time), std::cos(mSettings.animation.time), 0} * 1.5f;
-    balls[4].center = center + glm::vec3{0, std::sin(mSettings.animation.time), std::cos(mSettings.animation.time)} * 1.5f;
-    balls[5].center = center + glm::vec3{std::sin(mSettings.animation.time), 0, std::cos(mSettings.animation.time)} * 1.5f;
+    // glm::vec3 center = {0.0, 2.0, 0.0};
+    // balls[0].baseRadius = 0.5f;
+    // balls[0].maxRadius = 2.0f;
+    // balls[0].scale = {.2, .2, .2};
+    // balls[0].center = center + glm::vec3{std::sin(mSettings.animation.time), 0, 0} * 1.5f;
+    // balls[1].center = center + glm::vec3{0, std::sin(mSettings.animation.time), 0} * 1.5f;
+    // balls[2].center = center + glm::vec3{0, 0, std::sin(mSettings.animation.time)} * 1.5f;
+    // balls[3].center = center + glm::vec3{std::sin(mSettings.animation.time), std::cos(mSettings.animation.time), 0} * 1.5f;
+    // balls[4].center = center + glm::vec3{0, std::sin(mSettings.animation.time), std::cos(mSettings.animation.time)} * 1.5f;
+    // balls[5].center = center + glm::vec3{std::sin(mSettings.animation.time), 0, std::cos(mSettings.animation.time)} * 1.5f;
 }
 
 void Application::updateAudio() {

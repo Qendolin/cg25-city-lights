@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <ranges>
 #include <utility>
 
 #include "../backend/StagingBuffer.h"
@@ -45,6 +44,8 @@ namespace scene {
 
         cpu_data.instances.reserve(node_count);
         cpu_data.instance_animations.reserve(animated_node_count);
+
+        // animated mesh instances get sorted to the end
         std::vector<Instance> anim_inst_to_insert_last;
         anim_inst_to_insert_last.reserve(animated_node_count);
 
@@ -58,44 +59,10 @@ namespace scene {
 
             Instance instance{node.name, node.transform, bounds};
 
-            // Add camera to the instances array but store the animation separately. If there are 
-            // multiple cameras, all are added but only for the first one the animation is loaded
-            // and the camera reference is set.
-            if (node.isAnimatedCamera) {
-                if (cpu_data.animated_camera_exists)
-                    Logger::warning("Only one animated camera is currently supported by the render engine");
-                else {
-                    cpu_data.animated_camera_index = cpu_data.instances.size();
-                    const gltf::Animation &anim_data = scene_data.animations[node.animation];
-                    cpu_data.camera_animation = createInstanceAnimation(anim_data);
-                    cpu_data.animated_camera_exists = true; 
-                }
-
-                cpu_data.instances.push_back(instance);
-                continue;
-            }
-
-            // Add node named "Blob" or "blob" to the instances array but store the animation
-            // separately. If there are multiple such nodes, all are added but only for the first
-            // one the animation is loaded and the blob reference is set.
-            if (hasAnimation && (node.name == "Blob" || node.name == "blob")) {
-                if (cpu_data.animated_blob_exists)
-                    Logger::warning("Only one animated blob node is currently supported by the render engine");
-                else {
-                    cpu_data.animated_blob_index = cpu_data.instances.size();
-                    const gltf::Animation &anim_data = scene_data.animations[node.animation];
-                    cpu_data.blob_animation = createInstanceAnimation(anim_data);
-                    cpu_data.animated_blob_exists = true; 
-                }
-
-                cpu_data.instances.push_back(instance);
-                continue;
-            }
-
-            // Do not use animation for non-camera node without mesh
             if (hasAnimation && !hasMesh) {
-                Logger::warning("Animated nodes without meshes except cameras are not supported because they aren't "
-                                "stored as instances on the GPU!");
+                const gltf::Animation &anim_data = scene_data.animations[node.animation];
+                cpu_data.non_mesh_instance_animation_map[instance.name] = std::make_pair(cpu_data.instances.size(), cpu_data.non_mesh_instance_animations.size());
+                cpu_data.non_mesh_instance_animations.push_back(createInstanceAnimation(anim_data));
                 cpu_data.instances.push_back(instance);
                 continue;
             }
@@ -122,8 +89,8 @@ namespace scene {
         });
 
         return InstanceAnimation{
-            animation_data.translation_timestamps, animation_data.rotation_timestamps, animation_data.translations,
-            std::move(quats)
+            animation_data.translation_timestamps, animation_data.rotation_timestamps, animation_data.scale_timestamps, animation_data.translations,
+            std::move(quats), animation_data.scales
         };
     }
 

@@ -2,6 +2,8 @@
 #include <array>
 #include <glm/common.hpp>
 #include <glm/mat4x4.hpp>
+#include <glm/gtx/matrix_operation.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <glm/vec3.hpp>
 
 namespace util {
@@ -197,6 +199,18 @@ namespace util {
                 up = {0, 0, 1};
         }
         return up;
+    }
+
+
+    inline void decomposeTransform(const glm::mat4 &transform, glm::vec3 *translation, glm::quat *rotation, glm::vec3 *scale) {
+        // https://math.stackexchange.com/a/1463487/1014081
+        // calculate scale
+        *scale = {glm::length(transform[0]), glm::length(transform[1]), glm::length(transform[2])};
+        // calculate rotaton
+        glm::mat3 rotation_mat = transform * glm::diagonal4x4(glm::vec4(1.0 / scale->x, 1.0 / scale->y, 1.0 / scale->z, 1.0));
+
+        *translation = transform[3];
+        *rotation = glm::quat_cast(rotation_mat);
     }
 
 } // namespace util

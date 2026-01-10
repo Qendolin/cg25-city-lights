@@ -2,57 +2,113 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
-#include <iostream>
 
 #include "../util/Logger.h"
+#include "../util/math.h"
 
 InstanceAnimationSampler::InstanceAnimationSampler(const scene::CpuData &cpu_data)
     : mCpuData{cpu_data},
       mAnimationCount{cpu_data.instance_animations.size()},
       mFirstAnimInstanceIdx{cpu_data.instances.size() - cpu_data.instance_animations.size()} {
-    mPrevAnimationIndices.resize(mCpuData.instance_animations.size());
+    // non mesh are appended at the end
+    mPrevAnimationIndices.resize(mCpuData.instance_animations.size() + mCpuData.non_mesh_instance_animations.size());
 }
 
-glm::mat4 InstanceAnimationSampler::sampleAnimatedCameraTransform(float timestamp) {
-    if (!mCpuData.animated_camera_exists)
-        Logger::fatal("Attempted to sample non-existent camera animation");
+glm::mat4 InstanceAnimationSampler::sampleNamedTransform(const std::string& name, float timestamp) {
+    if (!mCpuData.non_mesh_instance_animation_map.contains(name))
+        return glm::mat4(1.0f);
 
-    const scene::InstanceAnimation &cam_animation = mCpuData.camera_animation;
-    const scene::Instance &cam_instance = mCpuData.instances[mCpuData.animated_camera_index];
-    const glm::mat4 &default_transform = cam_instance.transform;
-    const glm::vec3 default_translation = glm::vec3(default_transform[3]);
-    const glm::quat default_rotation = glm::quat_cast(default_transform);
-    std::size_t &translation_value_index = mPrevCamAnimIndex.translation_idx;
-    std::size_t &rotation_value_index = mPrevCamAnimIndex.rotation_idx;
+    auto [instance_index, anim_index] = mCpuData.non_mesh_instance_animation_map.at(name);
+
+    const scene::InstanceAnimation &animation = mCpuData.non_mesh_instance_animations[anim_index];
+    const scene::Instance &instance = mCpuData.instances[instance_index];
+    const glm::mat4 &default_transform = instance.transform;
+
+    glm::vec3 default_translation;
+    glm::quat default_rotation;
+    glm::vec3 default_scale;
+    util::decomposeTransform(default_transform, &default_translation, &default_rotation, &default_scale);
+
+    size_t prev_index = anim_index + mCpuData.instance_animations.size();
+    std::size_t &translation_value_index = mPrevAnimationIndices[prev_index].translation_idx;
+    std::size_t &rotation_value_index = mPrevAnimationIndices[prev_index].rotation_idx;
+    std::size_t &scale_value_index = mPrevAnimationIndices[prev_index].scale_idx;
 
     const glm::vec3 translation = sampleTrack<glm::vec3>(
-            cam_animation.translation_timestamps, cam_animation.translations, timestamp, default_translation,
+            animation.translation_timestamps, animation.translations, timestamp, default_translation,
             [](const glm::vec3 &a, const glm::vec3 &b, float alpha) { return glm::mix(a, b, alpha); }, translation_value_index
     );
     const glm::quat rotation = sampleTrack<glm::quat>(
-            cam_animation.rotation_timestamps, cam_animation.rotations, timestamp, default_rotation,
+            animation.rotation_timestamps, animation.rotations, timestamp, default_rotation,
             [](const glm::quat &a, const glm::quat &b, float alpha) { return glm::slerp(a, b, alpha); }, rotation_value_index
     );
-
-    return glm::translate(glm::mat4(1.0f), translation) * glm::mat4_cast(rotation);
-}
-
-glm::mat4 InstanceAnimationSampler::sampleAnimatedBlobTransform(float timestamp) {
-    if (!mCpuData.animated_blob_exists)
-        Logger::fatal("Attempted to sample non-existent blob animation");
-
-    // Ignore rotation and only consider translation component of the animation for the blob
-    const scene::InstanceAnimation &blob_animation = mCpuData.blob_animation;
-    const scene::Instance &blob_instance = mCpuData.instances[mCpuData.animated_blob_index];
-    const glm::vec3 default_translation = glm::vec3(blob_instance.transform[3]);
-    std::size_t &translation_value_index = mPrevBlobAnimIndex.translation_idx;
-
-    const glm::vec3 translation = sampleTrack<glm::vec3>(
-            blob_animation.translation_timestamps, blob_animation.translations, timestamp, default_translation,
-            [](const glm::vec3 &a, const glm::vec3 &b, float alpha) { return glm::mix(a, b, alpha); }, translation_value_index
+    const glm::vec3 scale = sampleTrack<glm::vec3>(
+        animation.scale_timestamps, animation.scales, timestamp, default_scale,
+        [](const glm::vec3 &a, const glm::vec3 &b, float alpha) { return glm::mix(a, b, alpha); }, scale_value_index
     );
 
-    return glm::translate(glm::mat4(1.0f), translation);
+    return glm::scale(glm::translate(glm::mat4(1.0f), translation) * glm::mat4_cast(rotation), scale);
+}
+
+
+glm::vec3 InstanceAnimationSampler::sampleNamedTranslation(const std::string& name, float timestamp) {
+    glm::vec3 default_translation = glm::vec3{};
+
+    if (!mCpuData.non_mesh_instance_animation_map.contains(name))
+        return default_translation;
+
+    auto [instance_index, anim_index] = mCpuData.non_mesh_instance_animation_map.at(name);
+    const scene::InstanceAnimation &animation = mCpuData.non_mesh_instance_animations[anim_index];
+
+    size_t prev_index = anim_index + mCpuData.instance_animations.size();
+    std::size_t &value_index = mPrevAnimationIndices[prev_index].translation_idx;
+
+    const glm::vec3 translation = sampleTrack<glm::vec3>(
+            animation.translation_timestamps, animation.translations, timestamp, default_translation,
+            [](const glm::vec3 &a, const glm::vec3 &b, float alpha) { return glm::mix(a, b, alpha); }, value_index
+    );
+
+    return translation;
+}
+
+glm::quat InstanceAnimationSampler::sampleNamedRotation(const std::string& name, float timestamp) {
+    glm::quat default_rotation = glm::quat(1.0, 0.0, 0.0, 0.0);
+
+    if (!mCpuData.non_mesh_instance_animation_map.contains(name))
+        return default_rotation;
+
+    auto [instance_index, anim_index] = mCpuData.non_mesh_instance_animation_map.at(name);
+    const scene::InstanceAnimation &animation = mCpuData.non_mesh_instance_animations[anim_index];
+
+    size_t prev_index = anim_index + mCpuData.instance_animations.size();
+    std::size_t &value_index = mPrevAnimationIndices[prev_index].rotation_idx;
+
+    const glm::quat rotation = sampleTrack<glm::quat>(
+            animation.rotation_timestamps, animation.rotations, timestamp, default_rotation,
+            [](const glm::quat &a, const glm::quat &b, float alpha) { return glm::slerp(a, b, alpha); }, value_index
+    );
+
+    return rotation;
+}
+
+glm::vec3 InstanceAnimationSampler::sampleNamedScale(const std::string& name, float timestamp) {
+    glm::vec3 default_scale = glm::vec3{1.0, 1.0, 1.0};
+
+    if (!mCpuData.non_mesh_instance_animation_map.contains(name))
+        return default_scale;
+
+    auto [instance_index, anim_index] = mCpuData.non_mesh_instance_animation_map.at(name);
+    const scene::InstanceAnimation &animation = mCpuData.non_mesh_instance_animations[anim_index];
+
+    size_t prev_index = anim_index + mCpuData.instance_animations.size();
+    std::size_t &value_index = mPrevAnimationIndices[prev_index].scale_idx;
+
+    const glm::vec3 scale = sampleTrack<glm::vec3>(
+            animation.scale_timestamps, animation.scales, timestamp, default_scale,
+            [](const glm::vec3 &a, const glm::vec3 &b, float alpha) { return glm::mix(a, b, alpha); }, value_index
+    );
+
+    return scale;
 }
 
 std::vector<glm::mat4> InstanceAnimationSampler::sampleAnimatedInstanceTransforms(float timestamp) {

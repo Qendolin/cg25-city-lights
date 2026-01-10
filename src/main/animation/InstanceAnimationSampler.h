@@ -1,6 +1,5 @@
 #pragma once
 
-#include <float.h>
 #include <glm/glm.hpp>
 #include <vector>
 
@@ -13,6 +12,7 @@
 struct InstanceAnimationIndex {
     std::size_t translation_idx{};
     std::size_t rotation_idx{};
+    std::size_t scale_idx{};
 };
 
 /// <summary>
@@ -32,20 +32,17 @@ public:
     InstanceAnimationSampler(const scene::CpuData &cpu_data);
 
     /// <summary>
-    /// Samples the transform matrix of the animated instance associated with the camera for the
-    /// specified timestamp. Throws if the loaded scene data contains no animated camera node.
+    /// Samples the transform matrix of the animated instance associated with the given name for the
+    /// specified timestamp. Only non-mesh instances.
     /// </summary>
+    /// <param name="name">The unique node name</param>
     /// <param name="timestamp">The timestamp to sample for in seconds</param>
-    /// <returns>The interpolated transform matrix for the animated camera instance.</returns>
-    [[nodiscard]] glm::mat4 sampleAnimatedCameraTransform(float timestamp);
+    /// <returns>The interpolated transform matrix for the animated instance.</returns>
+    [[nodiscard]] glm::mat4 sampleNamedTransform(const std::string& name, float timestamp);
 
-    /// <summary>
-    /// Samples the transform matrix of the animated instance associated with the blob for the
-    /// specified timestamp. Throws if the loaded scene data contains no animated blob node.
-    /// </summary>
-    /// <param name="timestamp">The timestamp to sample for in seconds</param>
-    /// <returns>The interpolated transform matrix for the animated blob instance.</returns>
-    [[nodiscard]] glm::mat4 sampleAnimatedBlobTransform(float timestamp);
+    [[nodiscard]] glm::vec3 sampleNamedTranslation(const std::string& name, float timestamp);
+    [[nodiscard]] glm::quat sampleNamedRotation(const std::string& name, float timestamp);
+    [[nodiscard]] glm::vec3 sampleNamedScale(const std::string& name, float timestamp);
 
     /// <summary>
     /// Samples all transform matrices of all instance animation instances stored in the scene (blob

@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <unordered_map>
 #include <vector>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
@@ -80,8 +81,10 @@ namespace scene {
     struct InstanceAnimation {
         std::vector<float> translation_timestamps;
         std::vector<float> rotation_timestamps;
+        std::vector<float> scale_timestamps;
         std::vector<glm::vec3> translations;
         std::vector<glm::quat> rotations;
+        std::vector<glm::vec3> scales;
     };
 
     struct CpuData {
@@ -91,42 +94,19 @@ namespace scene {
         std::vector<Instance> instances;
 
         /// <summary>
-        /// The data of n animations for the last n instances in the instances vector.
+        /// The data of n animations for the last n instances in the instances vector. Only mesh instances.
         /// </summary>
         std::vector<InstanceAnimation> instance_animations;
 
         /// <summary>
-        /// Specifies whether an animated camera exists in the scene or not.
+        /// The data for animations for non mesh instances.
         /// </summary>
-        bool animated_camera_exists = false;
+        std::vector<InstanceAnimation> non_mesh_instance_animations;
 
         /// <summary>
-        /// Stores the index to the animated camera node in the list of instances. Could be expanded
-        /// to support multiple cameras per scene.
+        /// Stores the instance and animation index for each node name
         /// </summary>
-        std::size_t animated_camera_index;
-        
-        /// <summary>
-        /// Stores the animation data for the camera. Needs to be extended to a vector if scenes
-        /// are expanded to support multiple cameras.
-        /// </summary>
-        InstanceAnimation camera_animation;
-
-        /// <summary>
-        /// Specifies whether an animated blob (an instance of name "Blob" or "blob" exists in
-        /// the scene or not.
-        /// </summary>
-        bool animated_blob_exists = false;
-
-        /// <summary>
-        /// Stores the index to the animated blob node in the list of instances.
-        /// </summary>
-        std::size_t animated_blob_index;
-
-        /// <summary>
-        /// Stores the animation data for the blob node.
-        /// </summary>
-        InstanceAnimation blob_animation;
+        std::unordered_map<std::string, std::pair<size_t, size_t>> non_mesh_instance_animation_map;
     };
 
     class Scene {

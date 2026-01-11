@@ -10,6 +10,7 @@
 #include "audio/Audio.h"
 #include "backend/Swapchain.h"
 #include "backend/VulkanContext.h"
+#include "blob/HenonHeiles.h"
 #include "blob/System.h"
 #include "debug/Performance.h"
 #include "debug/SettingsGui.h"
@@ -124,6 +125,7 @@ void Application::initScene() {
     );
 
     mBlobSystem = std::make_unique<blob::System>(mCtx->allocator(), mCtx->device(), 6, BLOB_RESOLUTION);
+    mBlobChaos = std::make_unique<HenonHeiles>(6);
 }
 
 void Application::initCameras() {
@@ -208,27 +210,18 @@ void Application::updateBlob() {
     mBlobSystem->groundLevel = 0.1f;
     auto balls = mBlobSystem->balls();
 
+    float time = mSettings.animation.time;
+
+    glm::vec3 center = mInstanceAnimationSampler->sampleNamedTranslation("Blob", time);
+
+    mBlobChaos->update(mInput->timeDelta() * 2.0f);
     for (size_t i = 0; i < balls.size(); i++) {
         auto& ball = balls[i];
-        ball.baseRadius = 0.2f; // std::sin((mSettings.animation.time + i) * 4.0f) * 0.25f + 0.5f;
-        ball.maxRadius = 0.5f;
+        ball.baseRadius = 0.1f;
+        ball.maxRadius = 0.7f;
 
-        float delay = 0.5f;
-
-        ball.center = mInstanceAnimationSampler->sampleNamedTranslation("Blob", mSettings.animation.time - i * delay);
-        ball.scale = mInstanceAnimationSampler->sampleNamedScale("Blob", mSettings.animation.time - i * delay);
+        ball.center = center + mBlobChaos->points[i].position;
     }
-
-    // glm::vec3 center = {0.0, 2.0, 0.0};
-    // balls[0].baseRadius = 0.5f;
-    // balls[0].maxRadius = 2.0f;
-    // balls[0].scale = {.2, .2, .2};
-    // balls[0].center = center + glm::vec3{std::sin(mSettings.animation.time), 0, 0} * 1.5f;
-    // balls[1].center = center + glm::vec3{0, std::sin(mSettings.animation.time), 0} * 1.5f;
-    // balls[2].center = center + glm::vec3{0, 0, std::sin(mSettings.animation.time)} * 1.5f;
-    // balls[3].center = center + glm::vec3{std::sin(mSettings.animation.time), std::cos(mSettings.animation.time), 0} * 1.5f;
-    // balls[4].center = center + glm::vec3{0, std::sin(mSettings.animation.time), std::cos(mSettings.animation.time)} * 1.5f;
-    // balls[5].center = center + glm::vec3{std::sin(mSettings.animation.time), 0, std::cos(mSettings.animation.time)} * 1.5f;
 }
 
 void Application::updateAudio() {

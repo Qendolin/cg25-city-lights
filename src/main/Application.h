@@ -4,12 +4,13 @@
 #include <glm/glm.hpp>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "animation/InstanceAnimationSampler.h"
 #include "animation/VariableAnimationController.h"
 #include "debug/Settings.h"
 
+
+class HenonHeiles;
 namespace blob {
     class System;
 }
@@ -36,7 +37,7 @@ class Cubemap;
 
 class Application {
 private:
-    static constexpr float BLOB_RESOLUTION{1.0/16.0};
+    static constexpr float BLOB_RESOLUTION{1.0/20.0};
     static constexpr float MOUSE_SENSITIVITY{0.0026f};
     static constexpr float BASE_SPEED{5.0f};
     static constexpr float FAST_SPEED_MULTIPLIER{10.0f};
@@ -70,6 +71,7 @@ private:
     std::unique_ptr<FrameTimes> mDebugFrameTimes;
 
     std::unique_ptr<blob::System> mBlobSystem;
+    std::unique_ptr<HenonHeiles> mBlobChaos;
     std::unique_ptr<Cubemap> mSkybox;
 
     std::unique_ptr<Audio> mAudio;

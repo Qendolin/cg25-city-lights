@@ -1,0 +1,115 @@
+#version 460 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+#define SHADOW_CASCADE_COUNT 5
+
+layout(set = 0, binding = 0) uniform sampler2D in_depth;
+layout(set = 0, binding = 1) uniform writeonly restrict image2D out_coverage;
+layout(set = 0, binding = 2) uniform sampler2DShadow uShadowMaps[SHADOW_CASCADE_COUNT];
+
+struct ShadowCascade {
+    mat4 transform;
+    vec2 boundsMin;
+    vec2 boundsMax;
+};
+
+layout (std140, set = 0, binding = 3) uniform ShadowCascadesUniforms {
+    ShadowCascade[SHADOW_CASCADE_COUNT] uShadowCascades;
+};
+
+layout (push_constant) uniform ShaderParamConstants
+{
+    vec2 inverseProjectionScale;
+    vec2 inverseProjectionOffset;
+    vec3 sunUpVS;
+    float zNear;
+    vec3 sunRightVS;
+    float density;
+    float stepSize;
+    uint samples;
+    float sunRadiance;
+    float ambientRadiance;
+} cParams;
+
+vec3 unprojectRay(vec2 p) {
+    vec2 ray_xy = fma(p, cParams.inverseProjectionScale, cParams.inverseProjectionOffset);
+    return normalize(vec3(ray_xy.x, -ray_xy.y, -1.0f));
+}
+
+float depthToViewZ(float d) {
+    return cParams.zNear / d;
+}
+
+float IGN(vec2 p) {
+    const vec3 magic = vec3(0.06711056, 0.00583715, 52.9829189);
+    return fract(magic.z * fract(dot(p, magic.xy)));
+}
+
+void main() {
+    if (any(greaterThanEqual(gl_GlobalInvocationID.xy, imageSize(out_coverage)))) {
+        return;
+    }
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+
+    float depth = texelFetch(in_depth, coord, 0).r;
+    float view_z = depthToViewZ(depth);
+
+    vec3 ray = unprojectRay(vec2(coord) + 0.5);
+
+    float step_size = cParams.stepSize;
+    float jitter = IGN(vec2(coord));
+    float t = -step_size * (1.0 - jitter);
+
+    float radiance = 0.0;
+    float transmittance = 1.0;
+    float optical_depth = 0.0;
+
+    int cascade_index = 0;
+
+    for (uint i = 0; i < cParams.samples; ++i) {
+        t += step_size;
+        if (t > view_z || transmittance < 0.01)
+            break;
+
+        vec3 p = ray * t;
+
+        {
+            // Project into light space
+            float lx = dot(p, cParams.sunRightVS.xyz);
+            float ly = dot(p, cParams.sunUpVS.xyz);
+
+            // cascade index is always increasing
+            for (int i = cascade_index; i < SHADOW_CASCADE_COUNT; ++i) {
+                if (lx >= uShadowCascades[i].boundsMin.x && ly >= uShadowCascades[i].boundsMin.y
+                && lx <= uShadowCascades[i].boundsMax.x && ly <= uShadowCascades[i].boundsMax.y) {
+                    cascade_index = i;
+                    break;
+                }
+            }
+        }
+
+        ShadowCascade cascade = uShadowCascades[cascade_index];
+        vec4 p_shadow_ndc = cascade.transform * vec4(p, 1.0);
+
+        vec2 texel_size = vec2(1.0f) / textureSize(uShadowMaps[cascade_index], 0).xy;
+        // z is seperate because we are using 0..1 depth
+        vec3 shadow_uvz = vec3(p_shadow_ndc.xy * 0.5 + 0.5, p_shadow_ndc.z);
+        float shadow = texture(uShadowMaps[cascade_index], shadow_uvz);
+
+        // Integration
+        float extinction = cParams.density;
+        float step_extinction = extinction * step_size;
+
+        optical_depth += step_extinction;
+        transmittance *= exp(-step_extinction);
+
+        float in_radiance = cParams.sunRadiance * shadow + cParams.ambientRadiance;
+        float inscatter = transmittance * extinction * in_radiance * step_size;
+        radiance += inscatter;
+
+        step_size += cParams.stepSize * 0.01;
+    }
+
+    imageStore(out_coverage, coord, vec4(radiance, optical_depth, 0, 1));
+}

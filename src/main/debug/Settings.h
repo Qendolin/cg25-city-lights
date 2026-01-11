@@ -8,7 +8,7 @@ class ShadowCaster;
 struct Settings {
     static constexpr int SHADOW_CASCADE_COUNT = 5;
     
-    DirectionalLight sun = {.elevation = 40.0f, .azimuth = 10.0f, .color = glm::vec3{1.0f, 1.0f, 1.0f}, .power = 15.0f};
+    DirectionalLight sun = {.elevation = 40.0f, .azimuth = 10.0f, .color = glm::vec3{1.000f, 0.945f, 0.843f}, .power = 8.0f};
     
     struct Sky {
         float exposure = 1.49f;
@@ -46,9 +46,15 @@ struct Settings {
         float power = 1.2f;
         float saturation = 1.0f;
     } agx;
+
+    struct Fog {
+        int samples = 90;
+        float stepSize = 0.25f;
+        float density = 0.0030f;
+    } fog;
     
     struct Rendering {
-        glm::vec3 ambient = glm::vec3(0.28f, 0.315, 0.385);
+        glm::vec3 ambient = glm::vec3(0.593f, 0.729, 1.000);
         bool enableFrustumCulling = true;
         bool pauseFrustumCulling = false;
         bool whiteWorld = false;

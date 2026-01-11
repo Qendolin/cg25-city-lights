@@ -24,6 +24,7 @@ struct BufferResourceAccess {
     static const BufferResourceAccess IndirectCommandRead;
     static const BufferResourceAccess GraphicsShaderUniformRead;
     static const BufferResourceAccess GraphicsShaderStorageRead;
+    static const BufferResourceAccess ComputeShaderUniformRead;
     static const BufferResourceAccess VertexShaderAttributeRead;
 };
 

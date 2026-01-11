@@ -9,13 +9,13 @@
 #include "renderer/BlobRenderer.h"
 #include "renderer/DepthPrePassRenderer.h"
 #include "renderer/FinalizeRenderer.h"
+#include "renderer/FogRenderer.h"
 #include "renderer/LightRenderer.h"
 #include "renderer/PbrSceneRenderer.h"
 #include "renderer/SSAORenderer.h"
 #include "renderer/ShadowRenderer.h"
 #include "renderer/SkyboxRenderer.h"
 #include "util/PerFrame.h"
-
 
 class ShadowCascade;
 
@@ -85,6 +85,7 @@ class RenderSystem {
     ImageWithView mStoredHdrColorImage;
     ImageWithView mSsaoIntermediaryImage;
     ImageWithView mSsaoResultImage;
+    ImageWithView mFogImage;
     ImageWithView mHdrColorResolveImage;
     ImageWithView mComputeDepthCopyImage;
     util::PerFrame<Buffer> mTileLightIndicesBuffers;
@@ -100,6 +101,7 @@ class RenderSystem {
     std::unique_ptr<SSAORenderer> mSSAORenderer;
     std::unique_ptr<DepthPrePassRenderer> mDepthPrePassRenderer;
     std::unique_ptr<LightRenderer> mLightRenderer;
+    std::unique_ptr<FogRenderer> mFogRenderer;
 
     std::chrono::time_point<std::chrono::steady_clock> mBeginTime;
     Timings mTimings;

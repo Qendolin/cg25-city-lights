@@ -4,6 +4,7 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) uniform sampler2D in_color;
 layout(set = 0, binding = 1) uniform writeonly restrict image2D out_color;
+layout(set = 0, binding = 2) uniform sampler2D in_fog;
 
 struct AgXParams {
     float ev_min;
@@ -99,6 +100,13 @@ void main() {
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
 
     vec3 color = texelFetch(in_color, coord, 0).rgb;
+
+    // Fog
+    vec2 fog = texelFetch(in_fog, coord, 0).rg;
+    float fog_transmittance = exp(-fog.g);
+    const vec3 fog_color = vec3(1.0f, 0.98f, 0.92f);
+//    color = color * fog_transmittance + fog_color * fog.r;
+    color += fog_color * fog.r;
 
     // Tonemapping
     // Note: the agx tonemap already includes srgb conversion (somehow)

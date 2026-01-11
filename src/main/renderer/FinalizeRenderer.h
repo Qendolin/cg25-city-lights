@@ -17,11 +17,12 @@ public:
     struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
         static constexpr CombinedImageSamplerBinding InColor{0, vk::ShaderStageFlagBits::eCompute};
         static constexpr StorageImageBinding OutColor{1, vk::ShaderStageFlagBits::eCompute};
+        static constexpr CombinedImageSamplerBinding InFog{2, vk::ShaderStageFlagBits::eCompute};
 
         ShaderParamsDescriptorLayout() = default;
 
         explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
-            create(device, {}, InColor, OutColor);
+            create(device, {}, InColor, OutColor, InFog);
             util::setDebugName(device, vk::DescriptorSetLayout(*this), "finalize_renderer_descriptor_layout");
         }
     };
@@ -40,6 +41,7 @@ public:
             const vk::CommandBuffer &cmd_buf,
             const ImageViewPairBase &hdr_attachment,
             const ImageViewPairBase &sdr_attachment,
+            const ImageViewPairBase &fog_image,
             const Settings::AgXParams &agx_params
     );
 

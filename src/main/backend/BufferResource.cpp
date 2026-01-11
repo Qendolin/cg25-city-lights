@@ -50,6 +50,11 @@ constexpr BufferResourceAccess BufferResourceAccess::GraphicsShaderUniformRead =
     .access = vk::AccessFlagBits2::eUniformRead,
 };
 
+constexpr BufferResourceAccess BufferResourceAccess::ComputeShaderUniformRead = {
+    .stage = vk::PipelineStageFlagBits2::eComputeShader,
+    .access = vk::AccessFlagBits2::eUniformRead,
+};
+
 constexpr BufferResourceAccess BufferResourceAccess::GraphicsShaderStorageRead = {
     .stage = vk::PipelineStageFlagBits2::eAllGraphics,
     .access = vk::AccessFlagBits2::eShaderStorageRead,

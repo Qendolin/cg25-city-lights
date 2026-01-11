@@ -62,6 +62,7 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mSSAORenderer = std::make_unique<SSAORenderer>(context->device(), context->allocator(), context->mainQueue);
     mDepthPrePassRenderer = std::make_unique<DepthPrePassRenderer>();
     mLightRenderer = std::make_unique<LightRenderer>(context->device());
+    mFogRenderer = std::make_unique<FogRenderer>(context->device());
 }
 
 void RenderSystem::recreate(const Settings &settings) {
@@ -190,6 +191,20 @@ void RenderSystem::recreate(const Settings &settings) {
     util::setDebugName(device, *mComputeDepthCopyImage.image, "compute_depth_copy_image");
     util::setDebugName(device, *mComputeDepthCopyImage.view, "compute_depth_copy_image_view");
 
+    mFogImage = ImageWithView::create(
+            device, mContext->allocator(),
+            {
+                .format = vk::Format::eR16G16Sfloat,
+                .aspects = vk::ImageAspectFlagBits::eColor,
+                .width = screen_extent.width,
+                .height = screen_extent.height,
+                .usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
+                .device = vma::MemoryUsage::eGpuOnly,
+            }
+    );
+    util::setDebugName(device, *mFogImage.image, "fog_image");
+    util::setDebugName(device, *mFogImage.view, "fog_image_view");
+
     // I don't really like that recrate has to be called explicitly.
     // I'd prefer an implicit solution, but I couldn't think of a good one right now.
     mPbrSceneRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
@@ -201,6 +216,7 @@ void RenderSystem::recreate(const Settings &settings) {
     mSSAORenderer->recreate(device, mShaderLoader, settings.ssao.slices, settings.ssao.samples, settings.ssao.bentNormals);
     mDepthPrePassRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mLightRenderer->recreate(device, mShaderLoader);
+    mFogRenderer->recreate(device, mShaderLoader);
 
     // These have to match the max frames in flight count
     if (!mPerFrameObjects.initialized()) {
@@ -426,6 +442,20 @@ void RenderSystem::draw(const RenderData &rd) {
             );
         }
 
+        // Fog render pass
+        dbg_cmd_label_region.swap("Fog Pass");
+        mFogRenderer->samples = rd.settings.fog.samples;
+        mFogRenderer->stepSize = rd.settings.fog.stepSize;
+        mFogRenderer->density = rd.settings.fog.density;
+        mFogRenderer->execute(
+                mContext->device(), desc_alloc, buf_alloc, cmd_buf, mComputeDepthCopyImage, mFogImage, rd.sunLight,
+                glm::dot(rd.settings.rendering.ambient, glm::vec3(1.0 / 3.0)), rd.sunShadowCasterCascade.cascades(),
+                rd.camera.viewMatrix(), rd.camera.projectionMatrix(), rd.camera.nearPlane()
+        );
+
+        // Post-processing pass
+        dbg_cmd_label_region.swap("Post-Process Pass");
+
         bool msaa = mHdrColorAttachment.imageInfo().samples != vk::SampleCountFlagBits::e1;
         if (msaa) {
             resolveHdrColorImage(cmd_buf);
@@ -433,11 +463,9 @@ void RenderSystem::draw(const RenderData &rd) {
 
         auto &resolved_hdr_color_image = msaa ? mHdrColorResolveImage : mHdrColorAttachment;
 
-        // Post-processing pass
-        dbg_cmd_label_region.swap("Post-Process Pass");
         mFinalizeRenderer->execute(
                 mContext->device(), desc_alloc, cmd_buf, resolved_hdr_color_image, swapchain_fb.colorAttachments[0],
-                rd.settings.agx
+                mFogImage, rd.settings.agx
         );
 
         // ImGui render pass

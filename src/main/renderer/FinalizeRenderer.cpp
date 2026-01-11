@@ -34,10 +34,12 @@ void FinalizeRenderer::execute(
         const vk::CommandBuffer &cmd_buf,
         const ImageViewPairBase &hdr_attachment,
         const ImageViewPairBase &sdr_attachment,
+        const ImageViewPairBase &fog_image,
         const Settings::AgXParams &agx_params
 ) {
     hdr_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
     sdr_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
+    fog_image.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
 
     auto descriptor_set = allocator.allocate(mShaderParamsDescriptorLayout);
     device.updateDescriptorSets(
@@ -52,11 +54,19 @@ void FinalizeRenderer::execute(
                         ShaderParamsDescriptorLayout::OutColor,
                         vk::DescriptorImageInfo{.imageView = sdr_attachment.view(), .imageLayout = vk::ImageLayout::eGeneral}
                 ),
+                descriptor_set.write(
+                        ShaderParamsDescriptorLayout::InFog,
+                        vk::DescriptorImageInfo{
+                            .sampler = *mSampler, .imageView = fog_image.view(), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+                        }
+                ),
             },
             {}
     );
     cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *mPipeline.layout, 0, {descriptor_set}, {});
     cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(agx_params), &agx_params);
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eCompute, *mPipeline.pipeline);
-    cmd_buf.dispatch(util::divCeil(sdr_attachment.image().info.width, 8u), util::divCeil(sdr_attachment.image().info.height, 8u), 1);
+    cmd_buf.dispatch(
+            util::divCeil(sdr_attachment.image().info.width, 8u), util::divCeil(sdr_attachment.image().info.height, 8u), 1
+    );
 }

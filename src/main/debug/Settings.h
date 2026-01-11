@@ -51,6 +51,7 @@ struct Settings {
         int samples = 90;
         float stepSize = 0.25f;
         float density = 0.0030f;
+        glm::vec3 color = glm::vec3(1.0f, 0.98f, 0.92f);
     } fog;
     
     struct Rendering {

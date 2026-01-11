@@ -11,7 +11,10 @@ FinalizeRenderer::~FinalizeRenderer() = default;
 
 FinalizeRenderer::FinalizeRenderer(const vk::Device &device) {
     mShaderParamsDescriptorLayout = ShaderParamsDescriptorLayout(device);
-    mSampler = device.createSamplerUnique({});
+    mSampler = device.createSamplerUnique({
+        .magFilter = vk::Filter::eLinear,
+        .minFilter = vk::Filter::eLinear,
+    });
 }
 
 void FinalizeRenderer::createPipeline(const vk::Device &device, const ShaderLoader &shader_loader) {
@@ -20,7 +23,7 @@ void FinalizeRenderer::createPipeline(const vk::Device &device, const ShaderLoad
     ComputePipelineConfig pipeline_config = {
         .descriptorSetLayouts = {mShaderParamsDescriptorLayout},
         .pushConstants = {vk::PushConstantRange{
-            .stageFlags = vk::ShaderStageFlagBits::eCompute, .offset = 0, .size = sizeof(Settings::AgXParams)
+            .stageFlags = vk::ShaderStageFlagBits::eCompute, .offset = 0, .size = sizeof(PushConstants)
         }}
     };
 
@@ -35,7 +38,8 @@ void FinalizeRenderer::execute(
         const ImageViewPairBase &hdr_attachment,
         const ImageViewPairBase &sdr_attachment,
         const ImageViewPairBase &fog_image,
-        const Settings::AgXParams &agx_params
+        const Settings::AgXParams &agx_params,
+        const glm::vec3& fog_color
 ) {
     hdr_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
     sdr_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
@@ -64,7 +68,13 @@ void FinalizeRenderer::execute(
             {}
     );
     cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *mPipeline.layout, 0, {descriptor_set}, {});
-    cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(agx_params), &agx_params);
+
+    PushConstants push_constants = {
+        .agx = agx_params,
+        .fogColor = glm::vec4(fog_color, 1.0f)
+    };
+
+    cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(push_constants), &push_constants);
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eCompute, *mPipeline.pipeline);
     cmd_buf.dispatch(
             util::divCeil(sdr_attachment.image().info.width, 8u), util::divCeil(sdr_attachment.image().info.height, 8u), 1

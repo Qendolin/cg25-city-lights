@@ -465,7 +465,7 @@ void RenderSystem::draw(const RenderData &rd) {
 
         mFinalizeRenderer->execute(
                 mContext->device(), desc_alloc, cmd_buf, resolved_hdr_color_image, swapchain_fb.colorAttachments[0],
-                mFogImage, rd.settings.agx
+                mFogImage, rd.settings.agx, rd.settings.fog.color
         );
 
         // ImGui render pass

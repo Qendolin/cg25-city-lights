@@ -27,9 +27,13 @@ public:
         }
     };
 
+    struct PushConstants {
+        Settings::AgXParams agx;
+        glm::vec4 fogColor;
+    };
+
     ~FinalizeRenderer();
     explicit FinalizeRenderer(const vk::Device &device);
-
 
     void recreate(const vk::Device &device, const ShaderLoader &shader_loader) {
         createPipeline(device, shader_loader);
@@ -42,7 +46,8 @@ public:
             const ImageViewPairBase &hdr_attachment,
             const ImageViewPairBase &sdr_attachment,
             const ImageViewPairBase &fog_image,
-            const Settings::AgXParams &agx_params
+            const Settings::AgXParams &agx_params,
+            const glm::vec3& fog_color
     );
 
 private:

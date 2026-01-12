@@ -405,6 +405,10 @@ void RenderSystem::draw(const RenderData &rd) {
                 inner = &caster;
             }
         }
+
+        mBlobRenderer->compute(
+                mContext->device(), desc_alloc, cmd_buf, rd.blobSystem, rd.timestamp
+        );
     }
 
     // Main Graphics
@@ -436,9 +440,8 @@ void RenderSystem::draw(const RenderData &rd) {
             dbg_cmd_label_region.swap("Blob Pass");
 
             storeHdrColorImage(cmd_buf);
-            mBlobRenderer->execute(
-                    mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, mStoredHdrColorImage, rd.camera,
-                    rd.blobSystem, rd.timestamp
+            mBlobRenderer->draw(
+                    mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, mStoredHdrColorImage, rd.camera, rd.blobSystem
             );
         }
 
@@ -447,8 +450,9 @@ void RenderSystem::draw(const RenderData &rd) {
         mFogRenderer->samples = rd.settings.fog.samples;
         mFogRenderer->stepSize = rd.settings.fog.stepSize;
         mFogRenderer->density = rd.settings.fog.density;
+        mFogRenderer->heightFalloff = rd.settings.fog.heightFalloff;
         mFogRenderer->execute(
-                mContext->device(), desc_alloc, buf_alloc, cmd_buf, mComputeDepthCopyImage, mFogImage, rd.sunLight,
+                mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer.depthAttachment, mFogImage, rd.sunLight,
                 glm::dot(rd.settings.rendering.ambient, glm::vec3(1.0 / 3.0)), rd.sunShadowCasterCascade.cascades(),
                 rd.camera.viewMatrix(), rd.camera.projectionMatrix(), rd.camera.nearPlane()
         );

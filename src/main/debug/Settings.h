@@ -49,9 +49,10 @@ struct Settings {
 
     struct Fog {
         int samples = 90;
-        float stepSize = 0.25f;
+        float stepSize = 0.35f;
         float density = 0.0030f;
         glm::vec3 color = glm::vec3(1.0f, 0.98f, 0.92f);
+        float heightFalloff = 0.35f;
     } fog;
     
     struct Rendering {

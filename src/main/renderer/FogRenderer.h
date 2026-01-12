@@ -43,6 +43,12 @@ public:
         glm::uint samples;
         float sunRadiance;
         float ambientRadiance;
+        glm::vec3 worldUpVS;
+        float cameraHeight;
+        float heightFalloff;
+        float pad0 = 0;
+        float pad1 = 0;
+        float pad2 = 0;
     };
 
     struct alignas(16) ShadowCascadeUniformBlock {
@@ -54,6 +60,7 @@ public:
     uint32_t samples = 32;
     float stepSize = 0.2f;
     float density = 0.001f;
+    float heightFalloff = 0.1f;
 
     ~FogRenderer();
     explicit FogRenderer(const vk::Device &device);

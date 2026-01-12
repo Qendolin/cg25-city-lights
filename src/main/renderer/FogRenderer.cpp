@@ -62,9 +62,10 @@ void FogRenderer::execute(
     fog_result_image.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
 
     glm::mat4 inverse_view = glm::inverse(view_mat);
+    glm::vec3 camera_pos_ws = glm::vec3(inverse_view[3]);
 
     glm::mat3 sun_rotation = sun_light.rotation();
-    glm::vec3 camera_pos_ls = glm::transpose(sun_rotation) * glm::vec3(inverse_view[3]);
+    glm::vec3 camera_pos_ls = glm::transpose(sun_rotation) * camera_pos_ws;
     std::array<ShadowCascadeUniformBlock, Settings::SHADOW_CASCADE_COUNT> shadow_cascade_uniform_blocks = {};
     for (size_t i = 0; i < sun_shadow_cascades.size(); i++) {
         const auto &cascade = sun_shadow_cascades[i];
@@ -134,6 +135,8 @@ void FogRenderer::execute(
         );
     }
 
+    glm::vec3 world_up_vs = glm::vec3(view_mat * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
+
     PushConstants push_consts = {
         .sunUpVS = glm::normalize(glm::mat3(view_mat) * sun_rotation[1]),
         .zNear = z_near,
@@ -143,6 +146,9 @@ void FogRenderer::execute(
         .samples = samples,
         .sunRadiance = glm::dot(sun_light.radiance(), glm::vec3(1.0/3.0)),
         .ambientRadiance = ambient_light,
+        .worldUpVS = world_up_vs,
+        .cameraHeight = camera_pos_ws.y,
+        .heightFalloff = heightFalloff,
     };
 
     auto width = fog_result_image.image().info.width;

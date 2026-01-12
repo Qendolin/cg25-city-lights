@@ -96,16 +96,12 @@ vec3 tonemapAgX(vec3 col) {
 
 vec2 getFogFiltered(ivec2 coord) {
     vec2 tex_size = vec2(textureSize(in_fog, 0));
-    vec2 texel_size = 1.0 / tex_size;
-    vec2 uv = (vec2(coord) + 0.5) * texel_size;
-
-    vec2 d = texel_size * 0.5;
-
-    vec2 s1 = texture(in_fog, uv + vec2(-d.x, -d.y)).rg;
-    vec2 s2 = texture(in_fog, uv + vec2( d.x, -d.y)).rg;
-    vec2 s3 = texture(in_fog, uv + vec2(-d.x,  d.y)).rg;
-    vec2 s4 = texture(in_fog, uv + vec2( d.x,  d.y)).rg;
-
+    vec2 one_pixel = 1.0 / tex_size;
+    vec2 uv = vec2(coord) * one_pixel;
+    vec2 s1 = texture(in_fog, uv - one_pixel).rg;
+    vec2 s2 = texture(in_fog, uv + vec2(one_pixel.x, -one_pixel.y)).rg;
+    vec2 s3 = texture(in_fog, uv + vec2(-one_pixel.x, one_pixel.y)).rg;
+    vec2 s4 = texture(in_fog, uv + one_pixel).rg;
     return (s1 + s2 + s3 + s4) * 0.25;
 }
 

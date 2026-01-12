@@ -28,8 +28,8 @@ public:
     };
 
     struct PushConstants {
-        Settings::AgXParams agx;
-        glm::vec4 fogColor;
+        alignas(16) Settings::AgXParams agx;
+        alignas(16) glm::vec4 fogColor;
     };
 
     ~FinalizeRenderer();

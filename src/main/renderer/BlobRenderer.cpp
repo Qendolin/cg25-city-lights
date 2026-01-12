@@ -16,57 +16,10 @@ BlobRenderer::BlobRenderer(const vk::Device &device) : mComputeDescriptorLayout{
 }
 
 void BlobRenderer::recreate(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer) {
-    createComputePipeline_(device, shaderLoader);
-    createGraphicsPipeline_(device, shaderLoader, framebuffer);
+    createPipelines(device, shaderLoader, framebuffer);
 }
 
-void BlobRenderer::execute(
-        const vk::Device &device,
-        const DescriptorAllocator &allocator,
-        const vk::CommandBuffer &commandBuffer,
-        const Framebuffer &framebuffer,
-        const ImageViewPairBase &storedColorImage,
-        const Camera &camera,
-        const blob::System &blobSystem,
-        float timestamp
-) {
-    computeVertices(device, allocator, commandBuffer, blobSystem, timestamp);
-    renderVertices(device, allocator, commandBuffer, framebuffer, storedColorImage, camera, blobSystem);
-}
-
-void BlobRenderer::createComputePipeline_(const vk::Device &device, const ShaderLoader &shaderLoader) {
-    UniqueCompiledShaderStage compShader = shaderLoader.loadFromSource(device, "resources/shaders/blob.comp");
-
-    vk::PushConstantRange pushConstantRange{vk::ShaderStageFlagBits::eCompute, 0, sizeof(ComputePushConstant)};
-
-    ComputePipelineConfig pipelineConfig{};
-    pipelineConfig.descriptorSetLayouts = {mComputeDescriptorLayout};
-    pipelineConfig.pushConstants = {pushConstantRange};
-
-    mComputePipeline = createComputePipeline(device, pipelineConfig, *compShader);
-    util::setDebugName(device, *mComputePipeline.pipeline, "blob_compute");
-}
-
-void BlobRenderer::createGraphicsPipeline_(
-        const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer
-) {
-    UniqueCompiledShaderStage vertShader = shaderLoader.loadFromSource(device, "resources/shaders/blob.vert");
-    UniqueCompiledShaderStage fragShader = shaderLoader.loadFromSource(device, "resources/shaders/blob.frag");
-
-
-    GraphicsPipelineConfig pipelineConfig{};
-    pipelineConfig.vertexInput = {blob::VertexData::getBindingDescriptions(), blob::VertexData::getAttributeDescriptions()};
-    pipelineConfig.descriptorSetLayouts = {mDrawDescriptorLayout};
-    pipelineConfig.pushConstants = {};
-    pipelineConfig.attachments = {framebuffer.colorFormats(), framebuffer.depthFormat()};
-    pipelineConfig.rasterizer.samples = framebuffer.depthAttachment.image().info.samples;
-    pipelineConfig.cull.mode = vk::CullModeFlagBits::eNone;
-
-    mGraphicsPipeline = createGraphicsPipeline(device, pipelineConfig, {*vertShader, *fragShader});
-    util::setDebugName(device, *mGraphicsPipeline.pipeline, "blob_draw");
-}
-
-void BlobRenderer::computeVertices(
+void BlobRenderer::compute(
         const vk::Device &device,
         const DescriptorAllocator &allocator,
         const vk::CommandBuffer &cmd_buf,
@@ -150,7 +103,7 @@ void BlobRenderer::computeVertices(
     }
 }
 
-void BlobRenderer::renderVertices(
+void BlobRenderer::draw(
         const vk::Device &device,
         const DescriptorAllocator &allocator,
         const vk::CommandBuffer &cmd_buf,
@@ -217,4 +170,36 @@ void BlobRenderer::renderVertices(
     cmd_buf.bindVertexBuffers(0, {vertex_buffer}, {0});
     cmd_buf.drawIndirect(indirect_buffer, 0, blobSystem.domains().size(), sizeof(vk::DrawIndirectCommand));
     cmd_buf.endRendering();
+}
+
+void BlobRenderer::createPipelines(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer) {
+    {
+        UniqueCompiledShaderStage compShader = shaderLoader.loadFromSource(device, "resources/shaders/blob.comp");
+
+        vk::PushConstantRange pushConstantRange{vk::ShaderStageFlagBits::eCompute, 0, sizeof(ComputePushConstant)};
+
+        ComputePipelineConfig pipelineConfig{};
+        pipelineConfig.descriptorSetLayouts = {mComputeDescriptorLayout};
+        pipelineConfig.pushConstants = {pushConstantRange};
+
+        mComputePipeline = createComputePipeline(device, pipelineConfig, *compShader);
+        util::setDebugName(device, *mComputePipeline.pipeline, "blob_compute");
+    }
+
+    {
+        UniqueCompiledShaderStage vertShader = shaderLoader.loadFromSource(device, "resources/shaders/blob.vert");
+        UniqueCompiledShaderStage fragShader = shaderLoader.loadFromSource(device, "resources/shaders/blob.frag");
+
+
+        GraphicsPipelineConfig pipelineConfig{};
+        pipelineConfig.vertexInput = {blob::VertexData::getBindingDescriptions(), blob::VertexData::getAttributeDescriptions()};
+        pipelineConfig.descriptorSetLayouts = {mDrawDescriptorLayout};
+        pipelineConfig.pushConstants = {};
+        pipelineConfig.attachments = {framebuffer.colorFormats(), framebuffer.depthFormat()};
+        pipelineConfig.rasterizer.samples = framebuffer.depthAttachment.image().info.samples;
+        pipelineConfig.cull.mode = vk::CullModeFlagBits::eNone;
+
+        mGraphicsPipeline = createGraphicsPipeline(device, pipelineConfig, {*vertShader, *fragShader});
+        util::setDebugName(device, *mGraphicsPipeline.pipeline, "blob_draw");
+    }
 }

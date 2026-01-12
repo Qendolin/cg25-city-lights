@@ -81,22 +81,7 @@ public:
 
     void recreate(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer);
 
-    void execute(
-            const vk::Device &device,
-            const DescriptorAllocator &allocator,
-            const vk::CommandBuffer &commandBuffer,
-            const Framebuffer &framebuffer,
-            const ImageViewPairBase &storedColorImage,
-            const Camera &camera,
-            const blob::System &blobSystem,
-            float timestamp
-    );
-
-private:
-    void createComputePipeline_(const vk::Device &device, const ShaderLoader &shaderLoader);
-    void createGraphicsPipeline_(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer);
-
-    void computeVertices(
+    void compute(
             const vk::Device &device,
             const DescriptorAllocator &allocator,
             const vk::CommandBuffer &cmd_buf,
@@ -104,7 +89,7 @@ private:
             float timestamp
     );
 
-    void renderVertices(
+    void draw(
             const vk::Device &device,
             const DescriptorAllocator &allocator,
             const vk::CommandBuffer &cmd_buf,
@@ -113,4 +98,7 @@ private:
             const Camera &camera,
             const blob::System &blobSystem
     );
+
+private:
+    void createPipelines(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer);
 };

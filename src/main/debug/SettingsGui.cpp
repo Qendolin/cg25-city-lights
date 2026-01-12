@@ -25,14 +25,24 @@ void SettingsGui::draw(Settings &settings) {
         PopID();
     }
 
-
     if (CollapsingHeader("Fog")) {
         PushID("fog");
         SliderInt("Samples", &settings.fog.samples, 1, 128);
         SliderFloat("Step Size", &settings.fog.stepSize, 0, 1);
         SliderFloat("Density", &settings.fog.density, 0, 0.1, "%.4f");
+        SliderFloat("G", &settings.fog.g, -1.0, 1.0);
         SliderFloat("Height Falloff", &settings.fog.heightFalloff, 0, 1);
         ColorEdit3("Color", glm::value_ptr(settings.fog.color), ImGuiColorEditFlags_Float);
+        PopID();
+    }
+
+    if (CollapsingHeader("Bloom")) {
+        PushID("bloom");
+        SliderFloat("Threshold", &settings.bloom.threshold, 0.0f, 5.0f);
+        SliderFloat("Knee", &settings.bloom.knee, 0.0f, 1.0f);
+        for (int i = 0; i < settings.bloom.factors.size(); i++) {
+            SliderFloat(("Level " + std::to_string(i)).c_str(), &settings.bloom.factors[i], 0.0f, 1.0f);
+        }
         PopID();
     }
 

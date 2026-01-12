@@ -19,6 +19,7 @@ struct ImageResourceAccess {
     static const ImageResourceAccess ComputeShaderStageOnly;
     static const ImageResourceAccess ComputeShaderWriteGeneral;
     static const ImageResourceAccess ComputeShaderReadGeneral;
+    static const ImageResourceAccess ComputeShaderReadWriteGeneral;
     static const ImageResourceAccess ComputeShaderReadOptimal;
     static const ImageResourceAccess FragmentShaderReadOptimal;
     static const ImageResourceAccess ColorAttachmentLoad;

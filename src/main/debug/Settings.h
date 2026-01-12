@@ -14,7 +14,7 @@ struct Settings {
         float exposure = 1.49f;
         glm::vec3 tint = glm::vec3(1.0f);
     } sky;
-    
+
     struct Shadow {
         float extrusionBias = -0.5f;
         float normalBias = 7.0f;
@@ -49,11 +49,18 @@ struct Settings {
 
     struct Fog {
         int samples = 90;
-        float stepSize = 0.35f;
-        float density = 0.0030f;
+        float stepSize = 0.1f;
+        float density = 0.06f;
+        float g = 0.7f;
         glm::vec3 color = glm::vec3(1.0f, 0.98f, 0.92f);
         float heightFalloff = 0.35f;
     } fog;
+
+    struct Bloom {
+        float threshold = 1.5f;
+        float knee = 0.25f;
+        std::array<float, 5> factors = {1.0f, 0.5f, 0.25f, 0.125f, 0.0625f};
+    } bloom;
     
     struct Rendering {
         glm::vec3 ambient = glm::vec3(0.593f, 0.729, 1.000);
@@ -84,7 +91,7 @@ struct Settings {
         bool animateVariables = true;
         float playbackSpeed = 1.0f;
         float time = 0.0f;
-        bool pause = false;
+        bool pause = true;
     } animation;
 
     struct Camera {

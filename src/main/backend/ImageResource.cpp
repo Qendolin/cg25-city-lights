@@ -34,9 +34,15 @@ constexpr ImageResourceAccess ImageResourceAccess::ComputeShaderReadGeneral = {
     .layout = vk::ImageLayout::eGeneral
 };
 
+constexpr ImageResourceAccess ImageResourceAccess::ComputeShaderReadWriteGeneral = {
+    .stage = vk::PipelineStageFlagBits2::eComputeShader,
+    .access = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+    .layout = vk::ImageLayout::eGeneral
+};
+
 constexpr ImageResourceAccess ImageResourceAccess::ComputeShaderReadOptimal = {
     .stage = vk::PipelineStageFlagBits2::eComputeShader,
-    .access = vk::AccessFlagBits2::eShaderRead,
+    .access = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderSampledRead,
     .layout = vk::ImageLayout::eShaderReadOnlyOptimal
 };
 

@@ -4,7 +4,7 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) uniform sampler2D in_color;
 layout(set = 0, binding = 1) uniform writeonly restrict image2D out_color;
-layout(set = 0, binding = 2) uniform sampler2D in_fog;
+layout(set = 0, binding = 2) uniform sampler2D in_bloom;
 
 struct AgXParams {
     float ev_min;
@@ -94,17 +94,6 @@ vec3 tonemapAgX(vec3 col) {
     return col;
 }
 
-vec2 getFogFiltered(ivec2 coord) {
-    vec2 tex_size = vec2(textureSize(in_fog, 0));
-    vec2 one_pixel = 1.0 / tex_size;
-    vec2 uv = vec2(coord) * one_pixel;
-    vec2 s1 = texture(in_fog, uv - one_pixel).rg;
-    vec2 s2 = texture(in_fog, uv + vec2(one_pixel.x, -one_pixel.y)).rg;
-    vec2 s3 = texture(in_fog, uv + vec2(-one_pixel.x, one_pixel.y)).rg;
-    vec2 s4 = texture(in_fog, uv + one_pixel).rg;
-    return (s1 + s2 + s3 + s4) * 0.25;
-}
-
 void main() {
     if (any(greaterThanEqual(gl_GlobalInvocationID.xy, textureSize(in_color, 0)))) {
         return;
@@ -113,12 +102,9 @@ void main() {
 
     vec3 color = texelFetch(in_color, coord, 0).rgb;
 
-    // Fog
-    vec2 fog = getFogFiltered(coord);
-    float fog_transmittance = exp(-fog.g);
-    color = color * fog_transmittance + cParams.fogColor.rgb * fog.r;
-    // Alternative:
-//    color += cParams.fogColor * fog.r;
+    // Bloom
+    vec3 bloom = texelFetch(in_bloom, coord, 0).rgb;
+    color += bloom;
 
     // Tonemapping
     // Note: the agx tonemap already includes srgb conversion (somehow)

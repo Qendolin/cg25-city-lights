@@ -48,18 +48,20 @@ void FogRenderer::execute(
         const TransientBufferAllocator &buffer_allocator,
         const vk::CommandBuffer &cmd_buf,
         const ImageViewPairBase &depth_attachment,
-        const ImageViewPairBase &fog_result_image,
+        const ImageViewPairBase &hdr_result_image,
         const DirectionalLight &sun_light,
-        float ambient_light,
+        const glm::vec3& ambient_light,
+        const glm::vec3& fog_color,
         std::span<const CascadedShadowCaster> sun_shadow_cascades,
         const glm::mat4 &view_mat,
         const glm::mat4 &projection_mat,
-        float z_near
+        float z_near,
+        uint32_t frame_nr
 ) {
     util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Setup");
 
     depth_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
-    fog_result_image.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
+    hdr_result_image.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadWriteGeneral);
 
     glm::mat4 inverse_view = glm::inverse(view_mat);
     glm::vec3 camera_pos_ws = glm::vec3(inverse_view[3]);
@@ -105,8 +107,8 @@ void FogRenderer::execute(
                         }
                 ),
                 descriptor_set.write(
-                        ShaderParamsDescriptorLayout::OutFog,
-                        vk::DescriptorImageInfo{.imageView = fog_result_image.view(), .imageLayout = vk::ImageLayout::eGeneral}
+                        ShaderParamsDescriptorLayout::InOutColor,
+                        vk::DescriptorImageInfo{.imageView = hdr_result_image.view(), .imageLayout = vk::ImageLayout::eGeneral}
                 ),
                 descriptor_set.write(
                         ShaderParamsDescriptorLayout::ShadowCascadeUniforms,
@@ -137,22 +139,35 @@ void FogRenderer::execute(
 
     glm::vec3 world_up_vs = glm::vec3(view_mat * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
 
+    int32_t depth_samples = 1;
+    if (depth_attachment.image().info.samples == vk::SampleCountFlagBits::e2)
+        depth_samples = 2;
+    else if (depth_attachment.image().info.samples == vk::SampleCountFlagBits::e4)
+        depth_samples = 4;
+    else if (depth_attachment.image().info.samples == vk::SampleCountFlagBits::e8)
+        depth_samples = 8;
+
     PushConstants push_consts = {
         .sunUpVS = glm::normalize(glm::mat3(view_mat) * sun_rotation[1]),
         .zNear = z_near,
         .sunRightVS = glm::normalize(glm::mat3(view_mat) * sun_rotation[0]),
         .density = density,
+        .sunRadiance = sun_light.radiance(),
         .stepSize = stepSize,
-        .samples = samples,
-        .sunRadiance = glm::dot(sun_light.radiance(), glm::vec3(1.0/3.0)),
         .ambientRadiance = ambient_light,
-        .worldUpVS = world_up_vs,
         .cameraHeight = camera_pos_ws.y,
+        .worldUpVS = world_up_vs,
         .heightFalloff = heightFalloff,
+        .fogColor = fog_color,
+        .samples = samples,
+        .sunDirVS = glm::normalize(glm::mat3(view_mat) * sun_rotation[2]),
+        .g = g,
+        .depthSampleIndex = static_cast<int32_t>(frame_nr) % depth_samples,
+        .frame = frame_nr,
     };
 
-    auto width = fog_result_image.image().info.width;
-    auto height = fog_result_image.image().info.height;
+    auto width = hdr_result_image.image().info.width;
+    auto height = hdr_result_image.image().info.height;
 
     calculateInverseProjectionConstants(
             projection_mat, static_cast<float>(width), static_cast<float>(height), push_consts.inverseProjectionScale, push_consts.inverseProjectionOffset

@@ -214,7 +214,7 @@ void Application::updateBlob() {
 
     glm::vec3 center = mInstanceAnimationSampler->sampleNamedTranslation("Blob", time);
 
-    mBlobChaos->update(mInput->timeDelta() * 2.0f);
+    mBlobChaos->update(std::min(mInput->timeDelta() * 2.0f, 1.0f/30.0f));
     for (size_t i = 0; i < balls.size(); i++) {
         auto& ball = balls[i];
         ball.baseRadius = 0.1f;

@@ -7,6 +7,7 @@
 #include "entity/Cubemap.h"
 #include "imgui/ImGui.h"
 #include "renderer/BlobRenderer.h"
+#include "renderer/BloomRenderer.h"
 #include "renderer/DepthPrePassRenderer.h"
 #include "renderer/FinalizeRenderer.h"
 #include "renderer/FogRenderer.h"
@@ -85,7 +86,6 @@ class RenderSystem {
     ImageWithView mStoredHdrColorImage;
     ImageWithView mSsaoIntermediaryImage;
     ImageWithView mSsaoResultImage;
-    ImageWithView mFogImage;
     ImageWithView mHdrColorResolveImage;
     ImageWithView mComputeDepthCopyImage;
     util::PerFrame<Buffer> mTileLightIndicesBuffers;
@@ -102,9 +102,12 @@ class RenderSystem {
     std::unique_ptr<DepthPrePassRenderer> mDepthPrePassRenderer;
     std::unique_ptr<LightRenderer> mLightRenderer;
     std::unique_ptr<FogRenderer> mFogRenderer;
+    std::unique_ptr<BloomRenderer> mBloomRenderer;
 
     std::chrono::time_point<std::chrono::steady_clock> mBeginTime;
     Timings mTimings;
+
+    uint64_t mFrameNumber = 0;
 
 public:
     explicit RenderSystem(VulkanContext *context);

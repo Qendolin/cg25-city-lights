@@ -5,6 +5,7 @@
 #include "../debug/Settings.h"
 
 
+struct ImageViewBase;
 struct ImageViewPairBase;
 class ShaderLoader;
 namespace vk {
@@ -17,12 +18,12 @@ public:
     struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
         static constexpr CombinedImageSamplerBinding InColor{0, vk::ShaderStageFlagBits::eCompute};
         static constexpr StorageImageBinding OutColor{1, vk::ShaderStageFlagBits::eCompute};
-        static constexpr CombinedImageSamplerBinding InFog{2, vk::ShaderStageFlagBits::eCompute};
+        static constexpr CombinedImageSamplerBinding InBloom{2, vk::ShaderStageFlagBits::eCompute};
 
         ShaderParamsDescriptorLayout() = default;
 
         explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
-            create(device, {}, InColor, OutColor, InFog);
+            create(device, {}, InColor, OutColor, InBloom);
             util::setDebugName(device, vk::DescriptorSetLayout(*this), "finalize_renderer_descriptor_layout");
         }
     };
@@ -45,9 +46,8 @@ public:
             const vk::CommandBuffer &cmd_buf,
             const ImageViewPairBase &hdr_attachment,
             const ImageViewPairBase &sdr_attachment,
-            const ImageViewPairBase &fog_image,
-            const Settings::AgXParams &agx_params,
-            const glm::vec3& fog_color
+            const ImageViewBase &bloom_image_view,
+            const Settings::AgXParams &agx_params
     );
 
 private:

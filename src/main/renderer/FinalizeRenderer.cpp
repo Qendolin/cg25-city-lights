@@ -37,13 +37,11 @@ void FinalizeRenderer::execute(
         const vk::CommandBuffer &cmd_buf,
         const ImageViewPairBase &hdr_attachment,
         const ImageViewPairBase &sdr_attachment,
-        const ImageViewPairBase &fog_image,
-        const Settings::AgXParams &agx_params,
-        const glm::vec3& fog_color
+        const ImageViewBase &bloom_image_view,
+        const Settings::AgXParams &agx_params
 ) {
     hdr_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
     sdr_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderWriteGeneral);
-    fog_image.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
 
     auto descriptor_set = allocator.allocate(mShaderParamsDescriptorLayout);
     device.updateDescriptorSets(
@@ -59,9 +57,9 @@ void FinalizeRenderer::execute(
                         vk::DescriptorImageInfo{.imageView = sdr_attachment.view(), .imageLayout = vk::ImageLayout::eGeneral}
                 ),
                 descriptor_set.write(
-                        ShaderParamsDescriptorLayout::InFog,
+                        ShaderParamsDescriptorLayout::InBloom,
                         vk::DescriptorImageInfo{
-                            .sampler = *mSampler, .imageView = fog_image.view(), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+                            .sampler = *mSampler, .imageView = bloom_image_view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
                         }
                 ),
             },
@@ -71,7 +69,6 @@ void FinalizeRenderer::execute(
 
     PushConstants push_constants = {
         .agx = agx_params,
-        .fogColor = glm::vec4(fog_color, 1.0f)
     };
 
     cmd_buf.pushConstants(*mPipeline.layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(push_constants), &push_constants);

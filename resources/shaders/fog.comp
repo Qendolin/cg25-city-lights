@@ -1,13 +1,13 @@
 #version 460 core
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+#extension GL_KHR_shader_subgroup_shuffle : require
 
-#include "common/math.glsl"
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 #define SHADOW_CASCADE_COUNT 5
 
 layout(set = 0, binding = 0) uniform sampler2DMS in_depth;
-layout(set = 0, binding = 1) uniform writeonly restrict image2D out_coverage;
+layout(set = 0, binding = 1, rgba16f) uniform restrict image2D inout_hdr;
 layout(set = 0, binding = 2) uniform sampler2DShadow uShadowMaps[SHADOW_CASCADE_COUNT];
 
 struct ShadowCascade {
@@ -28,14 +28,18 @@ layout (push_constant) uniform ShaderParamConstants
     float zNear;
     vec3 sunRightVS;
     float density;
+    vec3 sunRadiance;
     float stepSize;
-    uint samples;
-    float sunRadiance;
-    float ambientRadiance;
-    vec3 worldUpVS;
+    vec3 ambientRadiance;
     float cameraHeight;
+    vec3 worldUpVS;
     float heightFalloff;
-    float pad0;
+    vec3 fogColor;
+    uint samples;
+    vec3 sunDirVS;
+    float g;
+    int depthSampleIndex;
+    uint frame;
     float pad1;
     float pad2;
 } cParams;
@@ -49,12 +53,27 @@ float depthToViewZ(float d) {
     return cParams.zNear / d;
 }
 
+float bayer2(vec2 screen_pos) {
+    const float bayer[4] = float[](0.0, 0.5, 0.75, 0.25);
+    ivec2 p = ivec2(screen_pos);
+    int index = (p.x % 2) + 2 * (p.y % 2);
+    return bayer[index];
+}
+
 float bayer4(vec2 screen_pos) {
     ivec2 p = ivec2(screen_pos);
 
+    // The 4x4 Bayer Matrix
+    //  0  8  2 10
+    // 12  4 14  6
+    //  3 11  1  9
+    // 15  7 13  5
+
+    // Bitwise math to compute index without branching or large arrays
     int x = p.x % 4;
     int y = p.y % 4;
 
+    // We can use a small constant array lookup
     const int bayer[16] = int[](
     0, 8, 2, 10,
     12, 4, 14, 6,
@@ -65,24 +84,36 @@ float bayer4(vec2 screen_pos) {
     return float(bayer[x + y * 4]) / 16.0;
 }
 
+const float PI = 3.14159265359;
+
+float henyeyGreenstein(float g, float cos_theta) {
+    float g2 = g * g;
+    float num = 1.0 - g2;
+    float denom = 4.0 * PI * pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5);
+    return num / max(denom, 0.0001);
+}
+
 void main() {
-    if (any(greaterThanEqual(gl_GlobalInvocationID.xy, imageSize(out_coverage)))) {
+    if (any(greaterThanEqual(gl_GlobalInvocationID.xy, imageSize(inout_hdr)))) {
         return;
     }
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
 
-    float depth = texelFetch(in_depth, coord, 0).r;
+    float depth = texelFetch(in_depth, coord, cParams.depthSampleIndex).r;
     float view_z = depthToViewZ(depth);
 
     vec3 ray = unprojectRay(vec2(coord) + 0.5);
 
     float step_size = cParams.stepSize;
-    float jitter = bayer4(coord); // IGN(vec2(coord));
+    float jitter = bayer4(coord);
     float t = -step_size * (1.0 - jitter);
 
-    float radiance = 0.0;
+    vec3 radiance = vec3(0.0);
     float transmittance = 1.0;
     float optical_depth = 0.0;
+
+    float cos_theta = dot(ray, cParams.sunDirVS);
+    float phase = henyeyGreenstein(cParams.g, cos_theta);
 
     int cascade_index = 0;
 
@@ -94,7 +125,7 @@ void main() {
         vec3 p = ray * t;
 
         float height = cParams.cameraHeight + dot(p, cParams.worldUpVS);
-        float height_factor = exp(-cParams.heightFalloff * height);
+        float height_factor = exp(-cParams.heightFalloff * max(height, 0.0));
 
         float local_density = cParams.density * height_factor;
 
@@ -128,12 +159,40 @@ void main() {
         optical_depth += step_extinction;
         transmittance *= exp(-step_extinction);
 
-        float in_radiance = cParams.sunRadiance * shadow + cParams.ambientRadiance;
-        float inscatter = transmittance * extinction * in_radiance * step_size;
+        vec3 in_radiance = cParams.sunRadiance * shadow * phase + cParams.ambientRadiance;
+        vec3 inscatter = transmittance * extinction * in_radiance * step_size;
         radiance += inscatter;
 
-        step_size += cParams.stepSize * 0.01;
+        if (i > 32) {
+            step_size *= 1.05;
+        }
     }
 
-    imageStore(out_coverage, coord, vec4(radiance, optical_depth, 0, 1));
+    // 1. Horizontal Neighbor (XOR 1)
+    // In an 8x8 grid, Thread N and N^1 are always left/right neighbors.
+    vec3 rad_h    = subgroupShuffleXor(radiance, 1);
+    float trans_h = subgroupShuffleXor(transmittance, 1);
+
+    // 2. Vertical Neighbor (XOR 8)
+    // Since local_size_x is 8, the pixel directly below is exactly 8 indices away.
+    // Thread N and N^8 are vertical neighbors.
+    vec3 rad_v    = subgroupShuffleXor(radiance, 8);
+    float trans_v = subgroupShuffleXor(transmittance, 8);
+
+    // 3. Diagonal Neighbor (XOR 9)
+    // (XOR 1) ^ (XOR 8) = XOR 9. This gets the pixel diagonal to us.
+    vec3 rad_d    = subgroupShuffleXor(radiance, 9);
+    float trans_d = subgroupShuffleXor(transmittance, 9);
+
+    // Average them
+    vec3 avg_radiance = (radiance + rad_h + rad_v + rad_d) * 0.25;
+    float avg_trans   = (transmittance + trans_h + trans_v + trans_d) * 0.25;
+
+    avg_radiance = radiance;
+    avg_trans = transmittance;
+
+    vec4 in_color = imageLoad(inout_hdr, coord);
+    vec3 result = in_color.rgb * avg_trans + avg_radiance * cParams.fogColor;
+
+    imageStore(inout_hdr, coord, vec4(result, in_color.a));
 }

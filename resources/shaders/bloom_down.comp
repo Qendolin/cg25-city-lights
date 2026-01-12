@@ -1,0 +1,107 @@
+#version 460 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D in_color;
+layout(set = 0, binding = 1, r11f_g11f_b10f) uniform writeonly restrict image2D out_color;
+
+layout(push_constant) uniform PushConstants {
+    vec3 thresholdCurve;
+    float threshold;
+    int firstPass;
+} cParams;
+
+float luminance(vec4 v)
+{
+    return dot(v, vec4(0.2126, 0.7152, 0.0722, 0.0));
+}
+
+float karisAverage(vec4 col)
+{
+    float luma = luminance(col);
+    if(isinf(luma)) return 1.0;
+    return 1.0 / (1.0 + luma);
+}
+
+// Better, temporally stable box filtering
+// [Jimenez14] https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare/
+// . . . . . . .
+// . A . B . C .
+// . . D . E . .
+// . F . G . H .
+// . . I . J . .
+// . K . L . M .
+// . . . . . . .
+vec4 sampleBox13Tap(vec2 tex_coord, vec2 texel_size) {
+    vec4 a = textureLod(in_color, vec2(tex_coord + ivec2(-1, -1)) * texel_size, 0.0);
+    vec4 b = textureLod(in_color, vec2(tex_coord + ivec2( 0, -1)) * texel_size, 0.0);
+    vec4 c = textureLod(in_color, vec2(tex_coord + ivec2( 1, -1)) * texel_size, 0.0);
+    vec4 d = textureLod(in_color, vec2(tex_coord + ivec2(-0, -0)) * texel_size, 0.0);
+    vec4 e = textureLod(in_color, vec2(tex_coord + ivec2( 0, -0)) * texel_size, 0.0);
+    vec4 f = textureLod(in_color, vec2(tex_coord + ivec2(-1,  0)) * texel_size, 0.0);
+    vec4 g = textureLod(in_color, vec2(tex_coord + ivec2( 0,  0)) * texel_size, 0.0);
+    vec4 h = textureLod(in_color, vec2(tex_coord + ivec2( 1,  0)) * texel_size, 0.0);
+    vec4 i = textureLod(in_color, vec2(tex_coord + ivec2(-0,  0)) * texel_size, 0.0);
+    vec4 j = textureLod(in_color, vec2(tex_coord + ivec2( 0,  0)) * texel_size, 0.0);
+    vec4 k = textureLod(in_color, vec2(tex_coord + ivec2(-1,  1)) * texel_size, 0.0);
+    vec4 l = textureLod(in_color, vec2(tex_coord + ivec2( 0,  1)) * texel_size, 0.0);
+    vec4 m = textureLod(in_color, vec2(tex_coord + ivec2( 1,  1)) * texel_size, 0.0);
+
+    if (cParams.firstPass == 0) {
+        vec4 result = (d + e + i + j) * 0.25 * 0.5;
+        result += (a + b + g + f) * 0.25 * 0.125;
+        result += (b + c + h + g) * 0.25 * 0.125;
+        result += (f + g + l + k) * 0.25 * 0.125;
+        result += (g + h + m + l) * 0.25 * 0.125;
+        return result;
+    }
+
+    // Note: This is the correct way to apply the karis average
+    // The implementation by https://learnopengl.com/Guest-Articles/2022/Phys.-Based-Bloom is incorrect
+    // as it is not energy preserving
+    vec4 result0 = (d + e + i + j) * 0.25 * 4.0;
+    vec4 result1 = (a + b + g + f) * 0.25;
+    vec4 result2 = (b + c + h + g) * 0.25;
+    vec4 result3 = (f + g + l + k) * 0.25;
+    vec4 result4 = (g + h + m + l) * 0.25;
+
+    float weight0 = karisAverage(result0);
+    float weight1 = karisAverage(result1);
+    float weight2 = karisAverage(result2);
+    float weight3 = karisAverage(result3);
+    float weight4 = karisAverage(result4);
+
+    return (
+    result0 * weight0 +
+    result1 * weight1 +
+    result2 * weight2 +
+    result3 * weight3 +
+    result4 * weight4) / (
+    weight0 + weight1 + weight2 + weight3 + weight4
+    );
+}
+
+vec4 quadraticThreshold(vec4 color, float threshold, vec3 curve) {
+    // Pixel brightness
+    float br = max(color.r, max(color.g, color.b));
+
+    // Under-threshold part: quadratic curve
+    float rq = clamp(br - curve.x, 0.0, curve.y);
+    rq = curve.z * rq * rq;
+
+    // Combine and apply the brightness response curve
+    color *= max(rq, br - threshold) / max(br, 1.0e-4);
+
+    return color;
+}
+
+void main() {
+    ivec2 tex_coord = ivec2(gl_GlobalInvocationID.xy);
+
+    vec4 color = sampleBox13Tap(vec2(tex_coord * 2 + 1), vec2(1.0) / textureSize(in_color, 0));
+    if(cParams.firstPass == 1) {
+        color = min(color, 512.0); // clamp infinities
+        color = quadraticThreshold(color, cParams.threshold, cParams.thresholdCurve);
+    }
+    imageStore(out_color, tex_coord, color);
+}

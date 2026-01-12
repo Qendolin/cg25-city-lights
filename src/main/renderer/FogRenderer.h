@@ -18,7 +18,7 @@ class FogRenderer {
 public:
     struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
         static constexpr CombinedImageSamplerBinding InDepth{0, vk::ShaderStageFlagBits::eCompute};
-        static constexpr StorageImageBinding OutFog{1, vk::ShaderStageFlagBits::eCompute};
+        static constexpr StorageImageBinding InOutColor{1, vk::ShaderStageFlagBits::eCompute};
         static constexpr CombinedImageSamplerBinding SunShadowMap{
             2, vk::ShaderStageFlagBits::eCompute, Settings::SHADOW_CASCADE_COUNT
         };
@@ -27,7 +27,7 @@ public:
         ShaderParamsDescriptorLayout() = default;
 
         explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
-            create(device, {}, InDepth, OutFog, SunShadowMap, ShadowCascadeUniforms);
+            create(device, {}, InDepth, InOutColor, SunShadowMap, ShadowCascadeUniforms);
             util::setDebugName(device, vk::DescriptorSetLayout(*this), "fog_renderer_descriptor_layout");
         }
     };
@@ -39,16 +39,20 @@ public:
         float zNear;
         glm::vec3 sunRightVS;
         float density;
+        glm::vec3 sunRadiance;
         float stepSize;
-        glm::uint samples;
-        float sunRadiance;
-        float ambientRadiance;
-        glm::vec3 worldUpVS;
+        glm::vec3 ambientRadiance;
         float cameraHeight;
+        glm::vec3 worldUpVS;
         float heightFalloff;
+        glm::vec3 fogColor;
+        glm::uint samples;
+        glm::vec3 sunDirVS;
+        float g;
+        glm::int32_t depthSampleIndex;
+        glm::uint frame;
         float pad0 = 0;
         float pad1 = 0;
-        float pad2 = 0;
     };
 
     struct alignas(16) ShadowCascadeUniformBlock {
@@ -61,6 +65,7 @@ public:
     float stepSize = 0.2f;
     float density = 0.001f;
     float heightFalloff = 0.1f;
+    float g = 0.7f;
 
     ~FogRenderer();
     explicit FogRenderer(const vk::Device &device);
@@ -75,13 +80,15 @@ public:
             const TransientBufferAllocator &buffer_allocator,
             const vk::CommandBuffer &cmd_buf,
             const ImageViewPairBase &depth_attachment,
-            const ImageViewPairBase &fog_result_image,
+            const ImageViewPairBase &hdr_result_image,
             const DirectionalLight &sun_light,
-            float ambient_light,
+            const glm::vec3& ambient_light,
+            const glm::vec3& fog_color,
             std::span<const CascadedShadowCaster> sun_shadow_cascades,
             const glm::mat4 &view_mat,
             const glm::mat4 &projection_mat,
-            float z_near
+            float z_near,
+            uint32_t frame_nr
     );
 
 private:

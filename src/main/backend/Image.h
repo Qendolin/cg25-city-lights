@@ -537,6 +537,7 @@ public:
     explicit ImageViewPair(const UnmanagedImageWithView &image_with_view)
         : mImage(&image_with_view), mView(&image_with_view) {}
     ImageViewPair(const ImageBase &image, const ImageViewBase &view) : mImage(&image), mView(&view) {}
+    ImageViewPair(const ImageBase *image, const ImageViewBase *view) : mImage(image), mView(view) {}
 
     // No temporaries
     ImageViewPair(ImageBase &&image, const ImageViewBase &view) = delete;

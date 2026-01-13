@@ -27,17 +27,10 @@ struct DescriptorAllocatorImpl {
     vk::Device mDevice;
     vk::DescriptorPool mCurrentPool;
     std::vector<vk::DescriptorPool> mUsedPools;
-    std::vector<vk::DescriptorPool> mFreePools;
 
-    DescriptorAllocatorImpl(vk::Device device) : mDevice(device) {}
+    explicit DescriptorAllocatorImpl(vk::Device device) : mDevice(device) {}
 
-    vk::DescriptorPool getPool() {
-        if (!mFreePools.empty()) {
-            auto pool = mFreePools.back();
-            mFreePools.pop_back();
-            return pool;
-        }
-
+    [[nodiscard]] vk::DescriptorPool createPool() const {
         std::array sizes = {
             vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 1024},
             vk::DescriptorPoolSize{vk::DescriptorType::eCombinedImageSampler, 1024},
@@ -65,7 +58,7 @@ DescriptorSet DescriptorAllocator::allocate(const vk::DescriptorSetLayout& layou
 
     // Initialize current pool if null
     if (!mImpl->mCurrentPool) {
-        mImpl->mCurrentPool = mImpl->getPool();
+        mImpl->mCurrentPool = mImpl->createPool();
     }
 
     vk::DescriptorSetAllocateInfo allocInfo = {};
@@ -81,7 +74,7 @@ DescriptorSet DescriptorAllocator::allocate(const vk::DescriptorSetLayout& layou
         if (err.code() == vk::Result::eErrorOutOfPoolMemory || err.code() == vk::Result::eErrorFragmentedPool) {
             // Pool is full. Move to used list and grab a fresh one.
             mImpl->mUsedPools.push_back(mImpl->mCurrentPool);
-            mImpl->mCurrentPool = mImpl->getPool();
+            mImpl->mCurrentPool = mImpl->createPool();
 
             allocInfo.descriptorPool = mImpl->mCurrentPool;
             return DescriptorSet(mImpl->mDevice.allocateDescriptorSets(allocInfo)[0]);
@@ -92,16 +85,16 @@ DescriptorSet DescriptorAllocator::allocate(const vk::DescriptorSetLayout& layou
 
 void DescriptorAllocator::reset() const {
     assert(mImpl);
-    // Move current pool to used pools before resetting
+
+    // Destroy current pool if it exists
     if (mImpl->mCurrentPool) {
-        mImpl->mUsedPools.push_back(mImpl->mCurrentPool);
+        mImpl->mDevice.destroyDescriptorPool(mImpl->mCurrentPool);
         mImpl->mCurrentPool = vk::DescriptorPool{}; // Clear it
     }
 
-    // Reset all used pools and move them to the free list
+    // Destroy all used pools
     for (auto pool : mImpl->mUsedPools) {
-        mImpl->mDevice.resetDescriptorPool(pool);
-        mImpl->mFreePools.push_back(pool);
+        mImpl->mDevice.destroyDescriptorPool(pool);
     }
     mImpl->mUsedPools.clear();
 }
@@ -114,7 +107,6 @@ UniqueDescriptorAllocator::~UniqueDescriptorAllocator() {
     if (mImpl) {
         if (mImpl->mCurrentPool) mImpl->mDevice.destroyDescriptorPool(mImpl->mCurrentPool);
         for (auto p : mImpl->mUsedPools) mImpl->mDevice.destroyDescriptorPool(p);
-        for (auto p : mImpl->mFreePools) mImpl->mDevice.destroyDescriptorPool(p);
         delete mImpl;
         mImpl = nullptr;
     }

@@ -9,18 +9,22 @@ layout(location = 1) out vec3 out_position_ls;
 layout(location = 2) out mat3 out_tbn;
 
 layout(std140, set = 0, binding = 1) uniform ShaderParams {
-	mat4 projectionMatrix;
-	mat4 viewMatrix;
+	mat4 projectionViewMatrix;
 	mat4 modelMatrix;
 	vec4 camera;
 	vec2 invViewportSize;
+	float pad0;
+	float pad1;
+	vec4 sunDir;
+	vec4 sunLight;
+	vec4 ambientLight;
 } uParams;
 
 void main() {
 	out_position_ls = in_position;
 	vec4 position_ws = uParams.modelMatrix * vec4(in_position, 1.0);
 	out_position_ws = position_ws.xyz;
-	gl_Position = uParams.projectionMatrix * uParams.viewMatrix * position_ws;
+	gl_Position = uParams.projectionViewMatrix * position_ws;
 
 	mat3 normal_matrix = mat3(uParams.modelMatrix);
 	vec3 T = normalize(normal_matrix * in_tangent.xyz);

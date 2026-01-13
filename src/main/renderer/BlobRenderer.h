@@ -8,7 +8,10 @@
 #include "../backend/ShaderCompiler.h"
 #include "../debug/Annotation.h"
 #include "../entity/Camera.h"
+#include "../util/PerFrame.h"
 
+
+struct DirectionalLight;
 namespace blob {
     class System;
 }
@@ -30,11 +33,15 @@ public:
 
 
     struct DrawInlineUniformBlock {
-        glm::mat4 projectionMatrix;
-        glm::mat4 viewMatrix;
+        glm::mat4 projectionViewMatrix;
         glm::mat4 modelMatrix;
         glm::vec4 camera;
         glm::vec2 invViewportSize;
+        float pad0 = 0;
+        float pad1 = 0;
+        glm::vec4 sunDir;
+        glm::vec4 sunLight;
+        glm::vec4 ambientLight;
     };
 
     struct DrawDescriptorLayout : DescriptorSetLayout {
@@ -73,6 +80,8 @@ private:
     ComputeDescriptorLayout mComputeDescriptorLayout;
     DrawDescriptorLayout mDrawDescriptorLayout;
 
+    util::PerFrame<vk::UniqueDescriptorPool> mDescriptorPools;
+
     vk::UniqueSampler mSampler;
 
 public:
@@ -81,21 +90,16 @@ public:
 
     void recreate(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer);
 
-    void compute(
-            const vk::Device &device,
-            const DescriptorAllocator &allocator,
-            const vk::CommandBuffer &cmd_buf,
-            const blob::System &blobSystem,
-            float timestamp
-    );
+    void compute(const vk::Device &device, const vk::CommandBuffer &cmd_buf, const blob::System &blobSystem, float timestamp);
 
     void draw(
             const vk::Device &device,
-            const DescriptorAllocator &allocator,
             const vk::CommandBuffer &cmd_buf,
             const Framebuffer &framebuffer,
             const ImageViewPairBase &storedColorImage,
             const Camera &camera,
+            const DirectionalLight &sun,
+            const glm::vec3 &ambientLight,
             const blob::System &blobSystem
     );
 

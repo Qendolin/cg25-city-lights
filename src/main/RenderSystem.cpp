@@ -104,7 +104,8 @@ void RenderSystem::recreate(const Settings &settings) {
                     .aspects = vk::ImageAspectFlagBits::eColor,
                     .width = screen_extent.width,
                     .height = screen_extent.height,
-                    .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage,
+                    .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled |
+                             vk::ImageUsageFlagBits::eStorage,
                     .device = vma::MemoryUsage::eGpuOnly,
                 }
         );
@@ -379,11 +380,10 @@ void RenderSystem::draw(const RenderData &rd) {
     {
         const auto &cmd_buf = frame_objects.independentGraphicsCommands;
         cmd_buf.begin(vk::CommandBufferBeginInfo{});
-        util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Async Graphics");
 
         // Shadow pass
         if (rd.settings.shadowCascade.update) {
-            dbg_cmd_label_region.swap("Shadow Pass");
+            util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Shadow Pass");
             const ShadowCaster *inner = nullptr;
             for (auto &caster: rd.sunShadowCasterCascade.cascades()) {
                 // Objects contained in the inner cascade are culled form the outer cascade
@@ -394,7 +394,8 @@ void RenderSystem::draw(const RenderData &rd) {
             }
         }
 
-        mBlobRenderer->compute(mContext->device(), desc_alloc, cmd_buf, rd.blobSystem, rd.timestamp);
+        util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Blob Pass");
+        mBlobRenderer->compute(mContext->device(), cmd_buf, rd.blobSystem, rd.timestamp);
     }
 
     // Main Graphics
@@ -426,9 +427,8 @@ void RenderSystem::draw(const RenderData &rd) {
             dbg_cmd_label_region.swap("Blob Pass");
 
             storeHdrColorImage(cmd_buf);
-            mBlobRenderer->draw(
-                    mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, mStoredHdrColorImage, rd.camera, rd.blobSystem
-            );
+
+            mBlobRenderer->draw(mContext->device(), cmd_buf, mHdrFramebuffer, mStoredHdrColorImage, rd.camera, rd.sunLight, rd.settings.rendering.ambient, rd.blobSystem);
         }
 
         // MSAA Resolve
@@ -458,7 +458,6 @@ void RenderSystem::draw(const RenderData &rd) {
             dbg_cmd_label_region.swap("Bloom Pass");
             mBloomRenderer->threshold = rd.settings.bloom.threshold;
             mBloomRenderer->knee = rd.settings.bloom.knee;
-
 
             for (int i = 0; i < mBloomRenderer->factors.size(); i++)
                 mBloomRenderer->factors[i] = rd.settings.bloom.factors[i];

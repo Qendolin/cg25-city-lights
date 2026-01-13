@@ -92,44 +92,29 @@ float smoothMin(float a, float b, float k) {
 }
 
 float evaluateField(vec3 p) {
-    // 1. Initialize result with the first ball
-    // We start with a large "outside" distance if no balls are present
-    float result = 1000.0;
+    // 1. Accumulate Metaballs
+    // Initialize with a safe "far away" value
+    uint firstIdx = metaballIndices[cParams.metaballIndexOffset];
+    Metaball b1 = metaballs[firstIdx];
+    float result = ellipsoidSdf(p, b1);
 
-    // Iterate over all assigned metaballs
-    for (uint i = 0; i < cParams.metaballCount; ++i) {
+    // 2. Accumulate Remaining
+    for (uint i = 1; i < cParams.metaballCount; ++i) {
         uint idx = metaballIndices[cParams.metaballIndexOffset + i];
         Metaball b = metaballs[idx];
 
-        // 1. Calculate Bounding Box of influence
-        // We add a small margin to maxRadius to prevent clipping artifacts at the edge
-        float maxS = max(b.scale.x, max(b.scale.y, b.scale.z));
-        float influenceRadius = b.maxRadius * maxS;
+        // Compute SDF
+        float dist = ellipsoidSdf(p, b);
 
-        vec3 diff = abs(p - b.position.xyz);
+        // Compute Smoothing Factor
+        float minS = min(b.scale.x, min(b.scale.y, b.scale.z));
+        float k = (b.maxRadius - b.radius) * minS;
 
-        // Optimization: Only compute precise SDF if roughly within range.
-        // We use a box check which is faster than distance check.
-        if (all(lessThan(diff, vec3(influenceRadius)))) {
-            float dist = ellipsoidSdf(p, b);
-
-            // 2. Smoothing Factor
-            // The blend zone is the difference between the hard core (radius)
-            // and the max influence (maxRadius).
-            float minS = min(b.scale.x, min(b.scale.y, b.scale.z));
-            float k = (b.maxRadius - b.radius) * minS;
-
-            // 3. Accumulate
-            // If this is the first iteration, smoothMin basically just takes 'dist'.
-            if (result > 500.0) {
-                result = dist;
-            } else {
-                result = smoothMin(result, dist, k);
-            }
-        }
+        // Blend
+        result = smoothMin(result, dist, k);
     }
 
-    // 3. Ground Logic
+    // 2. Ground Logic
 //    float h = p.y - cParams.groundLevel;
 //    float suction = 0.5 * exp(-h * 3.0);
 //    result -= suction;
@@ -264,13 +249,13 @@ void main() {
     // We use a safe default value so inactive threads don't produce garbage
     float centerVal = 1e10;
 
-    if (isActive) {
-        vec3 center = cellOrigin + vec3(cParams.cellSize * 0.5);
-        // If center is far from surface (approx sqrt(3)/2 * size), corners won't cross iso-surface
-        if (evaluateField(center) > cParams.cellSize * 0.87) {
-            isActive = false;
-        }
-    }
+//    if (isActive) {
+//        vec3 center = cellOrigin + vec3(cParams.cellSize * 0.5);
+//        // If center is far from surface (approx sqrt(3)/2 * size), corners won't cross iso-surface
+//        if (evaluateField(center) > cParams.cellSize * 0.87) {
+//            isActive = false;
+//        }
+//    }
 
     // 5. Marching Cubes (Only if active)
     MarchingCell cell;
@@ -305,7 +290,7 @@ void main() {
         if (groupVertexCount > 0) {
             groupGlobalBaseIndex = atomicAdd(drawCommands[cParams.drawIndex].vertexCount, groupVertexCount);
         } else {
-            groupGlobalBaseIndex = 0;// dummy write for defined behavior
+            groupGlobalBaseIndex = 0; // dummy write for defined behavior
         }
     }
     barrier();

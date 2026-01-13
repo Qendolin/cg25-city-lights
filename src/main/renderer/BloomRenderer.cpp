@@ -236,6 +236,7 @@ void BloomRenderer::createImages(const vk::Device &device, const vma::Allocator 
 
     vk::Extent2D view_extent = viewport_extent;
     mUpImageViews.resize(LEVELS);
+    mUpImageAccess.clear();
     mUpImageAccess.resize(LEVELS);
     for (uint32_t i = 0; i < LEVELS; i++) {
         mUpImageViews[i] = ImageView::create(
@@ -267,6 +268,7 @@ void BloomRenderer::createImages(const vk::Device &device, const vma::Allocator 
 
     view_extent = {viewport_extent.width / 2, viewport_extent.height / 2};
     mDownImageViews.resize(LEVELS);
+    mDownImageAccess.clear();
     mDownImageAccess.resize(LEVELS);
     for (uint32_t i = 0; i < LEVELS; i++) {
         mDownImageViews[i] = ImageView::create(

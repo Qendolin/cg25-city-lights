@@ -1,7 +1,6 @@
 #include "System.h"
 
-#include <glm/ext/quaternion_geometric.hpp>
-#include <glm/ext/scalar_constants.hpp>
+#include <unordered_set>
 #include <vector>
 
 #include "../util/math.h"
@@ -9,172 +8,27 @@
 
 namespace blob {
 
-    float snap(float v, float cellSize) {
-        return std::floor(v / cellSize + 0.5f) * cellSize;
-    }
+    float snap(float v, float cellSize) { return std::floor(v / cellSize + 0.5f) * cellSize; }
 
-    // Conservative Grid Snap
-    AABB snapAABB(const AABB& b, float cellSize) {
+    AABB snapAABB(const AABB &b, float cellSize) {
         return {
-            glm::vec3(floor(b.min.x/cellSize)*cellSize, floor(b.min.y/cellSize)*cellSize, floor(b.min.z/cellSize)*cellSize),
-            glm::vec3(ceil(b.max.x/cellSize)*cellSize,  ceil(b.max.y/cellSize)*cellSize,  ceil(b.max.z/cellSize)*cellSize)
+            glm::vec3(
+                    floor(b.min.x / cellSize) * cellSize, floor(b.min.y / cellSize) * cellSize,
+                    floor(b.min.z / cellSize) * cellSize
+            ),
+            glm::vec3(ceil(b.max.x / cellSize) * cellSize, ceil(b.max.y / cellSize) * cellSize, ceil(b.max.z / cellSize) * cellSize)
         };
     }
 
     int nextPowerOfTwo(int n) {
-        if (n <= 1) return 1;
-        return 1 << (int)std::ceil(std::log2(n));
-    }
-
-    // Get the tight bounding box of a specific set of balls
-    AABB getBallsBounds(const std::vector<int>& indices, const std::vector<Metaball>& balls) {
-        AABB bounds = {{1e10, 1e10, 1e10}, {-1e10, -1e10, -1e10}};
-        if (indices.empty()) return {{0,0,0},{0,0,0}};
-
-        for (int idx : indices) {
-            const auto& b = balls[idx];
-            float maxS = std::max({b.scale.x, b.scale.y, b.scale.z});
-            glm::vec3 r = glm::vec3(b.maxRadius * maxS);
-            bounds.min = glm::min(bounds.min, b.center - r);
-            bounds.max = glm::max(bounds.max, b.center + r);
-        }
-        return bounds;
-    }
-
-    // --- Core Split Logic ---
-
-    // Recursively split 'spaceBounds' containing 'candidates' into 'targetCount' subdivisions
-    void splitToTarget(
-        AABB spaceBounds,
-        const std::vector<int>& candidates,
-        const std::vector<Metaball>& allBalls,
-        std::vector<Domain>& outDomains,
-        int targetCount,
-        float cellSize
-    ) {
-        // 1. FILTER: Which balls actually touch this space?
-        //    (Fixes your "center point" bug)
-        std::vector<int> activeBalls;
-        AABB ballsUnion = {{1e10, 1e10, 1e10}, {-1e10, -1e10, -1e10}};
-
-        for (int idx : candidates) {
-            const auto& b = allBalls[idx];
-            float maxS = std::max({b.scale.x, b.scale.y, b.scale.z});
-            glm::vec3 r = glm::vec3(b.maxRadius * maxS);
-            AABB ballBox = {b.center - r, b.center + r};
-
-            if (spaceBounds.overlaps(ballBox)) {
-                activeBalls.push_back(idx);
-                ballsUnion.min = glm::min(ballsUnion.min, ballBox.min);
-                ballsUnion.max = glm::max(ballsUnion.max, ballBox.max);
-            }
-        }
-
-        if (activeBalls.empty()) return;
-
-        // 2. SHRINK: The valid domain is Intersection(Space, UnionOfBalls)
-        //    (Fixes your "shrinkToFit overlaps" bug by respecting the parent split plane via spaceBounds)
-        AABB validBounds = {
-            glm::max(spaceBounds.min, ballsUnion.min),
-            glm::min(spaceBounds.max, ballsUnion.max)
-        };
-        // 3. SNAP: Align to grid
-        //    (Fixes your "cracks" bug)
-        validBounds = snapAABB(validBounds, cellSize);
-
-        // Sanity check
-        if (!validBounds.isValid()) return;
-
-        // 4. Base Case: Target reached (or forced leaf)
-        if (targetCount <= 1) {
-            Domain d;
-            d.bounds = validBounds;
-            d.members = std::move(activeBalls);
-            std::sort(d.members.begin(), d.members.end());
-            outDomains.push_back(d);
-            return;
-        }
-
-        // 5. Split: Longest Axis -> Sort by Center -> Find Gap
-        glm::vec3 size = validBounds.max - validBounds.min;
-        int axis = 0;
-        if (size.y > size.x && size.y > size.z) axis = 1;
-        else if (size.z > size.x && size.z > size.y) axis = 2;
-
-        // Sort active balls along this axis
-        // We copy to a temp vector for sorting to avoid messing up the indices
-        std::vector<int> sortedBalls = activeBalls;
-        std::sort(sortedBalls.begin(), sortedBalls.end(), [&](int a, int b) {
-            return allBalls[a].center[axis] < allBalls[b].center[axis];
-        });
-
-        // Heuristic: Try to find a gap, otherwise use spatial midpoint
-        float bestSplit = (validBounds.min[axis] + validBounds.max[axis]) * 0.5f;
-        float maxGap = -1.0f;
-
-        // Try to find a gap in the actual geometry
-        for (size_t i = 0; i + 1 < sortedBalls.size(); ++i) {
-            const auto& b1 = allBalls[sortedBalls[i]];
-            const auto& b2 = allBalls[sortedBalls[i+1]];
-
-            float maxS1 = std::max({b1.scale.x, b1.scale.y, b1.scale.z});
-            float maxS2 = std::max({b2.scale.x, b2.scale.y, b2.scale.z});
-
-            float end1 = b1.center[axis] + b1.maxRadius * maxS1;
-            float start2 = b2.center[axis] - b2.maxRadius * maxS2;
-
-            float gap = start2 - end1;
-            // Gap must be positive to be a separator
-            if (gap > maxGap && gap > 0.0f) {
-                maxGap = gap;
-                bestSplit = (end1 + start2) * 0.5f;
-            }
-        }
-
-        // Snap the split plane
-        bestSplit = snap(bestSplit, cellSize);
-
-        // Fallback: If split is invalid (on edge) due to snapping or clustering,
-        // force spatial center
-        if (bestSplit <= validBounds.min[axis] || bestSplit >= validBounds.max[axis]) {
-             bestSplit = snap((validBounds.min[axis] + validBounds.max[axis]) * 0.5f, cellSize);
-        }
-
-        // Final safety: If we still can't split (e.g. box is 1 cell wide), make leaf
-        if (bestSplit <= validBounds.min[axis] || bestSplit >= validBounds.max[axis]) {
-            Domain d;
-            d.bounds = validBounds;
-            d.members = std::move(activeBalls);
-            std::sort(d.members.begin(), d.members.end());
-            outDomains.push_back(d);
-            return;
-        }
-
-        AABB left = validBounds;
-        AABB right = validBounds;
-        left.max[axis] = bestSplit;
-        right.min[axis] = bestSplit;
-
-        int targetLeft = targetCount / 2;
-        int targetRight = targetCount - targetLeft;
-
-        // Pass ALL active balls to both. They will filter themselves in Step 1.
-        splitToTarget(left, activeBalls, allBalls, outDomains, targetLeft, cellSize);
-        splitToTarget(right, activeBalls, allBalls, outDomains, targetRight, cellSize);
+        if (n <= 1)
+            return 1;
+        return 1 << (int) std::ceil(std::log2(n));
     }
 
     System::System(const vma::Allocator &allocator, const vk::Device &device, int count, float cell_size)
         : cellSize(cell_size), mBalls(count), mDomains(count * 2) {
         assert(count <= 16 && "A maxmimum of 16 metaballs are supported");
-        mDrawIndirectBuffer = Buffer::create(
-                allocator,
-                {
-                    .size = sizeof(vk::DrawIndirectCommand) * mDomains.size(),
-                    .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
-                             vk::BufferUsageFlagBits::eTransferDst,
-                }
-        );
-        util::setDebugName(device, *mDrawIndirectBuffer.buffer, "blob_indirect_buffer");
 
         mMetaballBuffer = Buffer::create(
                 allocator,
@@ -185,27 +39,19 @@ namespace blob {
         );
         util::setDebugName(device, *mMetaballBuffer.buffer, "blob_metaball_buffer");
 
-        mDomainMemberBuffer = Buffer::create(
-                allocator,
-                {
-                    .size = sizeof(uint32_t) * count * count,
-                    .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                }
-        );
-        util::setDebugName(device, *mDomainMemberBuffer.buffer, "blob_domain_member_buffer");
-
-        mTrash.create(globals::MaxFramesInFlight + 1, []{ return std::vector<std::function<void()>>(); });
-        // Vertex buffer is allocated during update
+        mTrash.create(globals::MaxFramesInFlight + 1, [] { return std::vector<std::function<void()>>(); });
     }
 
     void System::update(const vma::Allocator &allocator, const vk::Device &device, const vk::CommandBuffer &cmd_buf) {
-        auto& trash = mTrash.next();
-        for (const auto& t : trash) {
+        auto &trash = mTrash.next();
+        for (const auto &t: trash) {
             t();
         }
         trash.clear();
 
         partition();
+
+        resizeDrawIndirectBuffer(allocator, device, mDomains.size());
 
         size_t required_count = 0;
         for (const auto &d: mDomains) {
@@ -227,7 +73,13 @@ namespace blob {
         mMetaballBuffer.barrier(cmd_buf, BufferResourceAccess::TransferWrite);
         cmd_buf.updateBuffer(mMetaballBuffer, 0, metaball_data.size() * sizeof(MetaballBlock), metaball_data.data());
 
-        std::vector<uint32_t> domain_members(mBalls.size() * mBalls.size());
+        // Calculate total members across all domains
+        size_t totalMembers = 0;
+        for (const auto &d: mDomains) {
+            totalMembers += d.members.size();
+        }
+
+        std::vector<uint32_t> domain_members(totalMembers);
         size_t metaball_index_offset = 0;
         for (const auto &d: mDomains) {
             for (int i: d.members) {
@@ -235,104 +87,131 @@ namespace blob {
             }
         }
 
+        resizeDomainMemberBuffer(allocator, device, domain_members.size());
         mDomainMemberBuffer.barrier(cmd_buf, BufferResourceAccess::TransferWrite);
         cmd_buf.updateBuffer(mDomainMemberBuffer, 0, domain_members.size() * sizeof(uint32_t), domain_members.data());
     }
 
     size_t System::estimateVertexCount(const Domain &domain) const {
-        constexpr size_t MAX_VERTS_PER_CELL = 15; // Max for MC is 15 (5 triangles), though usually < 12
-        constexpr float SAFETY_FACTOR = 4.0f;
-
-        // 1. Estimate based on Surface Area of contents
-        // (Good for large domains containing whole balls)
-        float totalSurfaceArea = 0.0f;
-        for (int idx : domain.members) {
-            const auto& b = mBalls[idx];
-
-            // Conservative radius using max scale
-            float maxS = std::max({b.scale.x, b.scale.y, b.scale.z});
-            float r = b.maxRadius * maxS;
-
-            // Area of sphere = 4 * PI * r^2
-            totalSurfaceArea += 4.0f * glm::pi<float>() * r * r;
-        }
-
-        // Estimate cells needed for this surface area
-        // A cell face has area (cellSize^2).
-        float cellFaceArea = cellSize * cellSize;
-        auto areaBasedEstimate = static_cast<size_t>((totalSurfaceArea / cellFaceArea) * MAX_VERTS_PER_CELL);
-
-        // 2. Estimate based on Domain Volume
-        // (Good for small BSP slices where the ball is much larger than the domain)
-        glm::vec3 domainSize = domain.bounds.max - domain.bounds.min;
-
-        // Add 1.0 to dimensions to account for boundary cells
-        float cellsX = std::ceil(domainSize.x / cellSize) + 1.0f;
-        float cellsY = std::ceil(domainSize.y / cellSize) + 1.0f;
-        float cellsZ = std::ceil(domainSize.z / cellSize) + 1.0f;
-
-        auto totalCellsInDomain = static_cast<size_t>(cellsX * cellsY * cellsZ);
-        size_t volumeBasedEstimate = totalCellsInDomain * MAX_VERTS_PER_CELL;
-
-        // 3. The Result is the Minimum of the two
-        // If the domain is tiny, Volume limits it.
-        // If the domain is huge but empty, Surface Area limits it.
-        size_t count = std::min(areaBasedEstimate, volumeBasedEstimate);
-
-        return static_cast<size_t>(static_cast<float>(count) * SAFETY_FACTOR);
+        constexpr size_t MAX_VERTS_PER_CELL = 12;
+        constexpr float ESTIMATE = 0.5f;
+        float ratio = 8.0f; // That's macroCellSize / cellSize;
+        size_t totalCells = static_cast<size_t>(ratio * ratio * ratio);
+        return totalCells * MAX_VERTS_PER_CELL * ESTIMATE;
     }
+
+    // Helper for sorting
+    struct GridKey {
+        int x, y, z;
+        bool operator<(const GridKey &o) const {
+            if (x != o.x)
+                return x < o.x;
+            if (y != o.y)
+                return y < o.y;
+            return z < o.z;
+        }
+        bool operator==(const GridKey &o) const { return x == o.x && y == o.y && z == o.z; }
+    };
 
     void System::partition() {
         mDomains.clear();
-        if (mBalls.empty()) return;
+        if (mBalls.empty())
+            return;
 
-        // 1. Get AABBs for initial grouping
-        std::vector<AABB> ballAABBs;
-        ballAABBs.reserve(mBalls.size());
-        for (const auto& b : mBalls) {
-            float maxS = std::max({b.scale.x, b.scale.y, b.scale.z});
-            glm::vec3 r = glm::vec3(b.maxRadius * maxS);
-            ballAABBs.push_back({b.center - r, b.center + r});
-        }
+        float macroCellSize = cellSize * 8.0f;
+        float padding = macroCellSize * 0.5f;
 
-        // 2. Find Groups (Connected Components)
-        // (Using standard N^2 flood fill as per your reference)
-        std::vector<std::vector<int>> groups;
-        std::vector<bool> visited(mBalls.size(), false);
+        // Calculate half-diagonal for conservative voxel culling
+        // Distance from center of voxel to its corner
+        float voxelRadius = (macroCellSize * 1.73205f) * 0.5f;
 
-        for (size_t i = 0; i < mBalls.size(); ++i) {
-            if (visited[i]) continue;
+        // 1. Identify Active Voxels (Geometric Shell)
+        std::vector<GridKey> activeKeys;
+        activeKeys.reserve(mBalls.size() * 64);
 
-            std::vector<int> group;
-            std::vector<int> stack = {static_cast<int>(i)};
-            visited[i] = true;
+        for (const auto &ball: mBalls) {
+            float maxS = std::max({ball.scale.x, ball.scale.y, ball.scale.z});
+            float minS = std::min({ball.scale.x, ball.scale.y, ball.scale.z});
 
-            while (!stack.empty()) {
-                int curr = stack.back();
-                stack.pop_back();
-                group.push_back(curr);
+            float rOuter = ball.maxRadius * maxS;
 
-                for (size_t j = 0; j < mBalls.size(); ++j) {
-                    if (!visited[j] && ballAABBs[curr].overlaps(ballAABBs[j])) {
-                        visited[j] = true;
-                        stack.push_back(static_cast<int>(j));
+            // Inner radius for Core Culling.
+            // Use minS to be safe (if flattened, the core is thin).
+            float rInner = ball.baseRadius * minS;
+
+            glm::vec3 minCorner = ball.center - glm::vec3(rOuter);
+            glm::vec3 maxCorner = ball.center + glm::vec3(rOuter);
+
+            glm::ivec3 minVoxel = glm::ivec3(glm::floor((minCorner - origin) / macroCellSize));
+            glm::ivec3 maxVoxel = glm::ivec3(glm::floor((maxCorner - origin) / macroCellSize));
+
+            for (int z = minVoxel.z; z <= maxVoxel.z; ++z) {
+                for (int y = minVoxel.y; y <= maxVoxel.y; ++y) {
+                    for (int x = minVoxel.x; x <= maxVoxel.x; ++x) {
+
+                        // Calculate center of this potential domain
+                        glm::vec3 voxelCenter = origin + (glm::vec3(x, y, z) + 0.5f) * macroCellSize;
+                        float dist = glm::distance(ball.center, voxelCenter);
+
+                        // OPTIMIZATION A: Cull corners of the bounding box.
+                        // If the voxel is completely outside the outer radius, skip it.
+                        if (dist > rOuter + voxelRadius)
+                            continue;
+
+                        // OPTIMIZATION B: Cull solid core.
+                        // If the voxel is completely inside the inner radius, skip it.
+                        // (We subtract voxelRadius to ensure the WHOLE voxel is inside).
+                        if (dist < rInner - voxelRadius)
+                            continue;
+
+                        activeKeys.push_back({x, y, z});
                     }
                 }
             }
-            groups.push_back(group);
         }
 
-        // 3. Process each group
-        for (const auto& group : groups) {
-            // Merge AABBs to get start space
-            AABB groupBounds = getBallsBounds(group, mBalls);
-            groupBounds = snapAABB(groupBounds, cellSize);
+        // 2. Deduplicate
+        if (activeKeys.empty())
+            return;
+        std::sort(activeKeys.begin(), activeKeys.end());
+        activeKeys.erase(std::unique(activeKeys.begin(), activeKeys.end()), activeKeys.end());
 
-            // Calculate target count
-            int target = util::nextLowestPowerOfTwo(static_cast<int>(group.size()));
+        // 3. Build Domains (Keep exactly as Phase 1.6)
+        mDomains.reserve(activeKeys.size());
 
-            // Recursive Split
-            splitToTarget(groupBounds, group, mBalls, mDomains, target, cellSize);
+        for (const auto &key: activeKeys) {
+            Domain d;
+
+            glm::vec3 voxelMin = origin + glm::vec3(key.x, key.y, key.z) * macroCellSize;
+            glm::vec3 voxelMax = voxelMin + glm::vec3(macroCellSize);
+
+            d.bounds.min = voxelMin;
+            d.bounds.max = voxelMax;
+
+            glm::vec3 checkMin = voxelMin - glm::vec3(padding);
+            glm::vec3 checkMax = voxelMax + glm::vec3(padding);
+
+            for (int i = 0; i < mBalls.size(); ++i) {
+                const auto &ball = mBalls[i];
+                float maxS = std::max({ball.scale.x, ball.scale.y, ball.scale.z});
+                float rOuter = ball.maxRadius * maxS;
+
+                glm::vec3 ballMin = ball.center - glm::vec3(rOuter);
+                glm::vec3 ballMax = ball.center + glm::vec3(rOuter);
+
+                bool overlapX = (ballMin.x <= checkMax.x && ballMax.x >= checkMin.x);
+                bool overlapY = (ballMin.y <= checkMax.y && ballMax.y >= checkMin.y);
+                bool overlapZ = (ballMin.z <= checkMax.z && ballMax.z >= checkMin.z);
+
+                if (overlapX && overlapY && overlapZ) {
+                    d.members.push_back(i);
+                }
+            }
+
+            if (!d.members.empty()) {
+                std::sort(d.members.begin(), d.members.end());
+                mDomains.push_back(d);
+            }
         }
     }
 
@@ -340,7 +219,6 @@ namespace blob {
     void System::resizeVertexBuffer(const vma::Allocator &allocator, const vk::Device &device, size_t required_count) {
         size_t current_count = mVertexBuffer.size / sizeof(VertexData);
         size_t reallocated_count = 0;
-        // upsize if current maximum is exceeded or downsize if less than half
         if (required_count > current_count || required_count < current_count / 2) {
             reallocated_count = static_cast<size_t>(1.5 * static_cast<double>(required_count));
         } else {
@@ -353,8 +231,8 @@ namespace blob {
             mTrash.get().emplace_back([allocator, old_buffer, old_alloc]() {
                 allocator.destroyBuffer(old_buffer, old_alloc);
             });
-
         }
+
         mVertexBuffer = Buffer::create(
                 allocator,
                 {
@@ -365,5 +243,59 @@ namespace blob {
         util::setDebugName(device, *mVertexBuffer.buffer, "blob_vertex_buffer");
     }
 
+    void System::resizeDrawIndirectBuffer(const vma::Allocator &allocator, const vk::Device &device, size_t required_count) {
+        size_t current_count = mDrawIndirectBuffer.size / sizeof(vk::DrawIndirectCommand);
+        size_t reallocated_count = 0;
+        if (required_count > current_count || required_count < current_count / 2) {
+            reallocated_count = static_cast<size_t>(1.5 * static_cast<double>(required_count));
+        } else {
+            return;
+        }
+
+        if (mDrawIndirectBuffer) {
+            auto old_buffer = mDrawIndirectBuffer.buffer.release();
+            auto old_alloc = mDrawIndirectBuffer.allocation.release();
+            mTrash.get().emplace_back([allocator, old_buffer, old_alloc]() {
+                allocator.destroyBuffer(old_buffer, old_alloc);
+            });
+        }
+
+        mDrawIndirectBuffer = Buffer::create(
+                allocator,
+                {
+                    .size = sizeof(vk::DrawIndirectCommand) * reallocated_count,
+                    .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
+                             vk::BufferUsageFlagBits::eTransferDst,
+                }
+        );
+        util::setDebugName(device, *mDrawIndirectBuffer.buffer, "blob_draw_indirect_buffer");
+    }
+
+    void System::resizeDomainMemberBuffer(const vma::Allocator &allocator, const vk::Device &device, size_t required_count) {
+        size_t current_count = mDomainMemberBuffer.size / sizeof(uint32_t);
+        size_t reallocated_count = 0;
+        if (required_count > current_count || required_count < current_count / 2) {
+            reallocated_count = static_cast<size_t>(1.5 * static_cast<double>(required_count));
+        } else {
+            return;
+        }
+
+        if (mDomainMemberBuffer) {
+            auto old_buffer = mDomainMemberBuffer.buffer.release();
+            auto old_alloc = mDomainMemberBuffer.allocation.release();
+            mTrash.get().emplace_back([allocator, old_buffer, old_alloc]() {
+                allocator.destroyBuffer(old_buffer, old_alloc);
+            });
+        }
+
+        mDomainMemberBuffer = Buffer::create(
+                allocator,
+                {
+                    .size = sizeof(uint32_t) * reallocated_count,
+                    .usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                }
+        );
+        util::setDebugName(device, *mDomainMemberBuffer.buffer, "blob_domain_member_buffer");
+    }
 
 } // namespace blob

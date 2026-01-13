@@ -211,7 +211,6 @@ void Application::updateBlob() {
     auto balls = mBlobSystem->balls();
 
     float time = mSettings.animation.time;
-
     glm::vec3 center = mInstanceAnimationSampler->sampleNamedTranslation("Blob", time);
 
     mBlobChaos->update(std::min(mInput->timeDelta() * 2.0f, 1.0f/30.0f));
@@ -220,7 +219,7 @@ void Application::updateBlob() {
         ball.baseRadius = 0.1f;
         ball.maxRadius = 0.7f;
 
-        ball.center = center + mBlobChaos->points[i].position;
+        ball.center = center + mBlobChaos->points[i].position * 1.1f;
     }
 }
 

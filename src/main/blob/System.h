@@ -76,6 +76,8 @@ namespace blob {
         void partition();
 
         void resizeVertexBuffer(const vma::Allocator &allocator, const vk::Device &device, size_t required_count);
+        void resizeDrawIndirectBuffer(const vma::Allocator &allocator, const vk::Device &device, size_t required_count);
+        void resizeDomainMemberBuffer(const vma::Allocator &allocator, const vk::Device &device, size_t required_count);
 
         std::vector<Metaball> mBalls;
         std::vector<Domain> mDomains;

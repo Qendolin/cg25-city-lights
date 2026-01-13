@@ -3,6 +3,7 @@
 #include "../blob/System.h"
 #include "../blob/VertexData.h"
 #include "../debug/Annotation.h"
+#include "../entity/Light.h"
 #include "../util/math.h"
 
 BlobRenderer::BlobRenderer(const vk::Device &device) : mComputeDescriptorLayout{device}, mDrawDescriptorLayout(device) {
@@ -13,6 +14,24 @@ BlobRenderer::BlobRenderer(const vk::Device &device) : mComputeDescriptorLayout{
         .addressModeU = vk::SamplerAddressMode::eClampToEdge,
         .addressModeV = vk::SamplerAddressMode::eClampToEdge,
     });
+
+    // I have no idea why, but the blob rendering just doesn't work with the shared descriptor allocator.
+    // I'm 99% sure it's a driver issue.
+    mDescriptorPools.create(globals::MaxFramesInFlight, [&device] {
+        std::vector poolSizes = {
+            vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 16),
+            vk::DescriptorPoolSize(vk::DescriptorType::eInlineUniformBlock, 1024),
+            vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 16 * 4),
+        };
+        vk::DescriptorPoolInlineUniformBlockCreateInfo inlineUniformInfo{};
+        inlineUniformInfo.maxInlineUniformBlockBindings = 1024;
+        return device.createDescriptorPoolUnique({
+            .pNext = &inlineUniformInfo,
+            .maxSets = 16,
+            .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+            .pPoolSizes = poolSizes.data(),
+        });
+    });
 }
 
 void BlobRenderer::recreate(const vk::Device &device, const ShaderLoader &shaderLoader, const Framebuffer &framebuffer) {
@@ -20,11 +39,7 @@ void BlobRenderer::recreate(const vk::Device &device, const ShaderLoader &shader
 }
 
 void BlobRenderer::compute(
-        const vk::Device &device,
-        const DescriptorAllocator &allocator,
-        const vk::CommandBuffer &cmd_buf,
-        const blob::System &blobSystem,
-        float timestamp
+        const vk::Device &device, const vk::CommandBuffer &cmd_buf, const blob::System &blobSystem, float timestamp
 ) {
     util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf, "Compute");
 
@@ -58,7 +73,16 @@ void BlobRenderer::compute(
 
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eCompute, *mComputePipeline.pipeline);
 
-    DescriptorSet set = allocator.allocate(mComputeDescriptorLayout);
+    mDescriptorPools.next();
+    device.resetDescriptorPool(*mDescriptorPools.get());
+
+    auto desc_layout = static_cast<vk::DescriptorSetLayout>(mComputeDescriptorLayout);
+    DescriptorSet set(device.allocateDescriptorSets({
+        .descriptorPool = *mDescriptorPools.get(),
+        .descriptorSetCount = 1,
+        .pSetLayouts = &desc_layout,
+    })[0]);
+
     cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *mComputePipeline.layout, 0, {set}, {});
     device.updateDescriptorSets(
             {
@@ -105,11 +129,12 @@ void BlobRenderer::compute(
 
 void BlobRenderer::draw(
         const vk::Device &device,
-        const DescriptorAllocator &allocator,
         const vk::CommandBuffer &cmd_buf,
         const Framebuffer &framebuffer,
         const ImageViewPairBase &storedColorImage,
         const Camera &camera,
+        const DirectionalLight &sun,
+        const glm::vec3 &ambientLight,
         const blob::System &blobSystem
 ) {
     util::ScopedCommandLabel dbg_cmd_label_func(cmd_buf, "Draw");
@@ -120,17 +145,25 @@ void BlobRenderer::draw(
     mGraphicsPipeline.config.scissors = {{framebuffer.area()}};
     mGraphicsPipeline.config.apply(cmd_buf);
 
-    DescriptorSet set = allocator.allocate(mDrawDescriptorLayout);
+    auto desc_layout = static_cast<vk::DescriptorSetLayout>(mDrawDescriptorLayout);
+    DescriptorSet set(device.allocateDescriptorSets({
+        .descriptorPool = *mDescriptorPools.get(),
+        .descriptorSetCount = 1,
+        .pSetLayouts = &desc_layout,
+    })[0]);
 
     framebuffer.colorAttachments[0].image().barrier(cmd_buf, ImageResourceAccess::ColorAttachmentWrite);
     storedColorImage.image().barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);
 
-    DrawInlineUniformBlock params{};
-    params.projectionMatrix = camera.projectionMatrix();
-    params.viewMatrix = camera.viewMatrix();
-    params.modelMatrix = glm::translate(glm::mat4(1.0f), blobSystem.origin);
-    params.camera = glm::vec4(camera.position, 0.0);
-    params.invViewportSize = 1.0f / glm::vec2(framebuffer.area().extent.width, framebuffer.area().extent.height);
+    DrawInlineUniformBlock params = {
+        .projectionViewMatrix = camera.projectionMatrix() *  camera.viewMatrix(),
+        .modelMatrix = glm::translate(glm::mat4(1.0f), blobSystem.origin),
+        .camera = glm::vec4(camera.position, 0.0),
+        .invViewportSize = 1.0f / glm::vec2(framebuffer.area().extent.width, framebuffer.area().extent.height),
+        .sunDir = glm::vec4(sun.direction(), 0.0),
+        .sunLight = glm::vec4(sun.radiance(), 0.0),
+        .ambientLight = glm::vec4(ambientLight, 0.0),
+    };
 
     device.updateDescriptorSets(
             {set.write(
@@ -192,7 +225,9 @@ void BlobRenderer::createPipelines(const vk::Device &device, const ShaderLoader 
 
 
         GraphicsPipelineConfig pipelineConfig{};
-        pipelineConfig.vertexInput = {blob::VertexData::getBindingDescriptions(), blob::VertexData::getAttributeDescriptions()};
+        pipelineConfig.vertexInput = {
+            blob::VertexData::getBindingDescriptions(), blob::VertexData::getAttributeDescriptions()
+        };
         pipelineConfig.descriptorSetLayouts = {mDrawDescriptorLayout};
         pipelineConfig.pushConstants = {};
         pipelineConfig.attachments = {framebuffer.colorFormats(), framebuffer.depthFormat()};

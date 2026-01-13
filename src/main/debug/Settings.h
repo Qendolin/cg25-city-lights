@@ -52,7 +52,7 @@ struct Settings {
         float stepSize = 0.1f;
         float density = 0.06f;
         float g = 0.7f;
-        glm::vec3 color = glm::vec3(1.0f, 0.98f, 0.92f);
+        glm::vec3 color = glm::vec3(0.828f, 0.874f, 1.000f);
         float heightFalloff = 0.35f;
     } fog;
 

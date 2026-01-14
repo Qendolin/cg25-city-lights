@@ -50,18 +50,22 @@ void FogRenderer::execute(
         const ImageViewPairBase &depth_attachment,
         const ImageViewPairBase &hdr_result_image,
         const DirectionalLight &sun_light,
-        const glm::vec3& ambient_light,
-        const glm::vec3& fog_color,
+        const glm::vec3 &ambient_light,
+        const glm::vec3 &fog_color,
         std::span<const CascadedShadowCaster> sun_shadow_cascades,
         const glm::mat4 &view_mat,
         const glm::mat4 &projection_mat,
         float z_near,
-        uint32_t frame_nr
+        uint32_t frame_nr,
+        const vk::Buffer &light_buffer,
+        const BufferBase &cluster_buffer
 ) {
     util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Setup");
 
     depth_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
     hdr_result_image.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadWriteGeneral);
+    // light_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderRead);
+    cluster_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderRead);
 
     glm::mat4 inverse_view = glm::inverse(view_mat);
     glm::vec3 camera_pos_ws = glm::vec3(inverse_view[3]);
@@ -87,8 +91,8 @@ void FogRenderer::execute(
     }
 
     UnmanagedBuffer shadow_cascade_uniform_buffer = buffer_allocator.allocate(
-        sun_shadow_cascades.size_bytes(), vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst
-);
+            sun_shadow_cascades.size_bytes(), vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst
+    );
     util::setDebugName(device, shadow_cascade_uniform_buffer.buffer, "shadow_cascades_uniform_buffer");
     shadow_cascade_uniform_buffer.barrier(cmd_buf, BufferResourceAccess::TransferWrite);
     cmd_buf.updateBuffer(
@@ -114,7 +118,13 @@ void FogRenderer::execute(
                         ShaderParamsDescriptorLayout::ShadowCascadeUniforms,
                         {.buffer = shadow_cascade_uniform_buffer, .offset = 0, .range = vk::WholeSize}
                 ),
-
+                descriptor_set.write(
+                        ShaderParamsDescriptorLayout::UberLights, {.buffer = light_buffer, .offset = 0, .range = vk::WholeSize}
+                ),
+                descriptor_set.write(
+                        ShaderParamsDescriptorLayout::ClusterLightIndices,
+                        {.buffer = cluster_buffer, .offset = 0, .range = vk::WholeSize}
+                ),
             },
             {}
     );
@@ -148,6 +158,9 @@ void FogRenderer::execute(
         depth_samples = 8;
 
     PushConstants push_consts = {
+        .inverseViewMatrix = inverse_view,
+        .inverseProjectionScale = {}, // Filled by calculateInverseProjectionConstants
+        .inverseProjectionOffset = {}, // Filled by calculateInverseProjectionConstants
         .sunUpVS = glm::normalize(glm::mat3(view_mat) * sun_rotation[1]),
         .zNear = z_near,
         .sunRightVS = glm::normalize(glm::mat3(view_mat) * sun_rotation[0]),
@@ -162,7 +175,7 @@ void FogRenderer::execute(
         .samples = samples,
         .sunDirVS = glm::normalize(glm::mat3(view_mat) * sun_rotation[2]),
         .g = g,
-        .depthSampleIndex = static_cast<int32_t>(frame_nr) % depth_samples,
+        .cameraPosition = camera_pos_ws,
         .frame = frame_nr,
     };
 
@@ -170,7 +183,8 @@ void FogRenderer::execute(
     auto height = hdr_result_image.image().info.height;
 
     calculateInverseProjectionConstants(
-            projection_mat, static_cast<float>(width), static_cast<float>(height), push_consts.inverseProjectionScale, push_consts.inverseProjectionOffset
+            projection_mat, static_cast<float>(width), static_cast<float>(height), push_consts.inverseProjectionScale,
+            push_consts.inverseProjectionOffset
     );
 
     dbg_cmd_label_region.swap("Draw");

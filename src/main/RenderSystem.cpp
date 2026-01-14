@@ -63,6 +63,7 @@ RenderSystem::RenderSystem(VulkanContext *context) : mContext(context) {
     mDepthPrePassRenderer = std::make_unique<DepthPrePassRenderer>();
     mLightRenderer = std::make_unique<LightRenderer>(context->device());
     mFogRenderer = std::make_unique<FogRenderer>(context->device());
+    mFogLightRenderer = std::make_unique<FogLightRenderer>(context->device());
     mBloomRenderer = std::make_unique<BloomRenderer>(context->device());
 }
 
@@ -205,6 +206,7 @@ void RenderSystem::recreate(const Settings &settings) {
     mDepthPrePassRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mLightRenderer->recreate(device, mShaderLoader);
     mFogRenderer->recreate(device, mShaderLoader);
+    mFogLightRenderer->recreate(device, mShaderLoader);
     mBloomRenderer->recreate(device, mContext->allocator(), mShaderLoader, screen_extent);
 
     // These have to match the max frames in flight count
@@ -258,17 +260,24 @@ void RenderSystem::recreate(const Settings &settings) {
     size_t light_tile_stride = 256; // has to match shader
     size_t tile_light_indices_size = light_tile_stride * util::divCeil(screen_extent.width, 16u) *
                                      util::divCeil(screen_extent.height, 16u);
-    mTileLightIndicesBuffers.create(globals::MaxFramesInFlight, [&] {
-        auto &&buf = Buffer::create(
+    mTileLightIndicesBuffer = Buffer::create(
                 mContext->allocator(),
                 {
                     .size = tile_light_indices_size * sizeof(glm::uint),
                     .usage = vk::BufferUsageFlagBits::eStorageBuffer,
                 }
         );
-        util::setDebugName(device, *buf.buffer, "light_tile_indices");
-        return buf;
-    });
+    util::setDebugName(device, *mTileLightIndicesBuffer.buffer, "light_tile_indices");
+
+
+    mFogFroxelLightIndicesBuffer = Buffer::create(
+        mContext->allocator(),
+                {
+                    .size = FogLightRenderer::CLUSTER_BUFFER_SIZE,
+                    .usage = vk::BufferUsageFlagBits::eStorageBuffer,
+                });
+    util::setDebugName(device, *mFogFroxelLightIndicesBuffer.buffer, "light_froxel_indices");
+
 
     mInstanceTransformUpdates.create(globals::MaxFramesInFlight, [&] {
         return Buffer{}; // initially empty; will be allocated on demand
@@ -365,14 +374,13 @@ void RenderSystem::draw(const RenderData &rd) {
         }
 
         dbg_cmd_label_region.swap("Light Pass");
-        auto &tile_light_indices_buffer = mTileLightIndicesBuffers.next();
         if (rd.settings.rendering.asyncCompute) {
-            tile_light_indices_buffer.barrier(cmd_buf_early_graphics, BufferResourceAccess::ComputeShaderStageOnly);
+            mTileLightIndicesBuffer.barrier(cmd_buf_early_graphics, BufferResourceAccess::ComputeShaderStageOnly);
         }
         mLightRenderer->lightRangeFactor = rd.settings.rendering.lightRangeFactor;
         mLightRenderer->execute(
                 mContext->device(), desc_alloc, cmd_buf_compute, rd.gltfScene, rd.camera.projectionMatrix(),
-                rd.camera.viewMatrix(), rd.camera.nearPlane(), mComputeDepthCopyImage, tile_light_indices_buffer
+                rd.camera.viewMatrix(), rd.camera.nearPlane(), mComputeDepthCopyImage, mTileLightIndicesBuffer
         );
     }
 
@@ -412,7 +420,7 @@ void RenderSystem::draw(const RenderData &rd) {
         mPbrSceneRenderer->execute(
                 mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.gltfScene,
                 *mFrustumCuller, rd.sunLight, rd.sunShadowCasterCascade.cascades(), mSsaoResultImage,
-                mTileLightIndicesBuffers.get(), rd.settings
+                mTileLightIndicesBuffer, rd.settings
         );
 
         // Skybox render pass (render late to reduce overdraw)
@@ -440,6 +448,10 @@ void RenderSystem::draw(const RenderData &rd) {
 
 
         // Fog render pass
+        dbg_cmd_label_region.swap("Fog Light Pass");
+
+        mFogLightRenderer->execute(mContext->device(), desc_alloc, cmd_buf, *rd.gltfScene.uberLights, rd.camera.projectionMatrix(), rd.camera.viewMatrix(), rd.camera.nearPlane(), mFogFroxelLightIndicesBuffer);
+
         dbg_cmd_label_region.swap("Fog Pass");
         mFogRenderer->samples = rd.settings.fog.samples;
         mFogRenderer->targetStepContribution = rd.settings.fog.targetStepContribution;
@@ -450,7 +462,7 @@ void RenderSystem::draw(const RenderData &rd) {
                 mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer.depthAttachment,
                 resolved_hdr_color_image, rd.sunLight, rd.settings.rendering.ambient, rd.settings.fog.color,
                 rd.sunShadowCasterCascade.cascades(), rd.camera.viewMatrix(), rd.camera.projectionMatrix(),
-                rd.camera.nearPlane(), mFrameNumber
+                rd.camera.nearPlane(), mFrameNumber, *rd.gltfScene.uberLights, mFogFroxelLightIndicesBuffer
         );
 
         // Bloom pass

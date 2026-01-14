@@ -10,6 +10,7 @@
 #include "renderer/BloomRenderer.h"
 #include "renderer/DepthPrePassRenderer.h"
 #include "renderer/FinalizeRenderer.h"
+#include "renderer/FogLightRenderer.h"
 #include "renderer/FogRenderer.h"
 #include "renderer/LightRenderer.h"
 #include "renderer/PbrSceneRenderer.h"
@@ -88,7 +89,8 @@ class RenderSystem {
     ImageWithView mSsaoResultImage;
     ImageWithView mHdrColorResolveImage;
     ImageWithView mComputeDepthCopyImage;
-    util::PerFrame<Buffer> mTileLightIndicesBuffers;
+    Buffer mTileLightIndicesBuffer;
+    Buffer mFogFroxelLightIndicesBuffer;
 
     std::unique_ptr<ImGuiBackend> mImguiBackend;
 
@@ -102,6 +104,7 @@ class RenderSystem {
     std::unique_ptr<DepthPrePassRenderer> mDepthPrePassRenderer;
     std::unique_ptr<LightRenderer> mLightRenderer;
     std::unique_ptr<FogRenderer> mFogRenderer;
+    std::unique_ptr<FogLightRenderer> mFogLightRenderer;
     std::unique_ptr<BloomRenderer> mBloomRenderer;
 
     std::chrono::time_point<std::chrono::steady_clock> mBeginTime;

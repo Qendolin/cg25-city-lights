@@ -2,13 +2,12 @@
 
 #extension GL_KHR_shader_subgroup_shuffle : require
 
+#include "common/math.glsl"
+#include "fog_common.glsl"
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 #define SHADOW_CASCADE_COUNT 5
-
-layout(set = 0, binding = 0) uniform sampler2DMS in_depth;
-layout(set = 0, binding = 1, rgba16f) uniform restrict image2D inout_hdr;
-layout(set = 0, binding = 2) uniform sampler2DShadow uShadowMaps[SHADOW_CASCADE_COUNT];
 
 struct ShadowCascade {
     mat4 transform;
@@ -16,12 +15,25 @@ struct ShadowCascade {
     vec2 boundsMax;
 };
 
+layout(set = 0, binding = 0) uniform sampler2DMS in_depth;
+layout(set = 0, binding = 1, rgba16f) uniform restrict image2D inout_hdr;
+layout(set = 0, binding = 2) uniform sampler2DShadow uShadowMaps[SHADOW_CASCADE_COUNT];
+
 layout (std140, set = 0, binding = 3) uniform ShadowCascadesUniforms {
     ShadowCascade[SHADOW_CASCADE_COUNT] uShadowCascades;
 };
 
+layout (std430, set = 0, binding = 4) readonly buffer UberLightBuffer {
+    UberLight uUberLightBuffer[];
+};
+
+layout (std430, set = 0, binding = 5) readonly buffer ClusterLightIndicesBuffer {
+    uint uClusterLightIndices[];
+};
+
 layout (push_constant) uniform ShaderParamConstants
 {
+    mat4 inverseViewMatrix;
     vec2 inverseProjectionScale;
     vec2 inverseProjectionOffset;
     vec3 sunUpVS;
@@ -38,10 +50,8 @@ layout (push_constant) uniform ShaderParamConstants
     uint samples;
     vec3 sunDirVS;
     float g;
-    int depthSampleIndex;
+    vec3 cameraPosition;
     uint frame;
-    float pad1;
-    float pad2;
 } cParams;
 
 vec3 unprojectRay(vec2 p) {
@@ -53,15 +63,18 @@ float depthToViewZ(float d) {
     return cParams.zNear / d;
 }
 
-// Improved blue noise-like dithering using interleaved gradient noise
+uint viewZToSlice(float z) {
+    float z_clamped = max(z, cParams.zNear);
+    float k = log(z_clamped / cParams.zNear) / log(FOG_MAX_DISTANCE / cParams.zNear);
+    return uint(clamp(k * float(CLUSTER_DIM_Z), 0.0, float(CLUSTER_DIM_Z) - 1.0));
+}
+
 float interleavedGradientNoise(vec2 screen_pos, uint frame_count) {
     vec3 magic = vec3(0.06711056, 0.00583715, 52.9829189);
     float noise = fract(magic.z * fract(dot(screen_pos, magic.xy)));
-    // Temporal variation
     return fract(noise + float(frame_count % 64) * 0.61803398875);
 }
 
-// R2 sequence for low-discrepancy sampling
 vec2 r2Sequence(uint n) {
     const float g = 1.32471795724474602596;
     const float a1 = 1.0 / g;
@@ -69,7 +82,6 @@ vec2 r2Sequence(uint n) {
     return fract(vec2(a1, a2) * float(n));
 }
 
-const float PI = 3.14159265359;
 const float MIN_STEP_SIZE = 0.05;
 const float MAX_STEP_SIZE = 25.0;
 const float EPSILON_DENSITY = 1e-5;
@@ -77,29 +89,28 @@ const float EPSILON_DENSITY = 1e-5;
 float henyeyGreenstein(float g, float cos_theta) {
     float g2 = g * g;
     float num = 1.0 - g2;
-    float denom = 4.0 * PI * pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5);
+    float denom = 4.0 * PI * pow(max(0.001, 1.0 + g2 - 2.0 * g * cos_theta), 1.5);
     return num / max(denom, 0.0001);
 }
 
-// Improved step size calculation based on constant inscattering contribution
-// This ensures perceptually uniform contribution from each sample
+float getDistanceAttenuation(float dist, float radius) {
+    float num = saturate(1.0 - pow(dist / radius, 4.0));
+    return (num * num) / (dist * dist + 1.0);
+}
+
+float getSpotAttenuation(vec3 lightDir, vec3 L, float scale, float offset) {
+    float cd = dot(lightDir, -L);
+    float angularAttenuation = saturate(cd * scale + offset);
+    return angularAttenuation * angularAttenuation;
+}
+
 float computeAdaptiveStep(float extinction, float current_transmittance) {
     if (extinction < EPSILON_DENSITY || current_transmittance < 0.001) {
         return MAX_STEP_SIZE;
     }
 
-    // We want each step to contribute the same amount to the final radiance
-    // Contribution = transmittance * inscattered_light * (1 - exp(-extinction * step))
-    // For constant contribution: transmittance * (1 - exp(-extinction * step)) = constant
-    // Solving for step: step = -ln(1 - constant/transmittance) / extinction
-    // where constant = targetStepContribution (target contribution per step)
-
     float target_contribution = cParams.targetStepContribution;
-
-    // Clamp the argument to ln to avoid negative or zero values
-    float ln_arg = 1.0 - target_contribution / current_transmittance;
-    ln_arg = max(ln_arg, 0.001); // Prevent log(0) or log(negative)
-
+    float ln_arg = max(1.0 - target_contribution / current_transmittance, 0.001);
     float step = -log(ln_arg) / extinction;
 
     return clamp(step, MIN_STEP_SIZE, MAX_STEP_SIZE);
@@ -111,103 +122,112 @@ void main() {
     }
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
 
-    float depth = texelFetch(in_depth, coord, cParams.depthSampleIndex).r;
-    float view_z = depthToViewZ(depth);
+    vec2 screen_uv = (vec2(coord) + 0.5) / vec2(imageSize(inout_hdr));
+    uvec2 cluster_xy = uvec2(screen_uv * vec2(CLUSTER_DIM_X, CLUSTER_DIM_Y));
+    cluster_xy = min(cluster_xy, uvec2(CLUSTER_DIM_X - 1, CLUSTER_DIM_Y - 1)); // Safety clamp
 
-    vec3 ray = unprojectRay(vec2(coord) + 0.5);
+    // Calculate flat index for this column of froxels
+    uint tile_flat_index = cluster_xy.y * CLUSTER_DIM_X + cluster_xy.x;
+    uint cluster_col_offset = (tile_flat_index * CLUSTER_DIM_Z) << CLUSTER_LIGHT_STRIDE_SHIFT;
 
-    // Improved jittering: spatial + temporal variation
+    float depth = texelFetch(in_depth, coord, 0).r;
+    float scene_view_z = depthToViewZ(depth);
+
+    vec3 ray_vs = unprojectRay(vec2(coord) + 0.5);
+    vec3 ray_ws = mat3(cParams.inverseViewMatrix) * ray_vs;
+
     float initial_jitter = interleavedGradientNoise(vec2(coord), cParams.frame);
 
     float t = 0.0;
     vec3 radiance = vec3(0.0);
     float transmittance = 1.0;
 
-    float cos_theta = dot(ray, cParams.sunDirVS);
-    float phase = henyeyGreenstein(cParams.g, cos_theta);
-
     int cascade_index = 0;
 
     for (uint i = 0; i < cParams.samples; ++i) {
-        // Per-sample jitter using R2 sequence combined with initial jitter
-        // This breaks up the regular pattern while maintaining good distribution
         vec2 r2 = r2Sequence(i + cParams.frame * cParams.samples);
         float sample_jitter = fract(initial_jitter + r2.x);
 
-        // Sample position with jitter applied to THIS step
-        vec3 p = ray * t;
+        vec3 p_vs = ray_vs * t;
+        vec3 p_ws = cParams.cameraPosition + ray_ws * t;
 
-        // Density at current position
-        float height = cParams.cameraHeight + dot(p, cParams.worldUpVS);
+        float height = cParams.cameraHeight + dot(p_vs, cParams.worldUpVS);
         float height_factor = exp(-cParams.heightFalloff * max(height, 0.0));
         float extinction = cParams.density * height_factor;
 
-        // Calculate adaptive step size based on current conditions
         float step_size = computeAdaptiveStep(extinction, transmittance);
+        step_size = min(step_size, scene_view_z - t);
 
-        // Clamp to remaining distance
-        step_size = min(step_size, view_z - t);
-
-        // Apply jitter to step size (reduces banding further)
         float jittered_step = step_size * (0.5 + 0.5 * sample_jitter);
-
-        // Advance ray with jittered step
         t += jittered_step;
 
-        if (t >= view_z || transmittance < 0.01) {
+        if (t >= scene_view_z || transmittance < 0.01) {
             break;
         }
 
-        // Recalculate position at actual sample point
-        p = ray * t;
-        height = cParams.cameraHeight + dot(p, cParams.worldUpVS);
+        p_vs = ray_vs * t;
+        p_ws = cParams.cameraPosition + ray_ws * t;
+        height = cParams.cameraHeight + dot(p_vs, cParams.worldUpVS);
         height_factor = exp(-cParams.heightFalloff * max(height, 0.0));
         extinction = cParams.density * height_factor;
 
-        {
-            // Project into light space
-            float lx = dot(p, cParams.sunRightVS.xyz);
-            float ly = dot(p, cParams.sunUpVS.xyz);
+        // Shadow Map (Sun)
+        float lx = dot(p_vs, cParams.sunRightVS.xyz);
+        float ly = dot(p_vs, cParams.sunUpVS.xyz);
 
-            // cascade index is always increasing
-            for (int j = cascade_index; j < SHADOW_CASCADE_COUNT; ++j) {
-                if (lx >= uShadowCascades[j].boundsMin.x && ly >= uShadowCascades[j].boundsMin.y
-                && lx <= uShadowCascades[j].boundsMax.x && ly <= uShadowCascades[j].boundsMax.y) {
-                    cascade_index = j;
-                    break;
+        for (int j = cascade_index; j < SHADOW_CASCADE_COUNT; ++j) {
+            if (lx >= uShadowCascades[j].boundsMin.x && ly >= uShadowCascades[j].boundsMin.y
+            && lx <= uShadowCascades[j].boundsMax.x && ly <= uShadowCascades[j].boundsMax.y) {
+                cascade_index = j;
+                break;
+            }
+        }
+
+        vec4 p_shadow_ndc = uShadowCascades[cascade_index].transform * vec4(p_vs, 1.0);
+        vec3 shadow_uvz = vec3(p_shadow_ndc.xy * 0.5 + 0.5, p_shadow_ndc.z);
+        float shadow = texture(uShadowMaps[cascade_index], shadow_uvz);
+
+        float cos_theta_sun = dot(ray_vs, cParams.sunDirVS);
+        float phase_sun = henyeyGreenstein(cParams.g, cos_theta_sun);
+
+        vec3 in_radiance = cParams.sunRadiance * shadow * phase_sun + cParams.ambientRadiance;
+
+        // Local Lights
+        float view_dist_z = abs(p_vs.z);
+        if (view_dist_z < FOG_MAX_DISTANCE || true) {
+            uint z_slice = viewZToSlice(view_dist_z);
+            uint slice_offset = cluster_col_offset + (z_slice << CLUSTER_LIGHT_STRIDE_SHIFT);
+            uint light_count = uClusterLightIndices[slice_offset];
+
+            for (uint k = 0; k < light_count; ++k) {
+                uint light_index = uClusterLightIndices[slice_offset + 1 + k];
+                UberLight light = uUberLightBuffer[light_index];
+
+                vec3 L = light.position - p_ws;
+                float dist = length(L);
+
+                if (dist < light.range) {
+                    L /= dist;
+                    float att = getDistanceAttenuation(dist, light.range);
+
+                    if (light.coneAngleScale != 0.0) {
+                        vec3 spotDir = octahedronDecode(light.direction);
+                        att *= getSpotAttenuation(spotDir, L, light.coneAngleScale, light.coneAngleOffset);
+                    }
+
+                    float phase_local = henyeyGreenstein(cParams.g, dot(ray_ws, L));
+                    in_radiance += light.radiance * att * phase_local;
                 }
             }
         }
 
-        ShadowCascade cascade = uShadowCascades[cascade_index];
-        vec4 p_shadow_ndc = cascade.transform * vec4(p, 1.0);
-
-        vec3 shadow_uvz = vec3(p_shadow_ndc.xy * 0.5 + 0.5, p_shadow_ndc.z);
-        float shadow = texture(uShadowMaps[cascade_index], shadow_uvz);
-
-        // Integration with actual traveled distance
         float step_extinction = extinction * jittered_step;
         float step_transmittance = exp(-step_extinction);
         transmittance *= step_transmittance;
 
-        vec3 in_radiance = cParams.sunRadiance * shadow * phase + cParams.ambientRadiance;
         float one_minus_t = 1.0 - step_transmittance;
-        vec3 inscatter = transmittance * in_radiance * one_minus_t;
-        radiance += inscatter;
+        radiance += transmittance * in_radiance * one_minus_t;
     }
-
-    // Subgroup sharing for spatial smoothing (optional - uncomment if desired)
-    /*
-    vec3 rad_h    = subgroupShuffleXor(radiance, 1);
-    float trans_h = subgroupShuffleXor(transmittance, 1);
-    vec3 rad_v    = subgroupShuffleXor(radiance, 8);
-    float trans_v = subgroupShuffleXor(transmittance, 8);
-    vec3 rad_d    = subgroupShuffleXor(radiance, 9);
-    float trans_d = subgroupShuffleXor(transmittance, 9);
-
-    radiance = (radiance + rad_h + rad_v + rad_d) * 0.25;
-    transmittance = (transmittance + trans_h + trans_v + trans_d) * 0.25;
-    */
 
     vec4 in_color = imageLoad(inout_hdr, coord);
     vec3 result = in_color.rgb * transmittance + radiance * cParams.fogColor;

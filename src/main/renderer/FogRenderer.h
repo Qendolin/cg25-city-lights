@@ -5,6 +5,7 @@
 #include "../debug/Settings.h"
 
 
+struct BufferBase;
 class TransientBufferAllocator;
 class CascadedShadowCaster;
 struct ImageViewPairBase;
@@ -23,16 +24,19 @@ public:
             2, vk::ShaderStageFlagBits::eCompute, Settings::SHADOW_CASCADE_COUNT
         };
         static constexpr UniformBufferBinding ShadowCascadeUniforms{3, vk::ShaderStageFlagBits::eCompute};
+        static constexpr StorageBufferBinding UberLights{4, vk::ShaderStageFlagBits::eCompute};
+        static constexpr StorageBufferBinding ClusterLightIndices{5, vk::ShaderStageFlagBits::eCompute};
 
         ShaderParamsDescriptorLayout() = default;
 
         explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
-            create(device, {}, InDepth, InOutColor, SunShadowMap, ShadowCascadeUniforms);
+            create(device, {}, InDepth, InOutColor, SunShadowMap, ShadowCascadeUniforms, UberLights, ClusterLightIndices);
             util::setDebugName(device, vk::DescriptorSetLayout(*this), "fog_renderer_descriptor_layout");
         }
     };
 
     struct PushConstants {
+        glm::mat4 inverseViewMatrix;
         glm::vec2 inverseProjectionScale;
         glm::vec2 inverseProjectionOffset;
         glm::vec3 sunUpVS;
@@ -46,13 +50,11 @@ public:
         glm::vec3 worldUpVS;
         float heightFalloff;
         glm::vec3 fogColor;
-        glm::uint samples;
+        uint32_t samples;
         glm::vec3 sunDirVS;
         float g;
-        glm::int32_t depthSampleIndex;
-        glm::uint frame;
-        float pad0 = 0;
-        float pad1 = 0;
+        glm::vec3 cameraPosition;
+        uint32_t frame;
     };
 
     struct alignas(16) ShadowCascadeUniformBlock {
@@ -82,13 +84,15 @@ public:
             const ImageViewPairBase &depth_attachment,
             const ImageViewPairBase &hdr_result_image,
             const DirectionalLight &sun_light,
-            const glm::vec3& ambient_light,
-            const glm::vec3& fog_color,
+            const glm::vec3 &ambient_light,
+            const glm::vec3 &fog_color,
             std::span<const CascadedShadowCaster> sun_shadow_cascades,
             const glm::mat4 &view_mat,
             const glm::mat4 &projection_mat,
             float z_near,
-            uint32_t frame_nr
+            uint32_t frame_nr,
+            const vk::Buffer &light_buffer,
+            const BufferBase &cluster_buffer
     );
 
 private:

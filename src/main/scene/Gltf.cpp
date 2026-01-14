@@ -459,13 +459,13 @@ namespace gltf {
         PlainImageDataU8 orm_image =
                 PlainImageDataU8::create(vk::Format::eR8G8B8A8Unorm, o_or_rm_image->width, o_or_rm_image->height);
 
+        orm_image.fill({0, 1, 2, 3}, {0xff, 0xff, 0xff, 0xff});
+
         if (o_image)
             o_image->copyChannels(orm_image, {0});
 
         if (rm_image)
             rm_image->copyChannels(orm_image, {1, 2});
-        else
-            orm_image.fill({1, 2}, {0xff, 0xff});
 
         orm_cache_map[orm_cache_key] = texture_index;
         scene_data.images.push_back(std::move(orm_image));

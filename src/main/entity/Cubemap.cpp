@@ -84,7 +84,7 @@ Cubemap::Cubemap(
 }
 
 std::array<std::string, 6> Cubemap::makeSkyboxImageFilenames(const std::filesystem::path &directory) {
-    constexpr std::array<std::string, 6> FILENAMES = {
+    const std::array<std::string, 6> FILENAMES = {
         "px.hdr", "nx.hdr", "py.hdr",
         "ny.hdr", "pz.hdr", "nz.hdr",
     };

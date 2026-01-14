@@ -247,6 +247,8 @@ void main() {
 
     for (uint i = gl_LocalInvocationIndex; i < uUberLightBuffer.length(); i += LIGHT_TILE_SIZE_2) {
         UberLight light = uUberLightBuffer[i];
+        if(light.radiance == vec3(0.0))
+            continue;
 
         bool intersects = false;
         if (light.coneAngleScale == 0.0) {

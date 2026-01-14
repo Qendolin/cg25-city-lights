@@ -248,7 +248,7 @@ void Application::updateAnimatedVariables() {
     mSettings.rendering.ambient = ambient_radiance;
 
     mSettings.sky.dayNightBlend = 1.0f - glm::smoothstep(-18.0f, 0.0f, mSettings.sun.elevation);
-    mSettings.sky.exposure = -3.5f + 5.0f * glm::smoothstep(-18.0f, 0.0f, mSettings.sun.elevation);
+    mSettings.sky.exposure = -2.25f + (2.25f + 1.5f) * glm::smoothstep(-18.0f, 0.0f, mSettings.sun.elevation);
 }
 
 void Application::drawGui() {

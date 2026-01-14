@@ -127,6 +127,10 @@ namespace gltf {
         /// The normal map scale factor.
         /// </summary>
         float normalFactor = 1.0;
+        /// <summary>
+        /// The emissive strength.
+        /// </summary>
+        float emissiveStrength = 1.0;
     };
 
     struct Animation {

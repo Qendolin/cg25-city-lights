@@ -378,7 +378,7 @@ namespace scene {
             uint32_t orm_texture_index = material.ormTexture == -1 ? 0xffff : image_indices[material.ormTexture];
             material_blocks.emplace_back() = {
                 .albedoFactors = material.albedoFactor,
-                .rmnFactors = glm::vec4{material.roughnessFactor, material.metalnessFactor, material.normalFactor, 1.0f},
+                .rmneFactors = glm::vec4{material.roughnessFactor, material.metalnessFactor, material.normalFactor, material.emissiveStrength},
                 .packedImageIndices0 = albedo_texture_index & 0xffff | (normal_texture_index & 0xffff) << 16,
                 .packedImageIndices1 = orm_texture_index & 0xffff,
             };

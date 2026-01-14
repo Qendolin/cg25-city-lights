@@ -381,6 +381,8 @@ namespace gltf {
         if (gltf_mat.normalTexture.has_value())
             mat.normalFactor = gltf_mat.normalTexture->scale;
 
+        mat.emissiveStrength = std::max(std::max(gltf_mat.emissiveFactor.x(), gltf_mat.emissiveFactor.y()), gltf_mat.emissiveFactor.z()) * gltf_mat.emissiveStrength;
+
         return mat;
     }
 

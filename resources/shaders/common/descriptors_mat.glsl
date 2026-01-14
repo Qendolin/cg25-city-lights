@@ -1,6 +1,6 @@
 struct Material {
     vec4 albedoFactors;
-    vec4 rmnFactors; // roughness, metalness, normal strength
+    vec4 rmneFactors; // roughness, metalness, normal strength, emissive strength
     // lo=albedo, hi=normal
     uint packedImageIndices0;
     // lo=orm, hi=unused

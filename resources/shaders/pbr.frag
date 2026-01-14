@@ -75,13 +75,14 @@ void main() {
         }
     }
 
-    vec3 orm = vec3(1.0, material.rmnFactors.xy);
+    vec3 orm = vec3(1.0, material.rmneFactors.xy);
     if (ormTextureIndex != NO_TEXTURE) {
         orm *= texture(uTextures[nonuniformEXT(ormTextureIndex)], in_tex_coord).xyz;
     }
     bsdf_params.occlusion = orm.x;
     bsdf_params.roughness = orm.y;
     bsdf_params.metalness = orm.z;
+    bsdf_params.emissiveness = material.rmneFactors.w;
 
     // tangent-space normal
     vec3 normal_ts = vec3(0.0, 0.0, 1.0);
@@ -89,7 +90,7 @@ void main() {
         normal_ts.xy = texture(uTextures[nonuniformEXT(normalTextureIndex)], in_tex_coord).xy * 2.0 - 1.0;
         normal_ts.z = sqrt(1 - normal_ts.x * normal_ts.x - normal_ts.y * normal_ts.y);
         // increase intensity
-        float strength = material.rmnFactors.z;
+        float strength = material.rmneFactors.z;
         normal_ts = normalize(normal_ts * vec3(strength, strength, 1.0));
         bsdf_params.roughness = adjustRoughness(normal_ts, bsdf_params.roughness);
     }

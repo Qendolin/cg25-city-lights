@@ -30,8 +30,8 @@ struct alignas(16) BoundingBoxBlock {
 
 struct alignas(16) MaterialBlock {
     glm::vec4 albedoFactors;
-    // roughness, metalness, normal strength factors
-    glm::vec4 rmnFactors; // Padded to 16 bytes
+    // roughness, metalness, normal strength, emissive strength factors
+    glm::vec4 rmneFactors;
     // albedo, normal
     glm::uint packedImageIndices0;
     // orm, unused

@@ -164,6 +164,8 @@ void main() {
     // Each thread processes a subset of lights
     for (uint i = gl_LocalInvocationIndex; i < uUberLightBuffer.length(); i += gl_WorkGroupSize.x) {
         UberLight light = uUberLightBuffer[i];
+        if(light.radiance == vec3(0.0))
+            continue;
 
         bool intersectsBeam = false;
         vec3 lightDir = vec3(0.0);

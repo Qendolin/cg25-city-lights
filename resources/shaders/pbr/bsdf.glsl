@@ -25,6 +25,7 @@ struct BSDFParams {
     float roughness;
     float metalness;
     float occlusion;
+    float emissiveness;
 };
 
 vec3 bsdf(in BSDFParams p, vec3 L, vec3 radiance) {
@@ -42,14 +43,13 @@ vec3 bsdf(in BSDFParams p, vec3 L, vec3 radiance) {
     float l_dot_v = dot(L, p.V.xyz);
 
 
-    // --- Specular Term (GGX) --
+    // --- Specular Term (GGX) ---
 
     // Calculate F (Fresnel)
     vec3 F = fresnelSchlick(l_dot_h, p.f0);
 
     // Calculate Specular BRDF (D * V * F)
     vec3 specular = brdfSpecular(F, n_dot_l, n_dot_v, n_dot_h, p.roughness);
-
 
     // --- Diffuse Term ---
 
@@ -66,7 +66,11 @@ vec3 bsdf(in BSDFParams p, vec3 L, vec3 radiance) {
     float micro_shadow = microShadowNaughtyDog(p.occlusion, n_dot_l);
     radiance *= micro_shadow;
 
-    return (diffuse + specular) * radiance * n_dot_l;
+    // --- Emissive Term ---
+
+    vec3 emissive = p.emissiveness * p.albedo.rgb;
+
+    return (diffuse + specular) * radiance * n_dot_l + emissive;
 }
 
 #endif

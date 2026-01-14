@@ -18,7 +18,7 @@ public:
     static constexpr uint32_t CLUSTER_DIM_X = 32;
     static constexpr uint32_t CLUSTER_DIM_Y = 18; // Approx 16:9 ratio
     static constexpr uint32_t CLUSTER_DIM_Z = 24; // Depth slices
-    static constexpr uint32_t CLUSTER_LIGHT_STRIDE = 64;
+    static constexpr uint32_t CLUSTER_LIGHT_STRIDE = 128;
 
     static constexpr uint32_t CLUSTER_BUFFER_SIZE = CLUSTER_DIM_X * CLUSTER_DIM_Y * CLUSTER_DIM_Z *
                                                     CLUSTER_LIGHT_STRIDE * sizeof(uint32_t);

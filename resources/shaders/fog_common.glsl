@@ -3,9 +3,9 @@
 #define CLUSTER_DIM_Y 18
 #define CLUSTER_DIM_Z 24
 #define FOG_MAX_DISTANCE 128.0
-#define CLUSTER_LIGHT_STRIDE 64
+#define CLUSTER_LIGHT_STRIDE 128
 #define MAX_LIGHTS_PER_CLUSTER (CLUSTER_LIGHT_STRIDE - 1)
-#define CLUSTER_LIGHT_STRIDE_SHIFT 6 // 1 << 6 = 128
+#define CLUSTER_LIGHT_STRIDE_SHIFT 7 // 1 << 7 = 128
 
 struct UberLight {
     vec3 position;

@@ -442,7 +442,7 @@ void RenderSystem::draw(const RenderData &rd) {
         // Fog render pass
         dbg_cmd_label_region.swap("Fog Pass");
         mFogRenderer->samples = rd.settings.fog.samples;
-        mFogRenderer->stepSize = rd.settings.fog.stepSize;
+        mFogRenderer->targetStepContribution = rd.settings.fog.targetStepContribution;
         mFogRenderer->density = rd.settings.fog.density;
         mFogRenderer->g = rd.settings.fog.g;
         mFogRenderer->heightFalloff = rd.settings.fog.heightFalloff;

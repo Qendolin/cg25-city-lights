@@ -40,7 +40,7 @@ public:
         glm::vec3 sunRightVS;
         float density;
         glm::vec3 sunRadiance;
-        float stepSize;
+        float targetStepContribution;
         glm::vec3 ambientRadiance;
         float cameraHeight;
         glm::vec3 worldUpVS;
@@ -62,7 +62,7 @@ public:
     };
 
     uint32_t samples = 32;
-    float stepSize = 0.2f;
+    float targetStepContribution = 0.2f;
     float density = 0.001f;
     float heightFalloff = 0.1f;
     float g = 0.7f;

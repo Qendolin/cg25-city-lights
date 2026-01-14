@@ -28,7 +28,7 @@ void SettingsGui::draw(Settings &settings) {
     if (CollapsingHeader("Fog")) {
         PushID("fog");
         SliderInt("Samples", &settings.fog.samples, 1, 128);
-        SliderFloat("Step Size", &settings.fog.stepSize, 0, 1);
+        SliderFloat("Target Step Contribution", &settings.fog.targetStepContribution, 0, 1);
         SliderFloat("Density", &settings.fog.density, 0, 0.1, "%.4f");
         SliderFloat("G", &settings.fog.g, -1.0, 1.0);
         SliderFloat("Height Falloff", &settings.fog.heightFalloff, 0, 1);

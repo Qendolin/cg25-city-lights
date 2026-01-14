@@ -48,8 +48,8 @@ struct Settings {
     } agx;
 
     struct Fog {
-        int samples = 90;
-        float stepSize = 0.1f;
+        int samples = 64;
+        float targetStepContribution = 0.025f;
         float density = 0.06f;
         float g = 0.7f;
         glm::vec3 color = glm::vec3(0.828f, 0.874f, 1.000f);

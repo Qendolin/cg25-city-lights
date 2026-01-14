@@ -153,7 +153,7 @@ void FogRenderer::execute(
         .sunRightVS = glm::normalize(glm::mat3(view_mat) * sun_rotation[0]),
         .density = density,
         .sunRadiance = sun_light.radiance(),
-        .stepSize = stepSize,
+        .targetStepContribution = targetStepContribution,
         .ambientRadiance = ambient_light,
         .cameraHeight = camera_pos_ws.y,
         .worldUpVS = world_up_vs,

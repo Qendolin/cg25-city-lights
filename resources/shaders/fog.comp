@@ -29,7 +29,7 @@ layout (push_constant) uniform ShaderParamConstants
     vec3 sunRightVS;
     float density;
     vec3 sunRadiance;
-    float stepSize;
+    float targetStepContribution;
     vec3 ambientRadiance;
     float cameraHeight;
     vec3 worldUpVS;
@@ -53,44 +53,56 @@ float depthToViewZ(float d) {
     return cParams.zNear / d;
 }
 
-float bayer2(vec2 screen_pos) {
-    const float bayer[4] = float[](0.0, 0.5, 0.75, 0.25);
-    ivec2 p = ivec2(screen_pos);
-    int index = (p.x % 2) + 2 * (p.y % 2);
-    return bayer[index];
+// Improved blue noise-like dithering using interleaved gradient noise
+float interleavedGradientNoise(vec2 screen_pos, uint frame_count) {
+    vec3 magic = vec3(0.06711056, 0.00583715, 52.9829189);
+    float noise = fract(magic.z * fract(dot(screen_pos, magic.xy)));
+    // Temporal variation
+    return fract(noise + float(frame_count % 64) * 0.61803398875);
 }
 
-float bayer4(vec2 screen_pos) {
-    ivec2 p = ivec2(screen_pos);
-
-    // The 4x4 Bayer Matrix
-    //  0  8  2 10
-    // 12  4 14  6
-    //  3 11  1  9
-    // 15  7 13  5
-
-    // Bitwise math to compute index without branching or large arrays
-    int x = p.x % 4;
-    int y = p.y % 4;
-
-    // We can use a small constant array lookup
-    const int bayer[16] = int[](
-    0, 8, 2, 10,
-    12, 4, 14, 6,
-    3, 11, 1, 9,
-    15, 7, 13, 5
-    );
-
-    return float(bayer[x + y * 4]) / 16.0;
+// R2 sequence for low-discrepancy sampling
+vec2 r2Sequence(uint n) {
+    const float g = 1.32471795724474602596;
+    const float a1 = 1.0 / g;
+    const float a2 = 1.0 / (g * g);
+    return fract(vec2(a1, a2) * float(n));
 }
 
 const float PI = 3.14159265359;
+const float MIN_STEP_SIZE = 0.05;
+const float MAX_STEP_SIZE = 25.0;
+const float EPSILON_DENSITY = 1e-5;
 
 float henyeyGreenstein(float g, float cos_theta) {
     float g2 = g * g;
     float num = 1.0 - g2;
     float denom = 4.0 * PI * pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5);
     return num / max(denom, 0.0001);
+}
+
+// Improved step size calculation based on constant inscattering contribution
+// This ensures perceptually uniform contribution from each sample
+float computeAdaptiveStep(float extinction, float current_transmittance) {
+    if (extinction < EPSILON_DENSITY || current_transmittance < 0.001) {
+        return MAX_STEP_SIZE;
+    }
+
+    // We want each step to contribute the same amount to the final radiance
+    // Contribution = transmittance * inscattered_light * (1 - exp(-extinction * step))
+    // For constant contribution: transmittance * (1 - exp(-extinction * step)) = constant
+    // Solving for step: step = -ln(1 - constant/transmittance) / extinction
+    // where constant = targetStepContribution (target contribution per step)
+
+    float target_contribution = cParams.targetStepContribution;
+
+    // Clamp the argument to ln to avoid negative or zero values
+    float ln_arg = 1.0 - target_contribution / current_transmittance;
+    ln_arg = max(ln_arg, 0.001); // Prevent log(0) or log(negative)
+
+    float step = -log(ln_arg) / extinction;
+
+    return clamp(step, MIN_STEP_SIZE, MAX_STEP_SIZE);
 }
 
 void main() {
@@ -104,13 +116,12 @@ void main() {
 
     vec3 ray = unprojectRay(vec2(coord) + 0.5);
 
-    float step_size = cParams.stepSize;
-    float jitter = bayer4(coord);
-    float t = -step_size * (1.0 - jitter);
+    // Improved jittering: spatial + temporal variation
+    float initial_jitter = interleavedGradientNoise(vec2(coord), cParams.frame);
 
+    float t = 0.0;
     vec3 radiance = vec3(0.0);
     float transmittance = 1.0;
-    float optical_depth = 0.0;
 
     float cos_theta = dot(ray, cParams.sunDirVS);
     float phase = henyeyGreenstein(cParams.g, cos_theta);
@@ -118,16 +129,40 @@ void main() {
     int cascade_index = 0;
 
     for (uint i = 0; i < cParams.samples; ++i) {
-        t += step_size;
-        if (t > view_z || transmittance < 0.01)
-            break;
+        // Per-sample jitter using R2 sequence combined with initial jitter
+        // This breaks up the regular pattern while maintaining good distribution
+        vec2 r2 = r2Sequence(i + cParams.frame * cParams.samples);
+        float sample_jitter = fract(initial_jitter + r2.x);
 
+        // Sample position with jitter applied to THIS step
         vec3 p = ray * t;
 
+        // Density at current position
         float height = cParams.cameraHeight + dot(p, cParams.worldUpVS);
         float height_factor = exp(-cParams.heightFalloff * max(height, 0.0));
+        float extinction = cParams.density * height_factor;
 
-        float local_density = cParams.density * height_factor;
+        // Calculate adaptive step size based on current conditions
+        float step_size = computeAdaptiveStep(extinction, transmittance);
+
+        // Clamp to remaining distance
+        step_size = min(step_size, view_z - t);
+
+        // Apply jitter to step size (reduces banding further)
+        float jittered_step = step_size * (0.5 + 0.5 * sample_jitter);
+
+        // Advance ray with jittered step
+        t += jittered_step;
+
+        if (t >= view_z || transmittance < 0.01) {
+            break;
+        }
+
+        // Recalculate position at actual sample point
+        p = ray * t;
+        height = cParams.cameraHeight + dot(p, cParams.worldUpVS);
+        height_factor = exp(-cParams.heightFalloff * max(height, 0.0));
+        extinction = cParams.density * height_factor;
 
         {
             // Project into light space
@@ -135,10 +170,10 @@ void main() {
             float ly = dot(p, cParams.sunUpVS.xyz);
 
             // cascade index is always increasing
-            for (int i = cascade_index; i < SHADOW_CASCADE_COUNT; ++i) {
-                if (lx >= uShadowCascades[i].boundsMin.x && ly >= uShadowCascades[i].boundsMin.y
-                && lx <= uShadowCascades[i].boundsMax.x && ly <= uShadowCascades[i].boundsMax.y) {
-                    cascade_index = i;
+            for (int j = cascade_index; j < SHADOW_CASCADE_COUNT; ++j) {
+                if (lx >= uShadowCascades[j].boundsMin.x && ly >= uShadowCascades[j].boundsMin.y
+                && lx <= uShadowCascades[j].boundsMax.x && ly <= uShadowCascades[j].boundsMax.y) {
+                    cascade_index = j;
                     break;
                 }
             }
@@ -147,52 +182,35 @@ void main() {
         ShadowCascade cascade = uShadowCascades[cascade_index];
         vec4 p_shadow_ndc = cascade.transform * vec4(p, 1.0);
 
-        vec2 texel_size = vec2(1.0f) / textureSize(uShadowMaps[cascade_index], 0).xy;
-        // z is seperate because we are using 0..1 depth
         vec3 shadow_uvz = vec3(p_shadow_ndc.xy * 0.5 + 0.5, p_shadow_ndc.z);
         float shadow = texture(uShadowMaps[cascade_index], shadow_uvz);
 
-        // Integration
-        float extinction = local_density;
-        float step_extinction = extinction * step_size;
-
-        optical_depth += step_extinction;
-        transmittance *= exp(-step_extinction);
+        // Integration with actual traveled distance
+        float step_extinction = extinction * jittered_step;
+        float step_transmittance = exp(-step_extinction);
+        transmittance *= step_transmittance;
 
         vec3 in_radiance = cParams.sunRadiance * shadow * phase + cParams.ambientRadiance;
-        vec3 inscatter = transmittance * extinction * in_radiance * step_size;
+        float one_minus_t = 1.0 - step_transmittance;
+        vec3 inscatter = transmittance * in_radiance * one_minus_t;
         radiance += inscatter;
-
-        if (i > 32) {
-            step_size *= 1.05;
-        }
     }
 
-    // 1. Horizontal Neighbor (XOR 1)
-    // In an 8x8 grid, Thread N and N^1 are always left/right neighbors.
+    // Subgroup sharing for spatial smoothing (optional - uncomment if desired)
+    /*
     vec3 rad_h    = subgroupShuffleXor(radiance, 1);
     float trans_h = subgroupShuffleXor(transmittance, 1);
-
-    // 2. Vertical Neighbor (XOR 8)
-    // Since local_size_x is 8, the pixel directly below is exactly 8 indices away.
-    // Thread N and N^8 are vertical neighbors.
     vec3 rad_v    = subgroupShuffleXor(radiance, 8);
     float trans_v = subgroupShuffleXor(transmittance, 8);
-
-    // 3. Diagonal Neighbor (XOR 9)
-    // (XOR 1) ^ (XOR 8) = XOR 9. This gets the pixel diagonal to us.
     vec3 rad_d    = subgroupShuffleXor(radiance, 9);
     float trans_d = subgroupShuffleXor(transmittance, 9);
 
-    // Average them
-    vec3 avg_radiance = (radiance + rad_h + rad_v + rad_d) * 0.25;
-    float avg_trans   = (transmittance + trans_h + trans_v + trans_d) * 0.25;
-
-    avg_radiance = radiance;
-    avg_trans = transmittance;
+    radiance = (radiance + rad_h + rad_v + rad_d) * 0.25;
+    transmittance = (transmittance + trans_h + trans_v + trans_d) * 0.25;
+    */
 
     vec4 in_color = imageLoad(inout_hdr, coord);
-    vec3 result = in_color.rgb * avg_trans + avg_radiance * cParams.fogColor;
+    vec3 result = in_color.rgb * transmittance + radiance * cParams.fogColor;
 
     imageStore(inout_hdr, coord, vec4(result, in_color.a));
 }

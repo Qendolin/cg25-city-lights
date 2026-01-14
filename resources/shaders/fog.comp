@@ -168,6 +168,9 @@ void main() {
         p_vs = ray_vs * t;
         p_ws = cParams.cameraPosition + ray_ws * t;
         height = cParams.cameraHeight + dot(p_vs, cParams.worldUpVS);
+
+        if (height < -1.0f) break;
+
         height_factor = exp(-cParams.heightFalloff * max(height, 0.0));
         extinction = cParams.density * height_factor;
 

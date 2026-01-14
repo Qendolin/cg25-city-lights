@@ -28,7 +28,8 @@ struct RenderData {
     const DirectionalLight &sunLight;
     const Settings &settings;
     blob::System &blobSystem;
-    const Cubemap &skybox;
+    const Cubemap &skyboxDay;
+    const Cubemap &skyboxNight;
     float timestamp;
 };
 

@@ -22,9 +22,8 @@ Cubemap::Cubemap(
             {.flags = vk::CommandPoolCreateFlagBits::eTransient, .queueFamilyIndex = transferQueue.family}
     );
 
-    vk::CommandBuffer graphicsCommandBuffer = device.allocateCommandBuffers(
-        {.commandPool = *graphicsCommandPool, .commandBufferCount = 1}
-    ).at(0);
+    vk::CommandBuffer graphicsCommandBuffer =
+            device.allocateCommandBuffers({.commandPool = *graphicsCommandPool, .commandBufferCount = 1}).at(0);
 
     graphicsCommandBuffer.begin({.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
@@ -33,9 +32,11 @@ Cubemap::Cubemap(
     for (int i = 0; i < FACES_COUNT; ++i) {
         auto f32_image = PlainImageDataF::create(vk::Format::eR32G32B32Sfloat, skyboxImageFilenames[i]);
         size_t count = f32_image.width * f32_image.height;
-        uint32_t* packed_data = static_cast<::uint32_t *>(malloc(count * sizeof(uint32_t)));
+        uint32_t *packed_data = static_cast<::uint32_t *>(malloc(count * sizeof(uint32_t)));
         convertImageToRGB9E5(f32_image.pixels.data(), packed_data, f32_image.width, f32_image.height);
-        plainImages[i] = PlainImageDataU32(std::unique_ptr<uint32_t>(packed_data), count, f32_image.width, f32_image.height, 4, FORMAT);
+        plainImages[i] = PlainImageDataU32(
+                std::unique_ptr<uint32_t>(packed_data), count, f32_image.width, f32_image.height, 4, FORMAT
+        );
     }
 
     std::vector<uint32_t> pixelData = getPixelData(plainImages);
@@ -80,6 +81,18 @@ Cubemap::Cubemap(
     ImageViewInfo viewInfo = ImageViewInfo::from(image.info);
     viewInfo.type = vk::ImageViewType::eCube;
     view = ImageView::create(device, image, viewInfo);
+}
+
+std::array<std::string, 6> Cubemap::makeSkyboxImageFilenames(const std::filesystem::path &directory) {
+    constexpr std::array<std::string, 6> FILENAMES = {
+        "px.hdr", "nx.hdr", "py.hdr",
+        "ny.hdr", "pz.hdr", "nz.hdr",
+    };
+    std::array<std::string, 6> result;
+    for (int i = 0; i < 6; i++) {
+        result[i] = (directory / FILENAMES[i]).string();
+    }
+    return result;
 }
 
 std::vector<uint32_t> Cubemap::getPixelData(const std::array<PlainImageDataU32, FACES_COUNT> &plainImages) {

@@ -50,10 +50,8 @@ private:
     static constexpr char TITLE[]{"City Lights"};
     static constexpr char DEFAULT_SCENE_FILENAME[]{"resources/scenes/CityTest.glb"};
     static constexpr char AMBIENT_SOUND_FILENAME[]{"resources/audio/ambiance.ogg"};
-    static inline const std::array<std::string, 6> SKYBOX_FILENAMES{
-        "resources/skybox/px.hdr", "resources/skybox/nx.hdr", "resources/skybox/py.hdr",
-        "resources/skybox/ny.hdr", "resources/skybox/pz.hdr", "resources/skybox/nz.hdr",
-    };
+    static constexpr char  SKYBOX_DAY[] = "resources/skybox/evening_road_01_puresky_2k";
+    static constexpr char  SKYBOX_NIGHT[] = "resources/skybox/NightSkyHDRI002_2K_HDR";
 
     // Order is important here
     std::unique_ptr<VulkanContext> mCtx;
@@ -72,7 +70,8 @@ private:
 
     std::unique_ptr<blob::System> mBlobSystem;
     std::unique_ptr<HenonHeiles> mBlobChaos;
-    std::unique_ptr<Cubemap> mSkybox;
+    std::unique_ptr<Cubemap> mSkyboxDay;
+    std::unique_ptr<Cubemap> mSkyboxNight;
 
     std::unique_ptr<Audio> mAudio;
     std::unique_ptr<Music> mAmbientMusic;

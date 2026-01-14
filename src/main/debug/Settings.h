@@ -9,9 +9,13 @@ struct Settings {
     static constexpr int SHADOW_CASCADE_COUNT = 5;
     
     DirectionalLight sun = {.elevation = 40.0f, .azimuth = 10.0f, .color = glm::vec3{1.000f, 0.945f, 0.843f}, .power = 8.0f};
-    
+
+    bool showGui = true;
+
     struct Sky {
         float exposure = 1.49f;
+        float rotation = 26; // degrees
+        float dayNightBlend = 0.0;
         glm::vec3 tint = glm::vec3(1.0f);
     } sky;
 
@@ -48,8 +52,8 @@ struct Settings {
     } agx;
 
     struct Fog {
-        int samples = 64;
-        float targetStepContribution = 0.025f;
+        int samples = 48;
+        float targetStepContribution = 0.02f;
         float density = 0.06f;
         float g = 0.7f;
         glm::vec3 color = glm::vec3(0.828f, 0.874f, 1.000f);

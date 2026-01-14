@@ -18,12 +18,13 @@ namespace vk {
 class SkyboxRenderer {
 public:
     struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
-        static constexpr CombinedImageSamplerBinding SamplerCubeMap{0, vk::ShaderStageFlagBits::eFragment};
+        static constexpr CombinedImageSamplerBinding SkyboxDay{0, vk::ShaderStageFlagBits::eFragment};
+        static constexpr CombinedImageSamplerBinding SkyboxNight{1, vk::ShaderStageFlagBits::eFragment};
 
         ShaderParamsDescriptorLayout() = default;
 
         explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
-            create(device, {}, SamplerCubeMap);
+            create(device, {}, SkyboxDay, SkyboxNight);
             util::setDebugName(device, vk::DescriptorSetLayout(*this), "skybox_renderer_descriptor_layout");
         }
     };
@@ -31,6 +32,10 @@ public:
     struct ShaderParamsPushConstants {
         glm::mat4 projViewNoTranslation = {1.f};
         glm::vec4 tint = glm::vec4(1.0f);
+        float blend;
+        float pad0 = 0;
+        float pad1 = 0;
+        float pad2 = 0;
     };
 
 private:
@@ -54,9 +59,12 @@ public:
             const vk::CommandBuffer &cmd_buf,
             const Framebuffer &framebuffer,
             const Camera &camera,
-            const Cubemap &skybox,
+            const Cubemap &skyboxDay,
+            const Cubemap &skyboxNight,
             float exposure,
-            const glm::vec3& tint
+            float dayNightBlend,
+            const glm::vec3 &tint,
+            float rotation
     );
 
 private:

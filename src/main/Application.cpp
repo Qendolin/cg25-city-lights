@@ -71,7 +71,8 @@ void Application::run() {
             .sunLight = mSettings.sun,
             .settings = mSettings,
             .blobSystem = *mBlobSystem,
-            .skybox = *mSkybox,
+            .skyboxDay = *mSkyboxDay,
+            .skyboxNight = *mSkyboxNight,
             .timestamp = mSettings.animation.time,
         });
 
@@ -121,8 +122,11 @@ void Application::initScene() {
     mSunShadowCascade = std::make_unique<ShadowCascade>(
             mCtx->device(), mCtx->allocator(), mSettings.shadowCascade.resolution, Settings::SHADOW_CASCADE_COUNT
     );
-    mSkybox = std::make_unique<Cubemap>(
-            mCtx->allocator(), mCtx->device(), mCtx->transferQueue, mCtx->mainQueue, SKYBOX_FILENAMES
+    mSkyboxDay = std::make_unique<Cubemap>(
+            mCtx->allocator(), mCtx->device(), mCtx->transferQueue, mCtx->mainQueue, Cubemap::makeSkyboxImageFilenames(SKYBOX_DAY)
+    );
+    mSkyboxNight = std::make_unique<Cubemap>(
+        mCtx->allocator(), mCtx->device(), mCtx->transferQueue, mCtx->mainQueue, Cubemap::makeSkyboxImageFilenames(SKYBOX_NIGHT)
     );
 
     mBlobSystem = std::make_unique<blob::System>(mCtx->allocator(), mCtx->device(), 6, BLOB_RESOLUTION);
@@ -183,6 +187,9 @@ void Application::processInput() {
     if (mInput->isKeyPress(GLFW_KEY_F5))
         reloadRenderSystem();
 
+    if (mInput->isKeyPress(GLFW_KEY_F1))
+        mSettings.showGui = !mSettings.showGui;
+
     updateMouseCapture();
 
     if (mInput->isMouseCaptured()) {
@@ -239,6 +246,9 @@ void Application::updateAnimatedVariables() {
 
     auto ambient_radiance = lighting::ambientSkyLightFromElevation(mSettings.sun.elevation);
     mSettings.rendering.ambient = ambient_radiance;
+
+    mSettings.sky.dayNightBlend = 1.0f - glm::smoothstep(-18.0f, 0.0f, mSettings.sun.elevation);
+    mSettings.sky.exposure = -3.5f + 5.0f * glm::smoothstep(-18.0f, 0.0f, mSettings.sun.elevation);
 }
 
 void Application::drawGui() {

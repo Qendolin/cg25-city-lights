@@ -29,9 +29,12 @@ void SkyboxRenderer::execute(
         const vk::CommandBuffer &cmd_buf,
         const Framebuffer &framebuffer,
         const Camera &camera,
-        const Cubemap &skybox,
+        const Cubemap &skyboxDay,
+        const Cubemap &skyboxNight,
         float exposure,
-        const glm::vec3& tint
+        float dayNightBlend,
+        const glm::vec3 &tint,
+        float rotation
 ) {
     cmd_buf.beginRendering(framebuffer.renderingInfo({
         .enableColorAttachments = true,
@@ -50,27 +53,38 @@ void SkyboxRenderer::execute(
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics, *mPipeline.pipeline);
 
     ShaderParamsPushConstants push{};
-    push.projViewNoTranslation = camera.projectionMatrix() * glm::mat4(glm::mat3(camera.viewMatrix()));
+    push.projViewNoTranslation = camera.projectionMatrix() * glm::mat4(glm::mat3(camera.viewMatrix())) * glm::rotate(glm::mat4(1.0), glm::radians(rotation), glm::vec3(0.0, 1.0, 0.0));
     push.tint = glm::vec4(tint, 1.0f) * exp2(exposure);
+    push.blend = dayNightBlend;
 
     cmd_buf.pushConstants(
-            *mPipeline.layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(ShaderParamsPushConstants), &push
+            *mPipeline.layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0,
+            sizeof(ShaderParamsPushConstants), &push
     );
-
-    vk::DescriptorImageInfo descriptor_image_info{};
-    descriptor_image_info.sampler = *mSampler;
-    descriptor_image_info.imageView = skybox.getImageView();
-    descriptor_image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
     auto descriptor_set = allocator.allocate(mShaderParamsDescriptorLayout);
 
     device.updateDescriptorSets(
-            {descriptor_set.write(ShaderParamsDescriptorLayout::SamplerCubeMap, descriptor_image_info)}, {}
+            {descriptor_set.write(
+                     ShaderParamsDescriptorLayout::SkyboxDay,
+                     vk::DescriptorImageInfo{
+                         .sampler = *mSampler,
+                         .imageView = skyboxDay.getImageView(),
+                         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+                     }
+             ),
+             descriptor_set.write(
+                     ShaderParamsDescriptorLayout::SkyboxNight,
+                     vk::DescriptorImageInfo{
+                         .sampler = *mSampler,
+                         .imageView = skyboxNight.getImageView(),
+                         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+                     }
+             )},
+            {}
     );
 
-    cmd_buf.bindDescriptorSets(
-            vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0, {descriptor_set}, {}
-    );
+    cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *mPipeline.layout, 0, {descriptor_set}, {});
 
     cmd_buf.draw(SKYBOX_VERTEX_COUNT, 1, 0, 0);
     cmd_buf.endRendering();
@@ -80,7 +94,9 @@ void SkyboxRenderer::createPipeline(const vk::Device &device, const ShaderLoader
     UniqueCompiledShaderStage vert_shader = shaderLoader.loadFromSource(device, "resources/shaders/skybox.vert");
     UniqueCompiledShaderStage frag_shader = shaderLoader.loadFromSource(device, "resources/shaders/skybox.frag");
 
-    vk::PushConstantRange push_constant_range{vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(ShaderParamsPushConstants)};
+    vk::PushConstantRange push_constant_range{
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(ShaderParamsPushConstants)
+    };
 
     GraphicsPipelineConfig pipeline_config{};
     pipeline_config.descriptorSetLayouts = {mShaderParamsDescriptorLayout};

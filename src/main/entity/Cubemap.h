@@ -33,6 +33,8 @@ public:
 
     const ImageViewBase& getImageView() const { return view; }
 
+    static std::array<std::string, 6> makeSkyboxImageFilenames(const std::filesystem::path& directory);
+
 private:
     static std::vector<uint32_t> getPixelData(const std::array<PlainImageDataU32, FACES_COUNT> &plainImages);
 

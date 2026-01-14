@@ -1,8 +1,12 @@
 #version 460
 
 layout(push_constant) uniform Push {
-	mat4 projViewNoTranslation;
-    float brightness;
+    mat4 projViewNoTranslation;
+    vec4 tint;
+    float blend;
+    float pad0;
+    float pad1;
+    float pad2;
 } push;
 
 layout(location = 0) out vec3 uvw;

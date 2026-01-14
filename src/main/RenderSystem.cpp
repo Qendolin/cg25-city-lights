@@ -426,8 +426,8 @@ void RenderSystem::draw(const RenderData &rd) {
         // Skybox render pass (render late to reduce overdraw)
         dbg_cmd_label_region.swap("Skybox Pass");
         mSkyboxRenderer->execute(
-                mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.skybox,
-                rd.settings.sky.exposure, rd.settings.sky.tint
+                mContext->device(), desc_alloc, cmd_buf, mHdrFramebuffer, rd.camera, rd.skyboxDay, rd.skyboxNight,
+                rd.settings.sky.exposure, rd.settings.sky.dayNightBlend, rd.settings.sky.tint, rd.settings.sky.rotation
         );
 
         // Blob render pass
@@ -486,7 +486,7 @@ void RenderSystem::draw(const RenderData &rd) {
 
         // ImGui render pass
         dbg_cmd_label_region.swap("ImGUI Pass");
-        {
+        if (rd.settings.showGui) {
             swapchain_fb.colorAttachments[0].image().barrier(
                     cmd_buf, ImageResourceAccess::ColorAttachmentLoad, ImageResourceAccess::ColorAttachmentWrite
             );
@@ -500,6 +500,9 @@ void RenderSystem::draw(const RenderData &rd) {
             cmd_buf.beginRendering(imgui_fb.renderingInfo({}));
             mImguiBackend->render(cmd_buf);
             cmd_buf.endRendering();
+        } else {
+            // Needs to be called anyway.
+            ImGui::Render();
         }
 
         swapchain_fb.colorAttachments[0].image().barrier(cmd_buf, ImageResourceAccess::PresentSrc);

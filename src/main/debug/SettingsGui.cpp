@@ -12,6 +12,8 @@ void SettingsGui::draw(Settings &settings) {
     SetNextWindowSize(ImVec2(300, 550), ImGuiCond_FirstUseEver);
     Begin("Settings", nullptr, 0);
 
+    Checkbox("Show (F1)", &settings.showGui);
+
     if (CollapsingHeader("Sun")) {
         PushID("sun");
         BeginTable("dir_input", 2);
@@ -84,6 +86,8 @@ void SettingsGui::draw(Settings &settings) {
     if (CollapsingHeader("Sky")) {
         PushID("sky");
         SliderFloat("EV", &settings.sky.exposure, -8.0f, 8.0f);
+        SliderFloat("Rotation", &settings.sky.rotation, 0, 360);
+        SliderFloat("Day Night", &settings.sky.dayNightBlend, 0, 1);
         ColorEdit3("Tint", glm::value_ptr(settings.sky.tint), ImGuiColorEditFlags_Float);
         PopID();
     }

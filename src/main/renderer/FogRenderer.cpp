@@ -60,6 +60,10 @@ void FogRenderer::execute(
         const vk::Buffer &light_buffer,
         const BufferBase &cluster_buffer
 ) {
+
+    if (density == 0.0)
+        return;
+
     util::ScopedCommandLabel dbg_cmd_label_region(cmd_buf, "Setup");
 
     depth_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);

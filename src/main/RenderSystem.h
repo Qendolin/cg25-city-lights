@@ -19,6 +19,8 @@
 #include "renderer/SkyboxRenderer.h"
 #include "util/PerFrame.h"
 
+
+struct UberLightBlock;
 class ShadowCascade;
 
 struct RenderData {
@@ -77,6 +79,7 @@ class RenderSystem {
     util::PerFrame<Framebuffer> mSwapchainFramebuffers;
 
     util::PerFrame<Buffer> mInstanceTransformUpdates;
+    util::PerFrame<Buffer> mLightUpdates;
 
     // This descriptor allocator is never reset
     UniqueDescriptorAllocator mStaticDescriptorAllocator;
@@ -119,6 +122,7 @@ public:
     void recreate(const Settings &settings);
 
     void updateInstanceTransforms(const scene::GpuData &gpu_scene_data, std::span<const glm::mat4> updated_transforms);
+    void updateLights(const scene::GpuData &gpu_scene_data, std::span<const UberLightBlock> updated_lights);
 
     void draw(const RenderData &render_data);
 

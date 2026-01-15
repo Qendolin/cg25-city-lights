@@ -14,13 +14,21 @@ uint calculateTileLightBaseIndex(uvec2 frag_coord) {
     return light_tile_index << LIGHT_TILE_BUFFER_STRIDE_SHIFT;
 }
 
+float getDistanceAttenuation(float distance, float radius, float pointSize) {
+    float s = distance / radius;
+    if (s >= 1.0) return 0.0;
+
+    float s2 = s * s;
+    return saturate((1.0 - s2) / (distance * distance + pointSize));
+}
+
 vec3 evaluateUberLight(in UberLight light, in BSDFParams bsdf_params) {
     vec3 to_light_vec = light.position - bsdf_params.P;
     float dist = length(to_light_vec);
     vec3 to_light_dir = to_light_vec / dist;
 
     // inverse square law
-    float dist_attenuation = 1.0 / (dist * dist + light.pointSize);
+    float dist_attenuation = getDistanceAttenuation(dist, light.range, light.pointSize);
 
     // for point lights scale is 0 and offset is 1 which allows uniform control flow
     vec3 light_dir = octahedronDecode(light.direction);

@@ -102,7 +102,7 @@ private:
     void drawGui();
     void updateViewport();
     void updateSunShadowCascades();
-    void updateAnimatedInstances();
+    void updateGpuData();
     void reloadRenderSystem();
     void updateDebugCamera();
     void updateMouseCapture();

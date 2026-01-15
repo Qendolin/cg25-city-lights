@@ -19,11 +19,12 @@
 #include "entity/ShadowCaster.h"
 #include "glfw/Input.h"
 #include "imgui/ImGui.h"
+#include "scene/EnvironmentLighting.h"
 #include "scene/Gltf.h"
 #include "scene/Loader.h"
 #include "scene/Scene.h"
+#include "util/Color.h"
 #include "util/Logger.h"
-#include "scene/EnvironmentLighting.h""
 
 Application::Application() {
     initContext();
@@ -62,7 +63,7 @@ void Application::run() {
 
         updateViewport();
         updateSunShadowCascades();
-        updateAnimatedInstances();
+        updateGpuData();
 
         mRenderSystem->draw({
             .gltfScene = mScene->gpu(),
@@ -123,14 +124,53 @@ void Application::initScene() {
             mCtx->device(), mCtx->allocator(), mSettings.shadowCascade.resolution, Settings::SHADOW_CASCADE_COUNT
     );
     mSkyboxDay = std::make_unique<Cubemap>(
-            mCtx->allocator(), mCtx->device(), mCtx->transferQueue, mCtx->mainQueue, Cubemap::makeSkyboxImageFilenames(SKYBOX_DAY)
+            mCtx->allocator(), mCtx->device(), mCtx->transferQueue, mCtx->mainQueue,
+            Cubemap::makeSkyboxImageFilenames(SKYBOX_DAY)
     );
     mSkyboxNight = std::make_unique<Cubemap>(
-        mCtx->allocator(), mCtx->device(), mCtx->transferQueue, mCtx->mainQueue, Cubemap::makeSkyboxImageFilenames(SKYBOX_NIGHT)
+            mCtx->allocator(), mCtx->device(), mCtx->transferQueue, mCtx->mainQueue,
+            Cubemap::makeSkyboxImageFilenames(SKYBOX_NIGHT)
     );
 
     mBlobSystem = std::make_unique<blob::System>(mCtx->allocator(), mCtx->device(), 6, BLOB_RESOLUTION);
     mBlobChaos = std::make_unique<HenonHeiles>(6);
+
+    for (size_t i = 0; i < scene::Loader::DYNAMIC_LIGHTS_RESERVATION; i++) {
+        size_t offset = mScene->cpu().lights.size() - scene::Loader::DYNAMIC_LIGHTS_RESERVATION;
+        float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        r = 50.0f * (1.0f - r * r);
+        float theta = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        theta = glm::tau<float>() * theta;
+        float y = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        y = (y*y * 2.0 - 1.0) * 6.5f;
+
+        // float l = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        // l = 0.65 + 0.1 * l;
+        // float c = 0.15;
+        // float h = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        // h = 50 + 30 * h;
+
+        float h = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        h = h * 360;
+        h = 128.0f;
+        float s = 0.9f;
+        float v = 0.9f;
+
+        glm::vec3 center = {0, 0, 0};
+
+        auto& light = mScene->cpu().lights[offset + i];
+
+        // light.position = center + glm::vec3{r * glm::sin(theta), y, r * glm::cos(theta)};
+        theta = i * 0.1375f;
+        r = 2 + i * 0.07f;
+        y = -std::pow(i * 0.1f, 1.5f);
+        light.position = center + glm::vec3{r * glm::sin(theta), y, r * glm::cos(theta)};
+        // light.radiance = color::oklch_to_rgb(glm::vec3{l,c,h}) * 1.0f;
+        light.radiance = color::hsv_to_rgb(glm::vec3{h,s,v}) * 4.0f;
+        light.pointSize = 0.25f;
+        // light.range = 1.5f;
+        light.updateRange(0.1f);
+    }
 }
 
 void Application::initCameras() {
@@ -203,6 +243,13 @@ void Application::advanceAnimationTime() {
         float dt = mInput->timeDelta() * mSettings.animation.playbackSpeed;
         mSettings.animation.time += dt;
     }
+
+    for (size_t i = 0; i < scene::Loader::DYNAMIC_LIGHTS_RESERVATION; i++) {
+        size_t offset = mScene->cpu().lights.size() - scene::Loader::DYNAMIC_LIGHTS_RESERVATION;
+        auto& light = mScene->cpu().lights[offset + i];
+        light.position.y += (std::max(light.position.y, 0.0f) * 0.5f + 3.0f) * mInput->timeDelta();
+        light.position.y = std::fmodf(light.position.y, 40.0f);
+    }
 }
 
 void Application::updateAnimatedCamera() {
@@ -221,9 +268,9 @@ void Application::updateBlob() {
     float time = mSettings.animation.time;
     glm::vec3 center = mInstanceAnimationSampler->sampleNamedTranslation("Blob", time);
 
-    mBlobChaos->update(std::min(mInput->timeDelta() * 2.0f, 1.0f/30.0f));
+    mBlobChaos->update(std::min(mInput->timeDelta() * 2.0f, 1.0f / 30.0f));
     for (size_t i = 0; i < balls.size(); i++) {
-        auto& ball = balls[i];
+        auto &ball = balls[i];
         ball.baseRadius = 0.1f;
         ball.maxRadius = 0.7f;
 
@@ -284,12 +331,14 @@ void Application::updateSunShadowCascades() {
         mSettings.shadowCascades[i].applyTo(mSunShadowCascade->cascades()[i]);
 }
 
-void Application::updateAnimatedInstances() {
+void Application::updateGpuData() {
     std::vector<glm::mat4> animated_instance_transforms =
             mInstanceAnimationSampler->sampleAnimatedInstanceTransforms(mSettings.animation.time);
 
     if (!animated_instance_transforms.empty())
         mRenderSystem->updateInstanceTransforms(mScene->gpu(), animated_instance_transforms);
+
+    mRenderSystem->updateLights(mScene->gpu(), mScene->cpu().lights);
 }
 
 void Application::reloadRenderSystem() {

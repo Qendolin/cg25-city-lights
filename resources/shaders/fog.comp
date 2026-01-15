@@ -93,9 +93,12 @@ float henyeyGreenstein(float g, float cos_theta) {
     return num / max(denom, 0.0001);
 }
 
-float getDistanceAttenuation(float dist, float radius) {
-    float num = saturate(1.0 - pow(dist / radius, 4.0));
-    return (num * num) / (dist * dist + 1.0);
+float getDistanceAttenuation(float distance, float radius, float pointSize) {
+    float s = distance / radius;
+    if (s >= 1.0) return 0.0;
+
+    float s2 = s * s;
+    return saturate((1.0 - s2) / (distance * distance + pointSize));
 }
 
 float getSpotAttenuation(vec3 lightDir, vec3 L, float scale, float offset) {
@@ -211,7 +214,7 @@ void main() {
 
                 if (dist < light.range) {
                     L /= dist;
-                    float att = getDistanceAttenuation(dist, light.range);
+                    float att = getDistanceAttenuation(dist, light.range, light.pointSize);
 
                     if (light.coneAngleScale != 0.0) {
                         vec3 spotDir = octahedronDecode(light.direction);

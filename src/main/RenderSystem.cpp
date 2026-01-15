@@ -282,6 +282,9 @@ void RenderSystem::recreate(const Settings &settings) {
     mInstanceTransformUpdates.create(globals::MaxFramesInFlight, [&] {
         return Buffer{}; // initially empty; will be allocated on demand
     });
+    mLightUpdates.create(globals::MaxFramesInFlight, [&] {
+        return Buffer{};
+    });
 }
 
 void RenderSystem::updateInstanceTransforms(const scene::GpuData &gpu_scene_data, std::span<const glm::mat4> updated_transforms) {
@@ -312,6 +315,35 @@ void RenderSystem::updateInstanceTransforms(const scene::GpuData &gpu_scene_data
     vk::BufferCopy copy_region{0, dstOffset, required_size};
     gpu_scene_data.instances.barrier(cmd, BufferResourceAccess::TransferWrite);
     cmd.copyBuffer(staging_buffer, gpu_scene_data.instances, 1, &copy_region);
+}
+
+void RenderSystem::updateLights(const scene::GpuData &gpu_scene_data, std::span<const UberLightBlock> updated_lights) {
+    if (updated_lights.empty())
+        return;
+
+    vk::CommandBuffer &cmd = mPerFrameObjects.get().earlyGraphicsCommands;
+    util::ScopedCommandLabel dbg_cmd_label_region(cmd, "Light Update");
+
+    Buffer &staging_buffer = mLightUpdates.get();
+    const size_t required_size = updated_lights.size() * sizeof(UberLightBlock);
+
+    if (!staging_buffer || staging_buffer.size < required_size)
+        staging_buffer = Buffer::create(
+                mContext->allocator(),
+                {
+                    .size = required_size,
+                    .usage = vk::BufferUsageFlagBits::eTransferSrc,
+                    .flags = vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped,
+                    .device = vma::MemoryUsage::eAuto,
+                    .requiredProperties = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                }
+        );
+
+    std::memcpy(staging_buffer.persistentMapping, updated_lights.data(), required_size);
+
+    vk::BufferCopy copy_region{0, 0, required_size};
+    gpu_scene_data.uberLights.barrier(cmd, BufferResourceAccess::TransferWrite);
+    cmd.copyBuffer(staging_buffer, gpu_scene_data.uberLights, 1, &copy_region);
 }
 
 void RenderSystem::draw(const RenderData &rd) {
@@ -450,7 +482,7 @@ void RenderSystem::draw(const RenderData &rd) {
         // Fog render pass
         dbg_cmd_label_region.swap("Fog Light Pass");
 
-        mFogLightRenderer->execute(mContext->device(), desc_alloc, cmd_buf, *rd.gltfScene.uberLights, rd.camera.projectionMatrix(), rd.camera.viewMatrix(), rd.camera.nearPlane(), mFogFroxelLightIndicesBuffer);
+        mFogLightRenderer->execute(mContext->device(), desc_alloc, cmd_buf, rd.gltfScene.uberLights, rd.camera.projectionMatrix(), rd.camera.viewMatrix(), rd.camera.nearPlane(), mFogFroxelLightIndicesBuffer);
 
         dbg_cmd_label_region.swap("Fog Pass");
         mFogRenderer->samples = rd.settings.fog.samples;
@@ -462,7 +494,7 @@ void RenderSystem::draw(const RenderData &rd) {
                 mContext->device(), desc_alloc, buf_alloc, cmd_buf, mHdrFramebuffer.depthAttachment,
                 resolved_hdr_color_image, rd.sunLight, rd.settings.rendering.ambient, rd.settings.fog.color,
                 rd.sunShadowCasterCascade.cascades(), rd.camera.viewMatrix(), rd.camera.projectionMatrix(),
-                rd.camera.nearPlane(), mFrameNumber, *rd.gltfScene.uberLights, mFogFroxelLightIndicesBuffer
+                rd.camera.nearPlane(), mFrameNumber, rd.gltfScene.uberLights, mFogFroxelLightIndicesBuffer
         );
 
         // Bloom pass
@@ -571,6 +603,7 @@ void RenderSystem::advance(const Settings &settings) {
     mTimings.advance = std::chrono::duration<double, std::milli>(time_advance_end - time_fence_end).count();
 
     mInstanceTransformUpdates.next();
+    mLightUpdates.next();
 }
 
 void RenderSystem::begin() {

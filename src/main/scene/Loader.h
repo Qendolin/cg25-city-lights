@@ -30,6 +30,9 @@ namespace scene {
         DeviceQueue mGraphicsQueue;
 
     public:
+        // empty spaces at the end of the light buffer
+        static constexpr int DYNAMIC_LIGHTS_RESERVATION = 1000;
+
         Loader(const vma::Allocator &allocator,
                const vk::Device &device,
                const vk::PhysicalDevice &physical_device,
@@ -76,6 +79,7 @@ namespace scene {
                 const gltf::Scene &scene_data, StagingBuffer &staging, const std::vector<uint32_t> &image_indices, GpuData &gpu_data
         ) const;
 
+        std::vector<UberLightBlock> createLights(const gltf::Scene &scene_data) const;
         void createGpuDataInitLights(const gltf::Scene &scene_data, StagingBuffer &staging, GpuData &gpu_data) const;
 
         void createGpuDataUpdateDescriptorSet(GpuData &gpu_data) const;

@@ -47,8 +47,7 @@ namespace scene {
         vma::UniqueBuffer materials;
         vma::UniqueAllocation materialsAlloc;
 
-        vma::UniqueBuffer uberLights;
-        vma::UniqueAllocation uberLightsAlloc;
+        Buffer uberLights;
 
         SceneDescriptorLayout sceneDescriptorLayout = {};
         vk::UniqueDescriptorPool sceneDescriptorPool = {};
@@ -93,6 +92,8 @@ namespace scene {
         /// </summary>
         std::vector<Instance> instances;
 
+        std::vector<UberLightBlock> lights;
+
         /// <summary>
         /// The data of n animations for the last n instances in the instances vector. Only mesh instances.
         /// </summary>
@@ -122,6 +123,7 @@ namespace scene {
         Scene &operator=(Scene &&other) noexcept = default;
 
         [[nodiscard]] const CpuData &cpu() const { return mCpuData; }
+        [[nodiscard]] CpuData &cpu() { return mCpuData; }
         [[nodiscard]] const GpuData &gpu() const { return mGpuData; }
 
     private:

@@ -49,7 +49,7 @@ struct alignas(16) UberLightBlock {
     float pointSize = 0.0f;
     float coneAngleOffset = 1.0f;
 
-    static float calculateLightRange(glm::vec3 radiance, float pointSize, float epsilon = 0.001f) {
+    static float calculateLightRange(glm::vec3 radiance, float pointSize, float epsilon = 0.01f) {
         float intensity = std::max({radiance.x, radiance.y, radiance.z});
 
         float term = (intensity / epsilon) - pointSize;

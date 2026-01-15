@@ -61,7 +61,8 @@ namespace scene {
 
             if (hasAnimation && !hasMesh) {
                 const gltf::Animation &anim_data = scene_data.animations[node.animation];
-                cpu_data.non_mesh_instance_animation_map[instance.name] = std::make_pair(cpu_data.instances.size(), cpu_data.non_mesh_instance_animations.size());
+                cpu_data.non_mesh_instance_animation_map[instance.name] =
+                        std::make_pair(cpu_data.instances.size(), cpu_data.non_mesh_instance_animations.size());
                 cpu_data.non_mesh_instance_animations.push_back(createInstanceAnimation(anim_data));
                 cpu_data.instances.push_back(instance);
                 continue;
@@ -78,6 +79,8 @@ namespace scene {
 
         cpu_data.instances.insert(cpu_data.instances.end(), anim_inst_to_insert_last.begin(), anim_inst_to_insert_last.end());
 
+        cpu_data.lights = createLights(scene_data);
+
         return cpu_data;
     }
 
@@ -89,8 +92,12 @@ namespace scene {
         });
 
         return InstanceAnimation{
-            animation_data.translation_timestamps, animation_data.rotation_timestamps, animation_data.scale_timestamps, animation_data.translations,
-            std::move(quats), animation_data.scales
+            animation_data.translation_timestamps,
+            animation_data.rotation_timestamps,
+            animation_data.scale_timestamps,
+            animation_data.translations,
+            std::move(quats),
+            animation_data.scales
         };
     }
 
@@ -378,7 +385,10 @@ namespace scene {
             uint32_t orm_texture_index = material.ormTexture == -1 ? 0xffff : image_indices[material.ormTexture];
             material_blocks.emplace_back() = {
                 .albedoFactors = material.albedoFactor,
-                .rmneFactors = glm::vec4{material.roughnessFactor, material.metalnessFactor, material.normalFactor, material.emissiveStrength},
+                .rmneFactors =
+                        glm::vec4{
+                            material.roughnessFactor, material.metalnessFactor, material.normalFactor, material.emissiveStrength
+                        },
                 .packedImageIndices0 = albedo_texture_index & 0xffff | (normal_texture_index & 0xffff) << 16,
                 .packedImageIndices1 = orm_texture_index & 0xffff,
             };
@@ -390,12 +400,12 @@ namespace scene {
         );
     }
 
-    void Loader::createGpuDataInitLights(const gltf::Scene &scene_data, StagingBuffer &staging, GpuData &gpu_data) const {
+    std::vector<UberLightBlock> Loader::createLights(const gltf::Scene &scene_data) const {
         // Note by Felix: Many magic numbers. I won't touch them because I do not understand them
 
         float light_range_epsilon = 1.0f / 128.0f;
         std::vector<UberLightBlock> uber_light_blocks;
-        uber_light_blocks.reserve(scene_data.pointLights.size() + scene_data.spotLights.size());
+        uber_light_blocks.reserve(scene_data.pointLights.size() + scene_data.spotLights.size() + DYNAMIC_LIGHTS_RESERVATION);
 
         for (const auto &light: scene_data.pointLights) {
             uber_light_blocks.emplace_back() = {
@@ -425,10 +435,21 @@ namespace scene {
             uber_light_blocks.back().updateRange(light_range_epsilon);
         }
 
+        uber_light_blocks.resize(uber_light_blocks.capacity());
+
+        return uber_light_blocks;
+    }
+
+    void Loader::createGpuDataInitLights(const gltf::Scene &scene_data, StagingBuffer &staging, GpuData &gpu_data) const {
+        auto uber_light_blocks = createLights(scene_data);
+
+        vma::UniqueBuffer out_buffer;
+        vma::UniqueAllocation out_alloc;
         uploadBufferWithDebugName(
-                staging, uber_light_blocks, vk::BufferUsageFlagBits::eStorageBuffer, "uber_lights", gpu_data.uberLights,
-                gpu_data.uberLightsAlloc
+                staging, uber_light_blocks, vk::BufferUsageFlagBits::eStorageBuffer, "uber_lights", out_buffer, out_alloc
         );
+        gpu_data.uberLights =
+                Buffer(std::move(out_buffer), std::move(out_alloc), uber_light_blocks.size() * sizeof(UberLightBlock));
     }
 
     void Loader::createGpuDataUpdateDescriptorSet(GpuData &gpu_data) const {
@@ -440,9 +461,7 @@ namespace scene {
                     ),
                     gpu_data.sceneDescriptor.write(
                             SceneDescriptorLayout::InstanceBuffer,
-                            vk::DescriptorBufferInfo{
-                                .buffer = static_cast<vk::Buffer>(gpu_data.instances), .offset = 0, .range = vk::WholeSize
-                            }
+                            vk::DescriptorBufferInfo{.buffer = gpu_data.instances, .offset = 0, .range = vk::WholeSize}
                     ),
                     gpu_data.sceneDescriptor.write(
                             SceneDescriptorLayout::MaterialBuffer,
@@ -450,7 +469,7 @@ namespace scene {
                     ),
                     gpu_data.sceneDescriptor.write(
                             SceneDescriptorLayout::UberLightBuffer,
-                            vk::DescriptorBufferInfo{.buffer = *gpu_data.uberLights, .offset = 0, .range = vk::WholeSize}
+                            vk::DescriptorBufferInfo{.buffer = gpu_data.uberLights, .offset = 0, .range = vk::WholeSize}
                     ),
                     gpu_data.sceneDescriptor.write(
                             SceneDescriptorLayout::BoundingBoxBuffer,

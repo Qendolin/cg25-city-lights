@@ -1,0 +1,95 @@
+#version 460
+#include "common/math.glsl"
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout (set = 0, binding = 0) uniform sampler2DMS in_depth;
+layout (set = 0, binding = 1) uniform sampler2D in_source;
+layout (set = 0, binding = 2, rgba16f) uniform restrict image2D out_color;
+
+layout (push_constant) uniform ShaderParamPush {
+    float zNear;
+    float sharpness;
+} cParams;
+
+float getLinearZ(ivec2 p) {
+    float d = texelFetch(in_depth, p, 0).x;
+    return cParams.zNear / max(d, 1e-6);
+}
+
+void main()
+{
+    ivec2 out_size = imageSize(out_color);
+    ivec2 half_size = textureSize(in_source, 0);
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+
+    if (p.x >= out_size.x || p.y >= out_size.y)
+    return;
+
+    vec2 half_texel = 1.0 / vec2(half_size);
+    vec2 uv = (vec2(p) + 0.5) / out_size;
+
+    // Center depth (full-res)
+    float center_z = getLinearZ(p);
+
+    // Compute 2D gradient (per-pixel) using central differences on full-res depth
+    float z_right = getLinearZ(p + ivec2(1, 0));
+    float z_left = getLinearZ(p - ivec2(1, 0));
+    float z_up = getLinearZ(p + ivec2(0, 1));
+    float z_down = getLinearZ(p - ivec2(0, 1));
+
+    // central difference -> change per 1 pixel
+    float dzdx = 0.5 * (z_right - z_left);
+    float dzdy = 0.5 * (z_up - z_down);
+    vec2 gradient = vec2(dzdx, dzdy);
+
+    // 3x3 Gaussian-ish kernel
+    const float K[3][3] = float[3][3](
+    float[3](1.0/16.0, 2.0/16.0, 1.0/16.0),
+    float[3](2.0/16.0, 4.0/16.0, 2.0/16.0),
+    float[3](1.0/16.0, 2.0/16.0, 1.0/16.0)
+    );
+
+    vec3 accum_radiance = vec3(0.0);
+    float accum_tau = 0.0;
+    float accum_weight = 0.0;
+
+    // Depth-aware 3x3 reconstruction (half-res samples)
+    for (int j = -1; j <= 1; ++j)
+    {
+        for (int i = -1; i <= 1; ++i)
+        {
+            vec2 sample_half_uv = uv + vec2(i, j) * half_texel;
+
+            vec4 src = textureLod(in_source, sample_half_uv, 0.0);
+            vec3 radiance = src.rgb;
+            // optical depth
+            float tau = src.a;
+
+            float sample_z = getLinearZ(p + ivec2(i, j));
+
+            // expected z from local plane (gradient is per-pixel; offsets i,j are in pixels)
+            float expected_z = center_z + dot(vec2(i, j), gradient);
+            float error = abs(sample_z - expected_z);
+
+            // plane / depth weight
+            float plane_w = max(0.0, 1.0 - error * cParams.sharpness);
+
+            float w = K[j + 1][i + 1] * plane_w;
+
+            accum_radiance += radiance * w;
+            accum_tau += tau * w;
+            accum_weight += w;
+        }
+    }
+
+    if (accum_weight < 1e-5)
+    return;
+
+    vec3 result_radiance = accum_radiance / accum_weight;
+    float result_transmittance = exp(-accum_tau / accum_weight);
+
+    vec4 scene = imageLoad(out_color, p);
+
+    imageStore(out_color, p, vec4(scene.rgb * result_transmittance + result_radiance, scene.a));
+}

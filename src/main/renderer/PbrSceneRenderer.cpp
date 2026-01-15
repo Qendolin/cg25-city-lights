@@ -126,6 +126,7 @@ void PbrSceneRenderer::execute(
     };
 
     tile_light_indices_buffer.barrier(cmd_buf, BufferResourceAccess::GraphicsShaderStorageRead);
+    gpu_data.uberLights.barrier(cmd_buf, BufferResourceAccess::ComputeShaderRead);
 
     auto descriptor_set = desc_alloc.allocate(mShaderParamsDescriptorLayout);
     ao_result.image().barrier(cmd_buf, ImageResourceAccess::FragmentShaderReadOptimal);

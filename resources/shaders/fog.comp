@@ -16,7 +16,7 @@ struct ShadowCascade {
 };
 
 layout(set = 0, binding = 0) uniform sampler2DMS in_depth;
-layout(set = 0, binding = 1, rgba16f) uniform restrict image2D inout_hdr;
+layout(set = 0, binding = 1) uniform restrict writeonly image2D out_result;
 layout(set = 0, binding = 2) uniform sampler2DShadow uShadowMaps[SHADOW_CASCADE_COUNT];
 
 layout (std140, set = 0, binding = 3) uniform ShadowCascadesUniforms {
@@ -120,12 +120,12 @@ float computeAdaptiveStep(float extinction, float current_transmittance) {
 }
 
 void main() {
-    if (any(greaterThanEqual(gl_GlobalInvocationID.xy, imageSize(inout_hdr)))) {
+    if (any(greaterThanEqual(gl_GlobalInvocationID.xy, imageSize(out_result)))) {
         return;
     }
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
 
-    vec2 screen_uv = (vec2(coord) + 0.5) / vec2(imageSize(inout_hdr));
+    vec2 screen_uv = (vec2(coord) + 0.5) / vec2(imageSize(out_result));
     uvec2 cluster_xy = uvec2(screen_uv * vec2(CLUSTER_DIM_X, CLUSTER_DIM_Y));
     cluster_xy = min(cluster_xy, uvec2(CLUSTER_DIM_X - 1, CLUSTER_DIM_Y - 1)); // Safety clamp
 
@@ -133,7 +133,11 @@ void main() {
     uint tile_flat_index = cluster_xy.y * CLUSTER_DIM_X + cluster_xy.x;
     uint cluster_col_offset = (tile_flat_index * CLUSTER_DIM_Z) << CLUSTER_LIGHT_STRIDE_SHIFT;
 
-    float depth = texelFetch(in_depth, coord, 0).r;
+    // min -> farthest depth
+    float depth = min(
+        min(texelFetch(in_depth, coord*2 + ivec2(0, 0), 0).r, texelFetch(in_depth, coord*2 + ivec2(1, 0), 0).r),
+        min(texelFetch(in_depth, coord*2 + ivec2(0, 1), 0).r, texelFetch(in_depth, coord*2 + ivec2(1, 1), 0).r)
+    );
     float scene_view_z = depthToViewZ(depth);
 
     vec3 ray_vs = unprojectRay(vec2(coord) + 0.5);
@@ -235,8 +239,6 @@ void main() {
         radiance += transmittance * in_radiance * one_minus_t;
     }
 
-    vec4 in_color = imageLoad(inout_hdr, coord);
-    vec3 result = in_color.rgb * transmittance + radiance * cParams.fogColor;
-
-    imageStore(inout_hdr, coord, vec4(result, in_color.a));
+    float optical_depth = -log(max(transmittance, 1e-6));
+    imageStore(out_result, coord, vec4(radiance * cParams.fogColor, optical_depth));
 }

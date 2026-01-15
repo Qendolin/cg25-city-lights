@@ -5,6 +5,10 @@
 #include "../debug/Settings.h"
 
 
+namespace vma {
+    class Allocator;
+}
+struct ImageWithView;
 struct BufferBase;
 class TransientBufferAllocator;
 class CascadedShadowCaster;
@@ -17,9 +21,9 @@ namespace vk {
 class FogRenderer {
 
 public:
-    struct ShaderParamsDescriptorLayout : DescriptorSetLayout {
+    struct SampleShaderParamsDescriptorLayout : DescriptorSetLayout {
         static constexpr CombinedImageSamplerBinding InDepth{0, vk::ShaderStageFlagBits::eCompute};
-        static constexpr StorageImageBinding InOutColor{1, vk::ShaderStageFlagBits::eCompute};
+        static constexpr StorageImageBinding OutColor{1, vk::ShaderStageFlagBits::eCompute};
         static constexpr CombinedImageSamplerBinding SunShadowMap{
             2, vk::ShaderStageFlagBits::eCompute, Settings::SHADOW_CASCADE_COUNT
         };
@@ -27,15 +31,28 @@ public:
         static constexpr StorageBufferBinding UberLights{4, vk::ShaderStageFlagBits::eCompute};
         static constexpr StorageBufferBinding ClusterLightIndices{5, vk::ShaderStageFlagBits::eCompute};
 
-        ShaderParamsDescriptorLayout() = default;
+        SampleShaderParamsDescriptorLayout() = default;
 
-        explicit ShaderParamsDescriptorLayout(const vk::Device &device) {
-            create(device, {}, InDepth, InOutColor, SunShadowMap, ShadowCascadeUniforms, UberLights, ClusterLightIndices);
-            util::setDebugName(device, vk::DescriptorSetLayout(*this), "fog_renderer_descriptor_layout");
+        explicit SampleShaderParamsDescriptorLayout(const vk::Device &device) {
+            create(device, {}, InDepth, OutColor, SunShadowMap, ShadowCascadeUniforms, UberLights, ClusterLightIndices);
+            util::setDebugName(device, vk::DescriptorSetLayout(*this), "fog_sample_descriptor_layout");
         }
     };
 
-    struct PushConstants {
+    struct FilterShaderParamsDescriptorLayout : DescriptorSetLayout {
+        static constexpr CombinedImageSamplerBinding InDepth{0, vk::ShaderStageFlagBits::eCompute};
+        static constexpr CombinedImageSamplerBinding InSource{1, vk::ShaderStageFlagBits::eCompute};
+        static constexpr StorageImageBinding OutColor{2, vk::ShaderStageFlagBits::eCompute};
+
+        FilterShaderParamsDescriptorLayout() = default;
+
+        explicit FilterShaderParamsDescriptorLayout(const vk::Device &device) {
+            create(device, {}, InDepth, InSource, OutColor);
+            util::setDebugName(device, vk::DescriptorSetLayout(*this), "fog_filter_descriptor_layout");
+        }
+    };
+
+    struct SamplePushConstants {
         glm::mat4 inverseViewMatrix;
         glm::vec2 inverseProjectionScale;
         glm::vec2 inverseProjectionOffset;
@@ -57,6 +74,11 @@ public:
         uint32_t frame;
     };
 
+    struct FilterPushConstants {
+        float zNear;
+        float sharpness;
+    };
+
     struct alignas(16) ShadowCascadeUniformBlock {
         glm::mat4 transform;
         glm::vec2 boundsMin;
@@ -72,9 +94,7 @@ public:
     ~FogRenderer();
     explicit FogRenderer(const vk::Device &device);
 
-    void recreate(const vk::Device &device, const ShaderLoader &shader_loader) {
-        createPipeline(device, shader_loader);
-    }
+    void recreate(const vk::Device &device, const ShaderLoader &shader_loader, const vma::Allocator& alloc, vk::Extent2D result_extent);
 
     void execute(
             const vk::Device &device,
@@ -102,9 +122,13 @@ private:
             const glm::mat4 &projectionMatrix, float textureWidth, float textureHeight, glm::vec2 &viewScale, glm::vec2 &viewOffset
     );
 
+    std::unique_ptr<ImageWithView> mResultImage;
 
     vk::UniqueSampler mDepthSampler;
     vk::UniqueSampler mShadowSampler;
-    ConfiguredComputePipeline mPipeline;
-    ShaderParamsDescriptorLayout mShaderParamsDescriptorLayout;
+    vk::UniqueSampler mResultSampler;
+    ConfiguredComputePipeline mSamplePipeline;
+    ConfiguredComputePipeline mFilterPipeline;
+    SampleShaderParamsDescriptorLayout mSampleShaderParamsDescriptorLayout;
+    FilterShaderParamsDescriptorLayout mFilterShaderParamsDescriptorLayout;
 };

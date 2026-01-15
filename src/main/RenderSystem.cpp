@@ -205,7 +205,7 @@ void RenderSystem::recreate(const Settings &settings) {
     mSSAORenderer->recreate(device, mShaderLoader, settings.ssao.slices, settings.ssao.samples, settings.ssao.bentNormals);
     mDepthPrePassRenderer->recreate(device, mShaderLoader, mHdrFramebuffer);
     mLightRenderer->recreate(device, mShaderLoader);
-    mFogRenderer->recreate(device, mShaderLoader);
+    mFogRenderer->recreate(device, mShaderLoader, mContext->allocator(), screen_half_extent);
     mFogLightRenderer->recreate(device, mShaderLoader);
     mBloomRenderer->recreate(device, mContext->allocator(), mShaderLoader, screen_extent);
 

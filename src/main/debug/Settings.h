@@ -80,7 +80,7 @@ struct Settings {
     struct SSAO {
         bool update = true;
         bool halfResolution = true;
-        bool bentNormals = true;
+        bool bentNormals = false;
         int slices = 3;
         int samples = 6;
         float radius = 2.0f;

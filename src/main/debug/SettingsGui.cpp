@@ -92,6 +92,17 @@ void SettingsGui::draw(Settings &settings) {
         PopID();
     }
 
+    if (CollapsingHeader("Blob")) {
+        PushID("Blob");
+        SliderFloat("Dispersion XZ", &settings.blob.dispersionXZ, 0.0f, 5.0f);
+        SliderFloat("Dispersion Y", &settings.blob.dispersionY, 0.0f, 5.0f);
+        SliderFloat("Dispersion Power", &settings.blob.dispersionPower, 0.0f, 4.0f);
+        SliderFloat("Animation Speed", &settings.blob.animationSpeed, 0.0, 10.0f);
+        SliderFloat("Base Radius", &settings.blob.baseRadius, 0.0f, 2.0f);
+        SliderFloat("Max Radius", &settings.blob.maxRadius, 0.0f, 2.0f);
+        PopID();
+    }
+
     if (CollapsingHeader("Rendering")) {
         PushID("rendering");
         ColorEdit3("Ambient", glm::value_ptr(settings.rendering.ambient), ImGuiColorEditFlags_Float);

@@ -6,6 +6,7 @@
 #include <string>
 
 #include "animation/InstanceAnimationSampler.h"
+#include "animation/Timeline.h"
 #include "animation/VariableAnimationController.h"
 #include "debug/Settings.h"
 
@@ -43,10 +44,10 @@ private:
     static constexpr float FAST_SPEED_MULTIPLIER{10.0f};
     static constexpr int WINDOW_WIDTH{1600};
     static constexpr int WINDOW_HEIGHT{900};
-    static constexpr float FOV{glm::radians(90.0f)};
+    static constexpr float FOV{glm::radians(70.0f)};
     static constexpr float NEAR_PLANE{0.001f};
     static constexpr glm::vec3 DEFAULT_CAMERA_POSITION{0.0f, 1.0f, 5.0f};
-    static constexpr glm::vec3 DEFAULT_BLOB_POSITION{0.0f, 1.0f, 0.0f};
+    static constexpr glm::vec3 DEFAULT_BLOB_POSITION{0.0f, 2.0f, 0.0f};
     static constexpr char TITLE[]{"City Lights"};
     static constexpr char DEFAULT_SCENE_FILENAME[]{"resources/scenes/CityTest.glb"};
     static constexpr char AMBIENT_SOUND_FILENAME[]{"resources/audio/ambiance.ogg"};
@@ -78,6 +79,7 @@ private:
 
     std::unique_ptr<InstanceAnimationSampler> mInstanceAnimationSampler;
     VariableAnimationController mVariableAnimationController{};
+    std::unique_ptr<Timeline> mTimeline{};
 
 public:
     Application();

@@ -7,6 +7,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include "RenderSystem.h"
+#include "SceneAnimation.h"
 #include "audio/Audio.h"
 #include "backend/Swapchain.h"
 #include "backend/VulkanContext.h"
@@ -134,43 +135,6 @@ void Application::initScene() {
 
     mBlobSystem = std::make_unique<blob::System>(mCtx->allocator(), mCtx->device(), 6, BLOB_RESOLUTION);
     mBlobChaos = std::make_unique<HenonHeiles>(6);
-
-    for (size_t i = 0; i < scene::Loader::DYNAMIC_LIGHTS_RESERVATION; i++) {
-        size_t offset = mScene->cpu().lights.size() - scene::Loader::DYNAMIC_LIGHTS_RESERVATION;
-        float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        r = 50.0f * (1.0f - r * r);
-        float theta = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        theta = glm::tau<float>() * theta;
-        float y = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        y = (y*y * 2.0 - 1.0) * 6.5f;
-
-        // float l = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        // l = 0.65 + 0.1 * l;
-        // float c = 0.15;
-        // float h = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        // h = 50 + 30 * h;
-
-        float h = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        h = h * 360;
-        h = 128.0f;
-        float s = 0.9f;
-        float v = 0.9f;
-
-        glm::vec3 center = {0, 0, 0};
-
-        auto& light = mScene->cpu().lights[offset + i];
-
-        // light.position = center + glm::vec3{r * glm::sin(theta), y, r * glm::cos(theta)};
-        theta = i * 0.1375f;
-        r = 2 + i * 0.07f;
-        y = -std::pow(i * 0.1f, 1.5f);
-        light.position = center + glm::vec3{r * glm::sin(theta), y, r * glm::cos(theta)};
-        // light.radiance = color::oklch_to_rgb(glm::vec3{l,c,h}) * 1.0f;
-        light.radiance = color::hsv_to_rgb(glm::vec3{h,s,v}) * 4.0f;
-        light.pointSize = 0.25f;
-        // light.range = 1.5f;
-        light.updateRange(0.1f);
-    }
 }
 
 void Application::initCameras() {
@@ -193,34 +157,37 @@ void Application::initAudio() {
 }
 
 void Application::initVariableAnimations() {
-    mVariableAnimationController.createTrack(mSettings.sky.exposure);
-    mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(0.f, 1.49f);
-    mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(12.f, 1.49f);
-    mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(14.f, 0.f);
-    mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(15.5f, -4.5f);
+    // mVariableAnimationController.createTrack(mSettings.sky.exposure);
+    // mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(0.f, 1.49f);
+    // mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(12.f, 1.49f);
+    // mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(14.f, 0.f);
+    // mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(15.5f, -4.5f);
+    //
+    // mVariableAnimationController.createTrack(mSettings.sun.color);
+    // mVariableAnimationController.track(mSettings.sun.color).addKeyframe(0.f, glm::vec3{1.f});
+    // mVariableAnimationController.track(mSettings.sun.color).addKeyframe(12.f, glm::vec3{1.f});
+    // mVariableAnimationController.track(mSettings.sun.color).addKeyframe(13.5f, glm::vec3{1.f});
+    // mVariableAnimationController.track(mSettings.sun.color).addKeyframe(15.f, glm::vec3{1.f, 0.6f, 0.6f});
+    //
+    // mVariableAnimationController.createTrack(mSettings.sun.power);
+    // mVariableAnimationController.track(mSettings.sun.power).addKeyframe(0.f, 15.0f);
+    // mVariableAnimationController.track(mSettings.sun.power).addKeyframe(12.f, 15.0f);
+    // mVariableAnimationController.track(mSettings.sun.power).addKeyframe(15.f, 10.0f);
+    // mVariableAnimationController.track(mSettings.sun.power).addKeyframe(16.f, 0.0f);
+    //
+    // mVariableAnimationController.createTrack(mSettings.sun.elevation);
+    // mVariableAnimationController.track(mSettings.sun.elevation).addKeyframe(0.f, 40.f);
+    // mVariableAnimationController.track(mSettings.sun.elevation).addKeyframe(12.f, 40.f);
+    // mVariableAnimationController.track(mSettings.sun.elevation).addKeyframe(18.f, 0.0f);
+    //
+    // mVariableAnimationController.createTrack(mSettings.rendering.ambient);
+    // mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(0.f, glm::vec3{0.28f, 0.315, 0.385});
+    // mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(12.f, glm::vec3{0.28f, 0.315, 0.385});
+    // mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(15.f, glm::vec3{0.056f, 0.063, 0.077});
+    // mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(16.f, glm::vec3{0.028f, 0.032, 0.039});
 
-    mVariableAnimationController.createTrack(mSettings.sun.color);
-    mVariableAnimationController.track(mSettings.sun.color).addKeyframe(0.f, glm::vec3{1.f});
-    mVariableAnimationController.track(mSettings.sun.color).addKeyframe(12.f, glm::vec3{1.f});
-    mVariableAnimationController.track(mSettings.sun.color).addKeyframe(13.5f, glm::vec3{1.f});
-    mVariableAnimationController.track(mSettings.sun.color).addKeyframe(15.f, glm::vec3{1.f, 0.6f, 0.6f});
-
-    mVariableAnimationController.createTrack(mSettings.sun.power);
-    mVariableAnimationController.track(mSettings.sun.power).addKeyframe(0.f, 15.0f);
-    mVariableAnimationController.track(mSettings.sun.power).addKeyframe(12.f, 15.0f);
-    mVariableAnimationController.track(mSettings.sun.power).addKeyframe(15.f, 10.0f);
-    mVariableAnimationController.track(mSettings.sun.power).addKeyframe(16.f, 0.0f);
-
-    mVariableAnimationController.createTrack(mSettings.sun.elevation);
-    mVariableAnimationController.track(mSettings.sun.elevation).addKeyframe(0.f, 40.f);
-    mVariableAnimationController.track(mSettings.sun.elevation).addKeyframe(12.f, 40.f);
-    mVariableAnimationController.track(mSettings.sun.elevation).addKeyframe(18.f, 0.0f);
-
-    mVariableAnimationController.createTrack(mSettings.rendering.ambient);
-    mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(0.f, glm::vec3{0.28f, 0.315, 0.385});
-    mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(12.f, glm::vec3{0.28f, 0.315, 0.385});
-    mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(15.f, glm::vec3{0.056f, 0.063, 0.077});
-    mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(16.f, glm::vec3{0.028f, 0.032, 0.039});
+    mTimeline = std::make_unique<Timeline>();
+    createSceneAnimation(*mTimeline, mSettings, *mScene);
 }
 
 void Application::processInput() {
@@ -229,6 +196,13 @@ void Application::processInput() {
 
     if (mInput->isKeyPress(GLFW_KEY_F1))
         mSettings.showGui = !mSettings.showGui;
+
+    if (mInput->isKeyPress(GLFW_KEY_P)) {
+        mSettings.animation.time = 0;
+        mSettings.animation.pause = false;
+        mSettings.camera.debugCamera = false;
+        mTimeline->reset();
+    }
 
     updateMouseCapture();
 
@@ -242,13 +216,6 @@ void Application::advanceAnimationTime() {
     if (!mSettings.animation.pause) {
         float dt = mInput->timeDelta() * mSettings.animation.playbackSpeed;
         mSettings.animation.time += dt;
-    }
-
-    for (size_t i = 0; i < scene::Loader::DYNAMIC_LIGHTS_RESERVATION; i++) {
-        size_t offset = mScene->cpu().lights.size() - scene::Loader::DYNAMIC_LIGHTS_RESERVATION;
-        auto& light = mScene->cpu().lights[offset + i];
-        light.position.y += (std::max(light.position.y, 0.0f) * 0.5f + 3.0f) * mInput->timeDelta();
-        light.position.y = std::fmodf(light.position.y, 40.0f);
     }
 }
 
@@ -268,13 +235,15 @@ void Application::updateBlob() {
     float time = mSettings.animation.time;
     glm::vec3 center = mInstanceAnimationSampler->sampleNamedTranslation("Blob", time);
 
-    mBlobChaos->update(std::min(mInput->timeDelta() * 2.0f, 1.0f / 30.0f));
+    mBlobChaos->update(std::min(mInput->timeDelta() * mSettings.blob.animationSpeed, 1.0f / 30.0f));
     for (size_t i = 0; i < balls.size(); i++) {
         auto &ball = balls[i];
-        ball.baseRadius = 0.1f;
-        ball.maxRadius = 0.7f;
+        ball.baseRadius = mSettings.blob.baseRadius;
+        ball.maxRadius = mSettings.blob.maxRadius;
 
-        ball.center = center + mBlobChaos->points[i].position * 1.1f;
+        glm::vec3 vec = mBlobChaos->points[i].position;
+        vec = glm::normalize(vec) * std::pow(glm::length(vec), mSettings.blob.dispersionPower);
+        ball.center = center + vec * glm::vec3{mSettings.blob.dispersionXZ, mSettings.blob.dispersionY, mSettings.blob.dispersionXZ};
     }
 }
 
@@ -288,6 +257,8 @@ void Application::updateAnimatedVariables() {
     if (mSettings.animation.animateVariables)
         mVariableAnimationController.update(mSettings.animation.time);
 
+    mTimeline->update(static_cast<uint32_t>(mSettings.animation.time * 1000));
+
     auto radiance = lighting::sunLightFromElevation(mSettings.sun.elevation);
     mSettings.sun.color = radiance;
 
@@ -296,6 +267,15 @@ void Application::updateAnimatedVariables() {
 
     mSettings.sky.dayNightBlend = 1.0f - glm::smoothstep(-18.0f, 0.0f, mSettings.sun.elevation);
     mSettings.sky.exposure = -2.25f + (2.25f + 1.5f) * glm::smoothstep(-18.0f, 0.0f, mSettings.sun.elevation);
+
+    if (mSettings.animation.animateLights) {
+        for (size_t i = 0; i < scene::Loader::DYNAMIC_LIGHTS_RESERVATION; i++) {
+            size_t offset = mScene->cpu().lights.size() - scene::Loader::DYNAMIC_LIGHTS_RESERVATION;
+            auto& light = mScene->cpu().lights[offset + i];
+            light.position.y += (std::max(light.position.y, 0.0f) * 0.5f + 3.0f) * mInput->timeDelta();
+            light.position.y = std::fmodf(light.position.y, 40.0f);
+        }
+    }
 }
 
 void Application::drawGui() {

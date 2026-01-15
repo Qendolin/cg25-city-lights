@@ -36,7 +36,7 @@ struct Settings {
     struct ShadowCascade {
         float lambda = 0.9f;
         float distance = 64.0f;
-        const int resolution = 2048;
+        int resolution = 2048;
         bool visualize = false;
         bool update = true;
     } shadowCascade;
@@ -52,9 +52,9 @@ struct Settings {
     } agx;
 
     struct Fog {
-        int samples = 48;
-        float targetStepContribution = 0.02f;
-        float density = 0.06f;
+        int samples = 64;
+        float targetStepContribution = 0.025f;
+        float density = 0.015f;
         float g = 0.7f;
         glm::vec3 color = glm::vec3(0.828f, 0.874f, 1.000f);
         float heightFalloff = 0.29f;
@@ -88,11 +88,21 @@ struct Settings {
         float bias = 0.0f;
         float filterSharpness = 20.0f;
     } ssao;
-    
+
+    struct Blob {
+        float dispersionXZ = 1.0f;
+        float dispersionY = 1.0f;
+        float dispersionPower = 2.0f;
+        float animationSpeed = 2.0f;
+        float baseRadius = 0.1f;
+        float maxRadius = 0.7f;
+    } blob;
+
     struct Animation {
         bool renderBlob = true;
         bool animateBlobNode = true;
         bool animateVariables = false;
+        bool animateLights = false;
         float playbackSpeed = 1.0f;
         float time = 0.0f;
         bool pause = true;
@@ -112,5 +122,8 @@ struct Settings {
             .depthBiasSlope = -1.0f,
         };
     }
+
+    Settings(const Settings &other) = default;
+    Settings &operator=(const Settings &other) = default;
 };
 

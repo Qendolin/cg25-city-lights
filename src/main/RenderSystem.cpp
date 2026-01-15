@@ -344,6 +344,8 @@ void RenderSystem::updateLights(const scene::GpuData &gpu_scene_data, std::span<
     vk::BufferCopy copy_region{0, 0, required_size};
     gpu_scene_data.uberLights.barrier(cmd, BufferResourceAccess::TransferWrite);
     cmd.copyBuffer(staging_buffer, gpu_scene_data.uberLights, 1, &copy_region);
+    gpu_scene_data.uberLights.barrier(cmd, BufferResourceAccess{.stage = vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eComputeShader, .access = vk::AccessFlagBits2::eShaderRead});
+
 }
 
 void RenderSystem::draw(const RenderData &rd) {

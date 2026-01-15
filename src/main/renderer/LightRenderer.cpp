@@ -51,7 +51,6 @@ void LightRenderer::execute(
 ) {
     depth_attachment.image().barrier(cmd_buf, ImageResourceAccess::ComputeShaderReadOptimal);
     tile_light_indices_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderWrite);
-    gpu_data.uberLights.barrier(cmd_buf, BufferResourceAccess::ComputeShaderRead);
 
     auto descriptor_set = allocator.allocate(mShaderParamsDescriptorLayout);
     device.updateDescriptorSets(

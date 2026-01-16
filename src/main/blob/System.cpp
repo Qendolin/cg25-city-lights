@@ -40,6 +40,11 @@ namespace blob {
         util::setDebugName(device, *mMetaballBuffer.buffer, "blob_metaball_buffer");
 
         mTrash.create(globals::MaxFramesInFlight + 1, [] { return std::vector<std::function<void()>>(); });
+
+        // Pre-allocate
+        resizeDomainMemberBuffer(allocator, device, 1024*1024);
+        resizeDrawIndirectBuffer(allocator, device, 512);
+        resizeVertexBuffer(allocator, device, 1024);
     }
 
     void System::update(const vma::Allocator &allocator, const vk::Device &device, const vk::CommandBuffer &cmd_buf) {
@@ -71,6 +76,7 @@ namespace blob {
         }
 
         mMetaballBuffer.barrier(cmd_buf, BufferResourceAccess::TransferWrite);
+        assert(metaball_data.size() * sizeof(MetaballBlock) < 65536);
         cmd_buf.updateBuffer(mMetaballBuffer, 0, metaball_data.size() * sizeof(MetaballBlock), metaball_data.data());
 
         // Calculate total members across all domains
@@ -89,6 +95,7 @@ namespace blob {
 
         resizeDomainMemberBuffer(allocator, device, domain_members.size());
         mDomainMemberBuffer.barrier(cmd_buf, BufferResourceAccess::TransferWrite);
+        assert(domain_members.size() * sizeof(uint32_t) < 65536);
         cmd_buf.updateBuffer(mDomainMemberBuffer, 0, domain_members.size() * sizeof(uint32_t), domain_members.data());
     }
 
@@ -219,7 +226,8 @@ namespace blob {
     void System::resizeVertexBuffer(const vma::Allocator &allocator, const vk::Device &device, size_t required_count) {
         size_t current_count = mVertexBuffer.size / sizeof(VertexData);
         size_t reallocated_count = 0;
-        if (required_count > current_count || required_count < current_count / 2) {
+        // if (required_count > current_count || required_count < current_count / 2) {
+        if (required_count > current_count) {
             reallocated_count = static_cast<size_t>(1.5 * static_cast<double>(required_count));
         } else {
             return;
@@ -246,7 +254,8 @@ namespace blob {
     void System::resizeDrawIndirectBuffer(const vma::Allocator &allocator, const vk::Device &device, size_t required_count) {
         size_t current_count = mDrawIndirectBuffer.size / sizeof(vk::DrawIndirectCommand);
         size_t reallocated_count = 0;
-        if (required_count > current_count || required_count < current_count / 2) {
+        // if (required_count > current_count || required_count < current_count / 2) {
+        if (required_count > current_count) {
             reallocated_count = static_cast<size_t>(1.5 * static_cast<double>(required_count));
         } else {
             return;
@@ -274,7 +283,8 @@ namespace blob {
     void System::resizeDomainMemberBuffer(const vma::Allocator &allocator, const vk::Device &device, size_t required_count) {
         size_t current_count = mDomainMemberBuffer.size / sizeof(uint32_t);
         size_t reallocated_count = 0;
-        if (required_count > current_count || required_count < current_count / 2) {
+        // if (required_count > current_count || required_count < current_count / 2) {
+        if (required_count > current_count) {
             reallocated_count = static_cast<size_t>(1.5 * static_cast<double>(required_count));
         } else {
             return;

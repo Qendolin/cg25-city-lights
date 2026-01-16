@@ -94,7 +94,7 @@ void main() {
 	// Direct
 	{
 		// original direct lighting (transmission + specular)
-		color += pow(1.0 - n_dot_v * 0.7, 3.0) * transmission * ALBEDO;
+		color += pow(1.0 - n_dot_v * 0.5, 3.0) * transmission * ALBEDO * 2.0f;
 		color += specular * uParams.sunLight.rgb;
 
 		// Add HG single-scattering contribution from the sun (scattered into the view)

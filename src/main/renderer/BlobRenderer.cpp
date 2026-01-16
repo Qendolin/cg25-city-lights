@@ -64,6 +64,7 @@ void BlobRenderer::compute(
     }
 
     indirect_buffer.barrier(cmd_buf, BufferResourceAccess::TransferWrite);
+    assert(drawCommands.size() * sizeof(vk::DrawIndirectCommand));
     cmd_buf.updateBuffer(indirect_buffer, 0, drawCommands.size() * sizeof(vk::DrawIndirectCommand), drawCommands.data());
 
     indirect_buffer.barrier(cmd_buf, BufferResourceAccess::ComputeShaderStorageReadWrite);
@@ -83,16 +84,16 @@ void BlobRenderer::compute(
         .pSetLayouts = &desc_layout,
     })[0]);
 
-    cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *mComputePipeline.layout, 0, {set}, {});
     device.updateDescriptorSets(
-            {
-                set.write(ComputeDescriptorLayout::MetaballBuffer, {.buffer = metaball_buffer, .range = vk::WholeSize}),
-                set.write(ComputeDescriptorLayout::VertexBuffer, {.buffer = vertex_buffer, .range = vk::WholeSize}),
-                set.write(ComputeDescriptorLayout::IndirectBuffer, {.buffer = indirect_buffer, .range = vk::WholeSize}),
-                set.write(ComputeDescriptorLayout::DomainMemberBuffer, {.buffer = domain_member_buffer, .range = vk::WholeSize}),
-            },
-            {}
-    );
+        {
+            set.write(ComputeDescriptorLayout::MetaballBuffer, {.buffer = metaball_buffer, .range = vk::WholeSize}),
+            set.write(ComputeDescriptorLayout::VertexBuffer, {.buffer = vertex_buffer, .range = vk::WholeSize}),
+            set.write(ComputeDescriptorLayout::IndirectBuffer, {.buffer = indirect_buffer, .range = vk::WholeSize}),
+            set.write(ComputeDescriptorLayout::DomainMemberBuffer, {.buffer = domain_member_buffer, .range = vk::WholeSize}),
+        },
+        {}
+);
+    cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *mComputePipeline.layout, 0, {set}, {});
 
     size_t metaball_index_offset = 0;
 

@@ -113,8 +113,8 @@ struct Settings {
     } camera;
 
     struct Audio {
-        float masterVolume = 0.2f;
-        float ambientVolume = 0.35f;
+        float masterVolume = 0.7f;
+        float ambientVolume = 0.2f;
         float whiteVanVolume = 0.0f;
         float blueVanVolume = 0.0f;
         float blueCarVolume = 0.0f;

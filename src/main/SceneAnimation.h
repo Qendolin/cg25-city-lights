@@ -84,6 +84,7 @@ static void createSceneAnimation(Timeline &t, Settings& settings, scene::Scene& 
         audio.engineSoundInstanceBlueVan->seek(11.0);
         audio.engineSoundInstanceBlueVan->play();
         audio.beamSoundInstance->setVolume(0);
+        audio.ambientMusic->play();
     });
 
     // Car sound off
@@ -168,7 +169,7 @@ static void createSceneAnimation(Timeline &t, Settings& settings, scene::Scene& 
         settings.agx.ev_max = glm::mix(4.026069f, 1.0f, sunset);
         settings.fog.heightFalloff = glm::mix(0.29f, 0.2f, f);
         settings.fog.density = glm::mix(0.015f, 0.2f, sunset);
-        settings.audio.ambientVolume = glm::mix(0.35f, 0.0f, sunset);
+        settings.audio.ambientVolume = glm::mix(0.2f, 0.0f, sunset);
         return false;
     });
 

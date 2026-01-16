@@ -211,10 +211,15 @@ void Application::processInput() {
     }
 
     if (mInput->isKeyPress(GLFW_KEY_P)) {
-        mSettings.animation.time = 0;
-        mSettings.animation.pause = false;
-        mSettings.camera.debugCamera = false;
-        mTimeline->reset();
+        if (mSettings.animation.time <= 0.0 || mSettings.animation.time >= 140.0) {
+            mSettings.animation.time = 0;
+            mSettings.animation.pause = false;
+            mSettings.camera.debugCamera = false;
+            mTimeline->reset();
+        } else {
+            mSettings.animation.pause = !mSettings.animation.pause;
+        }
+
     }
 
     updateMouseCapture();

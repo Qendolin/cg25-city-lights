@@ -1,6 +1,14 @@
+# Controls
+
+F1 - Toggle HUD
+F5 - Reload Render System
+F11 - Toggle Fullscreen
+P - Play Animation
+ESC / Left Alt - Release Mouse
+
 # Project Setup (For CLion)
 
-### Software you need
+### Software you needppppp
 1. CLion (and VS 2022 on Windows)
 2. vcpkg and the vcpkg CLion plugin
 3. cmake

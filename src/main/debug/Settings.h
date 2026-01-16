@@ -112,6 +112,15 @@ struct Settings {
         bool debugCamera = true;
     } camera;
 
+    struct Audio {
+        float masterVolume = 0.2f;
+        float ambientVolume = 0.35f;
+        float whiteVanVolume = 0.0f;
+        float blueVanVolume = 0.0f;
+        float blueCarVolume = 0.0f;
+        float ufoVolume = 0.0f;
+    } audio;
+
     Settings() {
         shadowCascades[0] = {
             .extrusionBias = -0.5f,

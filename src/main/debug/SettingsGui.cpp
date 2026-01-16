@@ -146,15 +146,24 @@ void SettingsGui::draw(Settings &settings) {
         Checkbox("Animate Blob Node", &settings.animation.animateBlobNode);
         Checkbox("Animate Variables", &settings.animation.animateVariables);
         SliderFloat("Playback Speed", &settings.animation.playbackSpeed, 0.0f, 4.0f);
-        SliderFloat("Timeline", &settings.animation.time, 0.0f, 60.0f);
+        SliderFloat("Timeline", &settings.animation.time, 0.0f, 140.0f);
         Checkbox("Pause Animation", &settings.animation.pause);
-
         PopID();
     }
 
     if (CollapsingHeader("Camera")) {
         PushID("camera");
         Checkbox("Debug Camera", &settings.camera.debugCamera);
+        PopID();
+    }
+
+    if (CollapsingHeader("Audio")) {
+        PushID("audio");
+        SliderFloat("Master Volume", &settings.audio.masterVolume, 0.0f, 1.0f);
+        SliderFloat("Ambient Volume", &settings.audio.ambientVolume, 0.0f, 1.0f);
+        SliderFloat("Blue Car Volume", &settings.audio.blueCarVolume, 0.0f, 1.0f);
+        SliderFloat("Blue Van Volume", &settings.audio.blueVanVolume, 0.0f, 1.0f);
+        SliderFloat("White Van Volume", &settings.audio.whiteVanVolume, 0.0f, 1.0f);
         PopID();
     }
 

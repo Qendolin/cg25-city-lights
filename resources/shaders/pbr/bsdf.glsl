@@ -66,11 +66,7 @@ vec3 bsdf(in BSDFParams p, vec3 L, vec3 radiance) {
     float micro_shadow = microShadowNaughtyDog(p.occlusion, n_dot_l);
     radiance *= micro_shadow;
 
-    // --- Emissive Term ---
-
-    vec3 emissive = p.emissiveness * p.albedo.rgb;
-
-    return (diffuse + specular) * radiance * n_dot_l + emissive;
+    return (diffuse + specular) * radiance * n_dot_l;
 }
 
 #endif

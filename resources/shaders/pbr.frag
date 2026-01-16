@@ -122,6 +122,9 @@ void main() {
 
     vec3 Lo = vec3(0.0);
 
+    // emissive light
+    Lo += bsdf_params.emissiveness * 2.0f * bsdf_params.albedo.rgb;
+
     // directional light
     {
         float n_dot_l = dot(bsdf_params.geoN, uParams.sun.forward.xyz);

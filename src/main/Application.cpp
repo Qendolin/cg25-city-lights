@@ -28,6 +28,8 @@
 #include "util/Logger.h"
 
 Application::Application() {
+    mSettings.camera.debugCamera = globals::Debug;
+    mSettings.showGui = globals::Debug;
     initContext();
     initInput();
     // imgui must be initialized after input
@@ -40,12 +42,21 @@ Application::Application() {
     mDebugFrameTimes = std::make_unique<FrameTimes>();
     mInstanceAnimationSampler = std::make_unique<InstanceAnimationSampler>(mScene->cpu());
     mRenderSystem->recreate(mSettings);
+
+    if (!globals::Debug) {
+        auto monitor = glfwGetPrimaryMonitor();
+        int x, y, w, h;
+        glfwGetMonitorWorkarea(monitor, &x, &y, &w, &h);
+        glfwSetWindowMonitor(mCtx->window(), monitor, x, y, w, h, GLFW_DONT_CARE);
+    }
+    glfwShowWindow(mCtx->window());
+    glfwFocusWindow(mCtx->window());
+    mInput->captureMouse();
 }
 
 Application::~Application() = default;
 
 void Application::run() {
-    mAmbientMusic->play();
     while (!mCtx->window().shouldClose()) {
         mRenderSystem->advance(mSettings);
         mInput->update();
@@ -97,7 +108,6 @@ void Application::initContext() {
     Logger::info("Using present mode: " + vk::to_string(mCtx->swapchain().presentMode()));
 
     mCtx->window().centerOnScreen();
-    glfwShowWindow(mCtx->window());
 }
 
 void Application::initInput() {
@@ -151,43 +161,34 @@ void Application::initCameras() {
 
 void Application::initAudio() {
     mAudio = std::make_unique<Audio>();
-    mAmbientMusic = mAudio->createMusic(AMBIENT_SOUND_FILENAME);
-    mAmbientMusic->setLooping(true);
-    mAmbientMusic->setVolume(0.05);
+    mSceneAudio.ambientMusic = mAudio->createMusic("resources/audio/ambiance.ogg");
+    mSceneAudio.ambientMusic->setLooping(true);
+
+    mSceneAudio.engineSoundBus = mAudio->createSound("resources/audio/chugging-diesel-bus-and-rev-23478.ogg");
+    mSceneAudio.engineSoundAlt = mAudio->createSound("resources/audio/engine-47745.ogg");
+    mSceneAudio.engineSoundAlt->setLooping(true);
+
+    mSceneAudio.engineSoundInstanceBlueCar = std::unique_ptr<SoundInstance3d>(mSceneAudio.engineSoundAlt->play3d(glm::vec3{}, 0.0f));
+    mSceneAudio.engineSoundInstanceBlueVan = std::unique_ptr<SoundInstance3d>(mSceneAudio.engineSoundBus->play3d(glm::vec3{}, 0.0f));
+    mSceneAudio.engineSoundInstanceBlueVan->pause();
+    mSceneAudio.engineSoundInstanceWhiteVan = std::unique_ptr<SoundInstance3d>(mSceneAudio.engineSoundBus->play3d(glm::vec3{}, 0.0f));
+    mSceneAudio.engineSoundInstanceWhiteVan->pause();
+
+    mSceneAudio.ufoSound = mAudio->createSound("resources/audio/spaceship-hum-low-frequency-296518.ogg");
+    mSceneAudio.ufoSound->setLooping(true);
+    mSceneAudio.ufoSoundInstance = std::unique_ptr<SoundInstance3d>(mSceneAudio.ufoSound->play3d(glm::vec3{}, 0.0f));
+
+    mSceneAudio.lidShutSound = mAudio->createSound("resources/audio/car-trunk-closing-421362.wav");
+    mSceneAudio.dumpsterOpenSound = mAudio->createSound("resources/audio/046422_trash-can-falling-over-71483.ogg");
+
+    mSceneAudio.beamSound = mAudio->createSound("resources/audio/scifi-sound-85501.ogg");
+    mSceneAudio.beamSound->setLooping(true);
+    mSceneAudio.beamSoundInstance = std::unique_ptr<SoundInstance3d>(mSceneAudio.beamSound->play3d(glm::vec3{}, 0.0f));
 }
 
 void Application::initVariableAnimations() {
-    // mVariableAnimationController.createTrack(mSettings.sky.exposure);
-    // mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(0.f, 1.49f);
-    // mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(12.f, 1.49f);
-    // mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(14.f, 0.f);
-    // mVariableAnimationController.track(mSettings.sky.exposure).addKeyframe(15.5f, -4.5f);
-    //
-    // mVariableAnimationController.createTrack(mSettings.sun.color);
-    // mVariableAnimationController.track(mSettings.sun.color).addKeyframe(0.f, glm::vec3{1.f});
-    // mVariableAnimationController.track(mSettings.sun.color).addKeyframe(12.f, glm::vec3{1.f});
-    // mVariableAnimationController.track(mSettings.sun.color).addKeyframe(13.5f, glm::vec3{1.f});
-    // mVariableAnimationController.track(mSettings.sun.color).addKeyframe(15.f, glm::vec3{1.f, 0.6f, 0.6f});
-    //
-    // mVariableAnimationController.createTrack(mSettings.sun.power);
-    // mVariableAnimationController.track(mSettings.sun.power).addKeyframe(0.f, 15.0f);
-    // mVariableAnimationController.track(mSettings.sun.power).addKeyframe(12.f, 15.0f);
-    // mVariableAnimationController.track(mSettings.sun.power).addKeyframe(15.f, 10.0f);
-    // mVariableAnimationController.track(mSettings.sun.power).addKeyframe(16.f, 0.0f);
-    //
-    // mVariableAnimationController.createTrack(mSettings.sun.elevation);
-    // mVariableAnimationController.track(mSettings.sun.elevation).addKeyframe(0.f, 40.f);
-    // mVariableAnimationController.track(mSettings.sun.elevation).addKeyframe(12.f, 40.f);
-    // mVariableAnimationController.track(mSettings.sun.elevation).addKeyframe(18.f, 0.0f);
-    //
-    // mVariableAnimationController.createTrack(mSettings.rendering.ambient);
-    // mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(0.f, glm::vec3{0.28f, 0.315, 0.385});
-    // mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(12.f, glm::vec3{0.28f, 0.315, 0.385});
-    // mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(15.f, glm::vec3{0.056f, 0.063, 0.077});
-    // mVariableAnimationController.track(mSettings.rendering.ambient).addKeyframe(16.f, glm::vec3{0.028f, 0.032, 0.039});
-
     mTimeline = std::make_unique<Timeline>();
-    createSceneAnimation(*mTimeline, mSettings, *mScene);
+    createSceneAnimation(*mTimeline, mSettings, *mScene, mSceneAudio);
 }
 
 void Application::processInput() {
@@ -196,6 +197,18 @@ void Application::processInput() {
 
     if (mInput->isKeyPress(GLFW_KEY_F1))
         mSettings.showGui = !mSettings.showGui;
+
+    if (mInput->isKeyPress(GLFW_KEY_F11)) {
+        if (glfwGetWindowMonitor(mCtx->window())) {
+            glfwSetWindowMonitor(mCtx->window(), nullptr, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, GLFW_DONT_CARE);
+            mCtx->window().centerOnScreen();
+        } else {
+            auto monitor = glfwGetPrimaryMonitor();
+            int x, y, w, h;
+            glfwGetMonitorWorkarea(monitor, &x, &y, &w, &h);
+            glfwSetWindowMonitor(mCtx->window(), monitor, x, y, w, h, GLFW_DONT_CARE);
+        }
+    }
 
     if (mInput->isKeyPress(GLFW_KEY_P)) {
         mSettings.animation.time = 0;
@@ -249,8 +262,27 @@ void Application::updateBlob() {
 
 void Application::updateAudio() {
     const Camera &camera = activeCamera();
-    // if audio L/R is swapped then this should be (0,0,-1)
-    mAudio->update(camera.position, camera.rotationMatrix() * glm::vec3(0, 0, 1));
+
+    mAudio->system->setVolume(mSettings.audio.masterVolume);
+    mSceneAudio.ambientMusic->setVolume(mSettings.audio.ambientVolume);
+
+    glm::vec3 blue_van_pos = mInstanceAnimationSampler->sampleNamedTranslation("Blue Van.Sound", mSettings.animation.time);
+    mSceneAudio.engineSoundInstanceBlueVan->setPosition(blue_van_pos);
+    mSceneAudio.engineSoundInstanceBlueVan->setVolume(mSettings.audio.blueVanVolume);
+    glm::vec3 blue_car_pos = mInstanceAnimationSampler->sampleNamedTranslation("Blue Car.Sound", mSettings.animation.time);
+    mSceneAudio.engineSoundInstanceBlueCar->setPosition(blue_car_pos);
+    mSceneAudio.engineSoundInstanceBlueCar->setVolume(mSettings.audio.blueCarVolume);
+    glm::vec3 white_van_pos = mInstanceAnimationSampler->sampleNamedTranslation("White Van.Sound", mSettings.animation.time);
+    mSceneAudio.engineSoundInstanceWhiteVan->setPosition(white_van_pos);
+    mSceneAudio.engineSoundInstanceWhiteVan->setVolume(mSettings.audio.whiteVanVolume);
+
+    glm::vec3 ufo_pos = mInstanceAnimationSampler->sampleNamedTranslation("UFO.Sound", mSettings.animation.time);
+    mSceneAudio.ufoSoundInstance->setPosition(ufo_pos);
+    mSceneAudio.ufoSoundInstance->setVolume(mSettings.audio.ufoVolume);
+
+    mSceneAudio.beamSoundInstance->setPosition(ufo_pos);
+
+    mAudio->update(camera.position, camera.rotationMatrix() * glm::vec3(0, 0, -1));
 }
 
 void Application::updateAnimatedVariables() {

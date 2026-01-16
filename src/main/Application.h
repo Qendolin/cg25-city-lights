@@ -5,12 +5,14 @@
 #include <memory>
 #include <string>
 
+#include "SceneAnimation.h"
 #include "animation/InstanceAnimationSampler.h"
 #include "animation/Timeline.h"
 #include "animation/VariableAnimationController.h"
 #include "debug/Settings.h"
 
 
+class SoundInstance3d;
 class HenonHeiles;
 namespace blob {
     class System;
@@ -50,7 +52,6 @@ private:
     static constexpr glm::vec3 DEFAULT_BLOB_POSITION{0.0f, 2.0f, 0.0f};
     static constexpr char TITLE[]{"City Lights"};
     static constexpr char DEFAULT_SCENE_FILENAME[]{"resources/scenes/CityTest.glb"};
-    static constexpr char AMBIENT_SOUND_FILENAME[]{"resources/audio/ambiance.ogg"};
     static constexpr char  SKYBOX_DAY[] = "resources/skybox/evening_road_01_puresky_2k";
     static constexpr char  SKYBOX_NIGHT[] = "resources/skybox/NightSkyHDRI002_2K_HDR";
 
@@ -75,7 +76,7 @@ private:
     std::unique_ptr<Cubemap> mSkyboxNight;
 
     std::unique_ptr<Audio> mAudio;
-    std::unique_ptr<Music> mAmbientMusic;
+    SceneAudio mSceneAudio;
 
     std::unique_ptr<InstanceAnimationSampler> mInstanceAnimationSampler;
     VariableAnimationController mVariableAnimationController{};

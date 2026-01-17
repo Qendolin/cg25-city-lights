@@ -200,6 +200,9 @@ void Application::processInput() {
         reloadRenderSystem();
 
     if (mInput->isKeyPress(GLFW_KEY_F1))
+        mSettings.camera.debugCamera = !mSettings.camera.debugCamera;
+
+    if (mInput->isKeyPress(GLFW_KEY_F3))
         mSettings.showGui = !mSettings.showGui;
 
     if (mInput->isKeyPress(GLFW_KEY_F11)) {

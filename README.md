@@ -1,6 +1,7 @@
 # Controls
 
-F1 - Toggle HUD
+F1 - Toggle Manual Camera
+F3 - Toggle HUD
 F5 - Reload Render System
 F11 - Toggle Fullscreen
 P - Play Animation

@@ -95,6 +95,11 @@ namespace scene {
         std::vector<UberLightBlock> lights;
 
         /// <summary>
+        /// Stores the animation name and light index for all imported light animation.
+        /// </summary>
+        std::vector<std::pair<std::string, std::size_t>> named_light_animations;
+
+        /// <summary>
         /// The data of n animations for the last n instances in the instances vector. Only mesh instances.
         /// </summary>
         std::vector<InstanceAnimation> instance_animations;

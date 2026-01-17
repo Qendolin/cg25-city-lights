@@ -101,6 +101,7 @@ private:
     void updateAnimatedCamera();
     void updateBlob();
     void updateAudio();
+    void updateAnimatedLights();
     void updateAnimatedVariables();
     void drawGui();
     void updateViewport();

@@ -51,6 +51,18 @@ namespace scene {
 
         [[nodiscard]] static InstanceAnimation createInstanceAnimation(const gltf::Animation &animation_data);
 
+        // Note Felix 16.01.26: Not the cleanest solution, would be better if this was part of
+        // "createLights" to ensure mapping consistency (because if "createLights" is modified, this
+        // might break!). However, I do not want to make bigger changes so close before the deadline.
+        // It's also not very clean to assume that the named animation has the same name as the
+        // instance associated with the light.
+        // To implement this cleanly, one should:
+        // 1. Create separate light structs as glTF data containers (don't share with business logic)
+        // 2. Create the UberLightBlocks not by itering over the pointLight and spotLight vectors
+        // directly but while iterating over the nodes such that relevant data like instance id and
+        // instance name are available.
+        void createCpuDataInitNamedLightAnimations(const gltf::Scene &scene_data, scene::CpuData &cpuData) const;
+
         void createGpuDataInitDescriptorPool(GpuData &gpu_data) const;
 
         void createGpuDataInitDescriptorSet(GpuData &gpu_data) const;

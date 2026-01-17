@@ -67,6 +67,7 @@ void Application::run() {
         updateBlob();
         updateAudio();
         updateAnimatedVariables();
+        updateAnimatedLights();
 
         mRenderSystem->begin();
         mRenderSystem->imGuiBackend().beginFrame();
@@ -168,10 +169,13 @@ void Application::initAudio() {
     mSceneAudio.engineSoundAlt = mAudio->createSound("resources/audio/engine-47745.ogg");
     mSceneAudio.engineSoundAlt->setLooping(true);
 
-    mSceneAudio.engineSoundInstanceBlueCar = std::unique_ptr<SoundInstance3d>(mSceneAudio.engineSoundAlt->play3d(glm::vec3{}, 0.0f));
-    mSceneAudio.engineSoundInstanceBlueVan = std::unique_ptr<SoundInstance3d>(mSceneAudio.engineSoundBus->play3d(glm::vec3{}, 0.0f));
+    mSceneAudio.engineSoundInstanceBlueCar =
+            std::unique_ptr<SoundInstance3d>(mSceneAudio.engineSoundAlt->play3d(glm::vec3{}, 0.0f));
+    mSceneAudio.engineSoundInstanceBlueVan =
+            std::unique_ptr<SoundInstance3d>(mSceneAudio.engineSoundBus->play3d(glm::vec3{}, 0.0f));
     mSceneAudio.engineSoundInstanceBlueVan->pause();
-    mSceneAudio.engineSoundInstanceWhiteVan = std::unique_ptr<SoundInstance3d>(mSceneAudio.engineSoundBus->play3d(glm::vec3{}, 0.0f));
+    mSceneAudio.engineSoundInstanceWhiteVan =
+            std::unique_ptr<SoundInstance3d>(mSceneAudio.engineSoundBus->play3d(glm::vec3{}, 0.0f));
     mSceneAudio.engineSoundInstanceWhiteVan->pause();
 
     mSceneAudio.ufoSound = mAudio->createSound("resources/audio/spaceship-hum-low-frequency-296518.ogg");
@@ -219,7 +223,6 @@ void Application::processInput() {
         } else {
             mSettings.animation.pause = !mSettings.animation.pause;
         }
-
     }
 
     updateMouseCapture();
@@ -261,7 +264,8 @@ void Application::updateBlob() {
 
         glm::vec3 vec = mBlobChaos->points[i].position;
         vec = glm::normalize(vec) * std::pow(glm::length(vec), mSettings.blob.dispersionPower);
-        ball.center = center + vec * glm::vec3{mSettings.blob.dispersionXZ, mSettings.blob.dispersionY, mSettings.blob.dispersionXZ};
+        ball.center = center +
+                      vec * glm::vec3{mSettings.blob.dispersionXZ, mSettings.blob.dispersionY, mSettings.blob.dispersionXZ};
     }
 }
 
@@ -308,9 +312,23 @@ void Application::updateAnimatedVariables() {
     if (mSettings.animation.animateLights) {
         for (size_t i = 0; i < scene::Loader::DYNAMIC_LIGHTS_RESERVATION; i++) {
             size_t offset = mScene->cpu().lights.size() - scene::Loader::DYNAMIC_LIGHTS_RESERVATION;
-            auto& light = mScene->cpu().lights[offset + i];
+            auto &light = mScene->cpu().lights[offset + i];
             light.position.y += (std::max(light.position.y, 0.0f) * 0.5f + 3.0f) * mInput->timeDelta();
             light.position.y = std::fmodf(light.position.y, 40.0f);
+        }
+    }
+}
+
+void Application::updateAnimatedLights() {
+    for (const auto &[animation_name, light_index]: mScene->cpu().named_light_animations) {
+        UberLightBlock &uberLight = mScene->cpu().lights[light_index];
+        const glm::mat4 transform = mInstanceAnimationSampler->sampleNamedTransform(animation_name, mSettings.animation.time);
+        uberLight.position = glm::vec3(transform[3]);
+
+        // Spot lights
+        if (uberLight.coneAngleScale != 0.0f) {
+            glm::vec3 forward = glm::normalize(-glm::vec3(transform[2]));
+            uberLight.direction = util::octahedronEncode(forward);
         }
     }
 }

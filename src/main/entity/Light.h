@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <string>
 
 #include "../util/math.h"
 
@@ -30,12 +31,14 @@ struct DirectionalLight {
         return glm::mat3(right, up, forward);
     }
 
-    [[nodiscard]] glm::vec3 radiance() const {
-        return color * power;
-    }
+    [[nodiscard]] glm::vec3 radiance() const { return color * power; }
 };
 
 struct PointLight {
+    // Not good to store instance_index here, but it is required in the scene loading process and
+    // There is no dedicated glTF PointLight struct
+    std::string node_name = "";
+
     glm::vec3 position = {0.0f, 0.0f, 0.0f};
     glm::vec3 color = {1.0f, 1.0f, 1.0f};
     float power = 1.0f;
@@ -47,6 +50,10 @@ struct PointLight {
 };
 
 struct SpotLight {
+    // Not good to store instance_index here, but it is required in the scene loading process and
+    // There is no dedicated glTF SpotLight struct
+    std::string node_name = "";
+
     glm::vec3 position = {0.0f, 0.0f, 0.0f};
     // degrees, elevation
     float theta = 90;

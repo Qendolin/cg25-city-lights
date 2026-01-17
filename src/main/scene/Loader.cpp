@@ -80,6 +80,7 @@ namespace scene {
         cpu_data.instances.insert(cpu_data.instances.end(), anim_inst_to_insert_last.begin(), anim_inst_to_insert_last.end());
 
         cpu_data.lights = createLights(scene_data);
+        createCpuDataInitNamedLightAnimations(scene_data, cpu_data);
 
         return cpu_data;
     }
@@ -99,6 +100,28 @@ namespace scene {
             std::move(quats),
             animation_data.scales
         };
+    }
+
+    // Note Felix 16.01.26: See note in header
+    void Loader::createCpuDataInitNamedLightAnimations(const gltf::Scene &scene_data, scene::CpuData &cpuData) const {
+        std::size_t light_index{0};
+
+        for (const PointLight &light: scene_data.pointLights) {
+            // We assume that named animatioins are named after their associated nodes/instances
+            if (cpuData.non_mesh_instance_animation_map.contains(light.node_name))
+                cpuData.named_light_animations.push_back({light.node_name, light_index});
+
+            ++light_index;
+        }
+
+        for (const SpotLight &light: scene_data.spotLights) {
+            if (cpuData.non_mesh_instance_animation_map.contains(light.node_name))
+                cpuData.named_light_animations.push_back({light.node_name, light_index});
+
+            ++light_index;
+        }
+
+        Logger::debug(std::format("Named light animations: {}", cpuData.named_light_animations.size()));
     }
 
     GpuData Loader::createGpuData(const gltf::Scene &scene_data) const {

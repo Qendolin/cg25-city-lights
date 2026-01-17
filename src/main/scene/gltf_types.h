@@ -4,6 +4,7 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
 #include <map>
+#include <string>
 #include <vector>
 
 #include "../util/math.h"

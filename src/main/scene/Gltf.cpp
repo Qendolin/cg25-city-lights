@@ -272,6 +272,7 @@ namespace gltf {
             case fastgltf::LightType::Point: {
                 scene_node.pointLight = static_cast<uint32_t>(scene_data.pointLights.size());
                 scene_data.pointLights.emplace_back() = {
+                    .node_name = scene_node.name,
                     .position = position,
                     .color = {light.color.x(), light.color.y(), light.color.z()},
                     .power = light.intensity / 683.0f,
@@ -281,6 +282,7 @@ namespace gltf {
             case fastgltf::LightType::Spot: {
                 scene_node.spotLight = static_cast<uint32_t>(scene_data.spotLights.size());
                 SpotLight &scene_light = scene_data.spotLights.emplace_back() = {
+                    .node_name = scene_node.name,
                     .position = position,
                     .theta = glm::degrees(glm::atan(forward.y, glm::sqrt(forward.x * forward.x + forward.z * forward.z))),
                     .phi = glm::degrees(glm::atan(forward.x, forward.z)),
@@ -381,7 +383,9 @@ namespace gltf {
         if (gltf_mat.normalTexture.has_value())
             mat.normalFactor = gltf_mat.normalTexture->scale;
 
-        mat.emissiveStrength = std::max(std::max(gltf_mat.emissiveFactor.x(), gltf_mat.emissiveFactor.y()), gltf_mat.emissiveFactor.z()) * gltf_mat.emissiveStrength;
+        mat.emissiveStrength =
+                std::max(std::max(gltf_mat.emissiveFactor.x(), gltf_mat.emissiveFactor.y()), gltf_mat.emissiveFactor.z()) *
+                gltf_mat.emissiveStrength;
 
         return mat;
     }

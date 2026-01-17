@@ -11,15 +11,15 @@ struct SceneAudio {
     std::unique_ptr<Music> ambientMusic;
     std::unique_ptr<Sound> engineSoundBus;
     std::unique_ptr<Sound> engineSoundAlt;
-    std::unique_ptr<SoundInstance3d> engineSoundInstanceBlueCar;
-    std::unique_ptr<SoundInstance3d> engineSoundInstanceBlueVan;
-    std::unique_ptr<SoundInstance3d> engineSoundInstanceWhiteVan;
     std::unique_ptr<Sound> ufoSound;
-    std::unique_ptr<SoundInstance3d> ufoSoundInstance;
-    std::unique_ptr<SoundInstance3d> beamSoundInstance;
     std::unique_ptr<Sound> lidShutSound;
     std::unique_ptr<Sound> dumpsterOpenSound;
     std::unique_ptr<Sound> beamSound;
+    std::unique_ptr<SoundInstance3d> engineSoundInstanceBlueCar;
+    std::unique_ptr<SoundInstance3d> engineSoundInstanceBlueVan;
+    std::unique_ptr<SoundInstance3d> engineSoundInstanceWhiteVan;
+    std::unique_ptr<SoundInstance3d> ufoSoundInstance;
+    std::unique_ptr<SoundInstance3d> beamSoundInstance;
 };
 
 static void resetUFOLights(scene::Scene& scene) {

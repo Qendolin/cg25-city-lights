@@ -51,7 +51,7 @@ private:
     static constexpr glm::vec3 DEFAULT_CAMERA_POSITION{0.0f, 1.0f, 5.0f};
     static constexpr glm::vec3 DEFAULT_BLOB_POSITION{0.0f, 2.0f, 0.0f};
     static constexpr char TITLE[]{"City Lights"};
-    static constexpr char DEFAULT_SCENE_FILENAME[]{"resources/scenes/CityTest.glb"};
+    static constexpr char DEFAULT_SCENE_FILENAME[]{"resources/scenes/city_scene.glb"};
     static constexpr char  SKYBOX_DAY[] = "resources/skybox/evening_road_01_puresky_2k";
     static constexpr char  SKYBOX_NIGHT[] = "resources/skybox/NightSkyHDRI002_2K_HDR";
 

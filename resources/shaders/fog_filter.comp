@@ -17,6 +17,24 @@ float getLinearZ(ivec2 p) {
     return cParams.zNear / max(d, 1e-6);
 }
 
+float detectEdge(ivec2 p) {
+    float c = getLinearZ(p);
+
+    float z0 = getLinearZ(p + ivec2(-1, -1));
+    float z1 = getLinearZ(p + ivec2( 0, -1));
+    float z2 = getLinearZ(p + ivec2( 1, -1));
+    float z3 = getLinearZ(p + ivec2(-1,  0));
+    float z4 = getLinearZ(p + ivec2( 1,  0));
+    float z5 = getLinearZ(p + ivec2(-1,  1));
+    float z6 = getLinearZ(p + ivec2( 0,  1));
+    float z7 = getLinearZ(p + ivec2( 1,  1));
+
+    float max_diff = max(max(max(abs(z0 - c), abs(z1 - c)), max(abs(z2 - c), abs(z3 - c))),
+    max(max(abs(z4 - c), abs(z5 - c)), max(abs(z6 - c), abs(z7 - c))));
+
+    return saturate(max_diff * cParams.sharpness * 0.5);
+}
+
 void main()
 {
     ivec2 out_size = imageSize(out_color);
@@ -26,69 +44,132 @@ void main()
     if (p.x >= out_size.x || p.y >= out_size.y)
     return;
 
-    vec2 half_texel = 1.0 / vec2(half_size);
-    vec2 uv = (vec2(p) + 0.5) / out_size;
-
-    // Center depth (full-res)
+    vec2 uv = (vec2(p) + 0.5) / vec2(out_size);
     float center_z = getLinearZ(p);
 
-    // Compute 2D gradient (per-pixel) using central differences on full-res depth
-    float z_right = getLinearZ(p + ivec2(1, 0));
-    float z_left = getLinearZ(p - ivec2(1, 0));
-    float z_up = getLinearZ(p + ivec2(0, 1));
-    float z_down = getLinearZ(p - ivec2(0, 1));
+    float edge_strength = detectEdge(p);
 
-    // central difference -> change per 1 pixel
-    float dzdx = 0.5 * (z_right - z_left);
-    float dzdy = 0.5 * (z_up - z_down);
-    vec2 gradient = vec2(dzdx, dzdy);
+    vec3 result_radiance;
+    float result_tau;
 
-    // 3x3 Gaussian-ish kernel
-    const float K[3][3] = float[3][3](
-    float[3](1.0/16.0, 2.0/16.0, 1.0/16.0),
-    float[3](2.0/16.0, 4.0/16.0, 2.0/16.0),
-    float[3](1.0/16.0, 2.0/16.0, 1.0/16.0)
-    );
+    if (edge_strength > 0.5) {
+        // Edge region: Depth-weighted bilinear
+        vec2 half_uv = (vec2(p) + 0.5) / vec2(out_size) * vec2(half_size);
+        ivec2 base = ivec2(floor(half_uv - 0.5));
+        vec2 frac = fract(half_uv - 0.5);
 
-    vec3 accum_radiance = vec3(0.0);
-    float accum_tau = 0.0;
-    float accum_weight = 0.0;
+        vec3 accum_radiance = vec3(0.0);
+        float accum_tau = 0.0;
+        float accum_weight = 0.0;
 
-    // Depth-aware 3x3 reconstruction (half-res samples)
-    for (int j = -1; j <= 1; ++j)
-    {
-        for (int i = -1; i <= 1; ++i)
-        {
-            vec2 sample_half_uv = uv + vec2(i, j) * half_texel;
+        // Sample 2x2 quad with bilinear + depth weights
+        for (int j = 0; j <= 1; ++j) {
+            for (int i = 0; i <= 1; ++i) {
+                ivec2 sample_coord = base + ivec2(i, j);
+                sample_coord = clamp(sample_coord, ivec2(0), half_size - 1);
+                vec2 sample_uv = (vec2(sample_coord) + 0.5) / vec2(half_size);
 
-            vec4 src = textureLod(in_source, sample_half_uv, 0.0);
-            vec3 radiance = src.rgb;
-            // optical depth
-            float tau = src.a;
+                vec4 fog_sample = textureLod(in_source, sample_uv, 0.0);
 
-            float sample_z = getLinearZ(p + ivec2(i, j));
+                // Get depth at the center of this half-res cell
+                ivec2 full_res_center = ivec2((sample_uv * vec2(out_size)));
+                full_res_center = clamp(full_res_center, ivec2(0), out_size - 1);
+                float sample_z = getLinearZ(full_res_center);
 
-            // expected z from local plane (gradient is per-pixel; offsets i,j are in pixels)
-            float expected_z = center_z + dot(vec2(i, j), gradient);
-            float error = abs(sample_z - expected_z);
+                // Bilinear weight
+                vec2 offset = vec2(i, j);
+                float bilinear_w = mix(mix(
+                (1.0 - frac.x) * (1.0 - frac.y),
+                frac.x * (1.0 - frac.y),
+                float(i)
+                ), mix(
+                (1.0 - frac.x) * frac.y,
+                frac.x * frac.y,
+                float(i)
+                ), float(j));
 
-            // plane / depth weight
-            float plane_w = max(0.0, 1.0 - error * cParams.sharpness);
+                // Depth weight - exponential falloff
+                float depth_diff = abs(sample_z - center_z) / max(center_z, 0.1);
+                float depth_w = exp(-depth_diff * cParams.sharpness * 15.0);
 
-            float w = K[j + 1][i + 1] * plane_w;
+                float w = bilinear_w * depth_w;
 
-            accum_radiance += radiance * w;
-            accum_tau += tau * w;
-            accum_weight += w;
+                accum_radiance += fog_sample.rgb * w;
+                accum_tau += fog_sample.a * w;
+                accum_weight += w;
+            }
+        }
+
+        if (accum_weight > 1e-5) {
+            result_radiance = accum_radiance / accum_weight;
+            result_tau = accum_tau / accum_weight;
+        } else {
+            // No good depth matches - fallback to pure bilinear
+            vec4 fallback = textureLod(in_source, uv, 0.0);
+            result_radiance = fallback.rgb;
+            result_tau = fallback.a;
+        }
+
+    } else {
+        // Smooth region: Standard bilateral with adaptive kernel
+        int kernel_radius = edge_strength > 0.2 ? 1 : 2;
+
+        vec3 accum_radiance = vec3(0.0);
+        float accum_tau = 0.0;
+        float accum_weight = 0.0;
+
+        float z_right = getLinearZ(min(p + ivec2(1, 0), out_size - 1));
+        float z_left = getLinearZ(max(p - ivec2(1, 0), ivec2(0)));
+        float z_up = getLinearZ(min(p + ivec2(0, 1), out_size - 1));
+        float z_down = getLinearZ(max(p - ivec2(0, 1), ivec2(0)));
+
+        float dzdx = 0.5 * (z_right - z_left);
+        float dzdy = 0.5 * (z_up - z_down);
+
+        vec2 half_texel = 1.0 / vec2(half_size);
+
+        for (int j = -kernel_radius; j <= kernel_radius; ++j) {
+            for (int i = -kernel_radius; i <= kernel_radius; ++i) {
+                vec2 offset = vec2(i, j);
+                vec2 sample_uv = uv + offset * half_texel;
+
+                if (sample_uv.x < 0.0 || sample_uv.x > 1.0 ||
+                sample_uv.y < 0.0 || sample_uv.y > 1.0)
+                continue;
+
+                vec4 src = textureLod(in_source, sample_uv, 0.0);
+
+                vec2 full_res_pos = sample_uv * vec2(out_size);
+                ivec2 sample_p = ivec2(full_res_pos);
+                sample_p = clamp(sample_p, ivec2(0), out_size - 1);
+                float sample_z = getLinearZ(sample_p);
+
+                float spatial_dist = length(offset);
+                float spatial_w = exp(-spatial_dist * spatial_dist * 0.5);
+
+                vec2 pixel_offset = offset * vec2(half_size) / vec2(out_size) * 2.0;
+                float expected_z = center_z + dot(pixel_offset, vec2(dzdx, dzdy));
+                float depth_error = abs(sample_z - expected_z) / max(center_z, 0.1);
+                float depth_w = exp(-depth_error * cParams.sharpness * 10.0);
+
+                float w = spatial_w * depth_w;
+
+                accum_radiance += src.rgb * w;
+                accum_tau += src.a * w;
+                accum_weight += w;
+            }
+        }
+
+        if (accum_weight > 1e-5) {
+            result_radiance = accum_radiance / accum_weight;
+            result_tau = accum_tau / accum_weight;
+        } else {
+            result_radiance = textureLod(in_source, uv, 0.0).rgb;
+            result_tau = textureLod(in_source, uv, 0.0).a;
         }
     }
 
-    if (accum_weight < 1e-5)
-    return;
-
-    vec3 result_radiance = accum_radiance / accum_weight;
-    float result_transmittance = exp(-accum_tau / accum_weight);
-
+    float result_transmittance = exp(-result_tau);
     vec4 scene = imageLoad(out_color, p);
 
     imageStore(out_color, p, vec4(scene.rgb * result_transmittance + result_radiance, scene.a));

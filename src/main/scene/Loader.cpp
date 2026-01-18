@@ -120,8 +120,6 @@ namespace scene {
 
             ++light_index;
         }
-
-        Logger::debug(std::format("Named light animations: {}", cpuData.named_light_animations.size()));
     }
 
     GpuData Loader::createGpuData(const gltf::Scene &scene_data) const {

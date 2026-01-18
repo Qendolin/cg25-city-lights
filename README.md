@@ -34,3 +34,7 @@ When creating new files, make sure you have "Add to targets" checked off!
 In newer CMake version, you can use GLOB_RECURSE to reliably add all source files automatically.
 
 ![clion-add-to-targets.png](docs/clion-add-to-targets.png)
+
+### Attributions
+City model: CC BY 4.0
+by https://sketchfab.com/abhayexe

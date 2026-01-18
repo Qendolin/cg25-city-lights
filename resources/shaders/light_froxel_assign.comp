@@ -147,7 +147,7 @@ void main() {
 
     // inverseProjectionScale is 2.0 * P_inv / GridDim.
     // 0.5 * scale gives half-diagonal size of one cluster.
-    float radiusAtUnity = length(cParams.inverseProjectionScale * 0.5);
+    float radiusAtUnity = length(cParams.inverseProjectionScale * 0.707);
 
     vec3 viewVecAtUnity = getUnitDepthViewVec(clusterCoord);
 

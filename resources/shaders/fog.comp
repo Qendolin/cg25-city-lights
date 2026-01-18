@@ -83,7 +83,7 @@ vec2 r2Sequence(uint n) {
 }
 
 const float MIN_STEP_SIZE = 0.05;
-const float MAX_STEP_SIZE = 25.0;
+const float MAX_STEP_SIZE = 4.0;
 const float EPSILON_DENSITY = 1e-5;
 
 float henyeyGreenstein(float g, float cos_theta) {
@@ -116,7 +116,7 @@ float computeAdaptiveStep(float extinction, float current_transmittance) {
     float ln_arg = max(1.0 - target_contribution / current_transmittance, 0.001);
     float step = -log(ln_arg) / extinction;
 
-    return clamp(step, MIN_STEP_SIZE, MAX_STEP_SIZE);
+    return clamp(step , MIN_STEP_SIZE, MAX_STEP_SIZE);
 }
 
 void main() {
@@ -152,7 +152,7 @@ void main() {
     int cascade_index = 0;
 
     for (uint i = 0; i < cParams.samples; ++i) {
-        vec2 r2 = r2Sequence(i + cParams.frame * cParams.samples);
+        vec2 r2 = r2Sequence(i + cParams.frame * cParams.samples) ;
         float sample_jitter = fract(initial_jitter + r2.x);
 
         vec3 p_vs = ray_vs * t;

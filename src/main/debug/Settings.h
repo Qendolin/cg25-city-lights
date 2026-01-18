@@ -52,8 +52,8 @@ struct Settings {
     } agx;
 
     struct Fog {
-        int samples = 64;
-        float targetStepContribution = 0.025f;
+        int samples = 128;
+        float targetStepContribution = 0.0125f;
         float density = 0.015f;
         float g = 0.7f;
         glm::vec3 color = glm::vec3(0.828f, 0.874f, 1.000f);
@@ -79,7 +79,7 @@ struct Settings {
     
     struct SSAO {
         bool update = true;
-        bool halfResolution = true;
+        bool halfResolution = false;
         bool bentNormals = false;
         int slices = 3;
         int samples = 6;

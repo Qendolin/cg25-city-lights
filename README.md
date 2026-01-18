@@ -36,5 +36,9 @@ In newer CMake version, you can use GLOB_RECURSE to reliably add all source file
 ![clion-add-to-targets.png](docs/clion-add-to-targets.png)
 
 ### Attributions
+
 City model: CC BY 4.0
 by https://sketchfab.com/abhayexe
+
+Ambiance sound - https://soundimage.org/sfx-urban-ambience/
+"STREET AMBIENCE 2" by Eric Matyas www.soundimage.org

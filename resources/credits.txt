@@ -1,0 +1,23 @@
+Audio
+
+ambiance - https://soundimage.org/sfx-urban-ambience/ - "STREET AMBIENCE 2"
+scifi-sound-85501 - pixabay
+chugging-diesel-bus-and-rev-23478 - pixabay
+046422_trash-can-falling-over-71483 - pixabay
+car-trunk-closing-421362 - pixabay
+spaceship-hum-low-frequency-296518 - pixabay
+engine-47745 - pixabay
+
+Skybox
+
+evening_road_01_puresky_2k - https://polyhaven.com/a/evening_road_01_puresky
+NightSkyHDRI002_2K_HDR - https://ambientcg.com/view?id=NightSkyHDRI002
+
+Scene
+
+UFO - https://sketchfab.com/3d-models/ufo-flying-saucer-spaceship-ovni-094ce2baf6ee40aa8f083b7d0fcf0a9f
+City - https://sketchfab.com/3d-models/full-gameready-city-buildings-0545317292c44490af5408cb58633121
+
+Additional Materials
+
+BlenderKit

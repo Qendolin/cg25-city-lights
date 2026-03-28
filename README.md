@@ -1,3 +1,11 @@
+# Result
+
+CG 2025 Hall of Fame: 2nd place
+
+https://www.cg.tuwien.ac.at/courses/Computer-Graphics/HallOfFame/2025W#:~:text=City%20Lights
+
+[ [Video](https://www.cg.tuwien.ac.at/sites/default/files/hall_of_fame/10445/City_LightsNeumannvideo-city-lights.mp4) ]
+
 # Controls
 
 F1 - Toggle Manual Camera
